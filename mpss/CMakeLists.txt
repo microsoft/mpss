@@ -11,5 +11,12 @@ set(mpss_SOURCE_FILES ${mpss_SOURCE_FILES}
     ${CMAKE_CURRENT_LIST_DIR}/mpss.cpp
 )
 
+install(
+    FILES
+        ${CMAKE_CURRENT_LIST_DIR}/mpss.h
+    DESTINATION
+        ${mpss_INCLUDES_INSTALL_DIR}/mpss
+)
+
 # Update mpss_SOURCE_FILES variable in the parent scope.
 set(mpss_SOURCE_FILES ${mpss_SOURCE_FILES} PARENT_SCOPE)

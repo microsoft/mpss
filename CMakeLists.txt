@@ -11,10 +11,10 @@ if (POLICY CMP0141)
 endif()
 
 # Setting up our options.
-option(MPSS_BUILD_SHARED "Build a shared library" OFF)
-option(MPSS_BUILD_TESTS "Build the test suite." OFF)
+option(MPSS_BUILD_SHARED "Build a shared library." NO)
+option(MPSS_BUILD_TESTS "Build the test suite." NO)
 
-# Enable tests feature in vcpkg if MPSS_BUILD_TESTS is ON.
+# Enable tests feature in vcpkg if MPSS_BUILD_TESTS is YES.
 if (MPSS_BUILD_TESTS)
     list(APPEND VCPKG_MANIFEST_FEATURES "tests")
 endif()
@@ -80,10 +80,15 @@ endif()
 # Create the library target.
 add_library(mpss ${mpss_LIBRARY_TYPE} ${mpss_SOURCE_FILES})
 
-# mpss indicates a debug build with the macro MPSS_DEBUG_BUILD.
-target_compile_definitions(mpss PUBLIC
-    $<$<CONFIG:Debug>:MPSS_DEBUG_BUILD>
+# Internally, mpss indicates a debug build with the macro MPSS_DEBUG_BUILD. This is
+# only used in the mpss source files, so it does not need to be set when compiling
+# downstream code that includes mpss headers.
+target_compile_definitions(mpss PRIVATE
+    $<BUILD_INTERFACE:$<$<CONFIG:Debug>:MPSS_DEBUG_BUILD>>
 )
+
+# For debug builds, append "-d" to the library name.
+set_target_properties(mpss PROPERTIES DEBUG_POSTFIX "-d")
 
 # Set the VERSION and SOVERSION properties for semantic versioning.
 set_target_properties(mpss PROPERTIES
@@ -127,6 +132,12 @@ write_basic_package_version_file(
     COMPATIBILITY SameMajorVersion
 )
 
+# Install config.h.
+install(
+    FILES ${mpss_CONFIG_H_FILENAME}
+    DESTINATION ${mpss_INCLUDES_INSTALL_DIR}/mpss
+)
+
 # Install the config files.
 install(
     FILES ${mpss_CONFIG_FILENAME} ${mpss_CONFIG_VERSION_FILENAME}
@@ -140,7 +151,7 @@ export(
     FILE ${mpss_TARGETS_FILENAME}
 )
 
-# Tests
+# Test suite.
 if (MPSS_BUILD_TESTS)
     find_package(GTest CONFIG REQUIRED)
 

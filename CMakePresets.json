@@ -12,7 +12,7 @@
             "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
             "cacheVariables": {
                 "CMAKE_EXPORT_COMPILE_COMMANDS": "YES",
-                "MPSS_BUILD_TESTS": "NO",
+                "MPSS_BUILD_TESTS": "YES",
                 "MPSS_BUILD_SHARED": "NO"
             }
         },
@@ -46,27 +46,11 @@
             }
         },
         {
-            "name": "x64-debug-tests",
-            "displayName": "x64 Debug (with tests)",
-            "inherits": "x64-debug",
-            "cacheVariables": {
-                "MPSS_BUILD_TESTS": "ON"
-            }
-        },
-        {
             "name": "x64-release",
             "displayName": "x64 Release",
             "inherits": "x64-debug",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release"
-            }
-        },
-        {
-            "name": "x64-release-tests",
-            "displayName": "x64 Release (with tests)",
-            "inherits": "x64-release",
-            "cacheVariables": {
-                "MPSS_BUILD_TESTS": "ON"
             }
         },
         {
@@ -82,27 +66,11 @@
             }
         },
         {
-            "name": "x86-debug-tests",
-            "displayName": "x86 Debug (with tests)",
-            "inherits": "x86-debug",
-            "cacheVariables": {
-                "MPSS_BUILD_TESTS": "ON"
-            }
-        },
-        {
             "name": "x86-release",
             "displayName": "x86 Release",
             "inherits": "x86-debug",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release"
-            }
-        },
-        {
-            "name": "x86-release-tests",
-            "displayName": "x86 Release (with tests)",
-            "inherits": "x86-release",
-            "cacheVariables": {
-                "MPSS_BUILD_TESTS": "ON"
             }
         },
         {
@@ -127,27 +95,11 @@
             }
         },
         {
-            "name": "linux-debug-tests",
-            "displayName": "Linux Debug (with tests)",
-            "inherits": "linux-debug",
-            "cacheVariables": {
-                "MPSS_BUILD_TESTS": "ON"
-            }
-        },
-        {
             "name": "linux-release",
             "displayName": "Linux Release",
             "inherits": "linux-debug",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release"
-            }
-        },
-        {
-            "name": "linux-release-tests",
-            "displayName": "Linux Release (with tests)",
-            "inherits": "linux-release",
-            "cacheVariables": {
-                "MPSS_BUILD_TESTS": "ON"
             }
         },
         {
@@ -172,27 +124,11 @@
             }
         },
         {
-            "name": "macos-debug-tests",
-            "displayName": "macOS Debug (with tests)",
-            "inherits": "macos-debug",
-            "cacheVariables": {
-                "MPSS_BUILD_TESTS": "ON"
-            }
-        },
-        {
             "name": "macos-release",
             "displayName": "macOS Release",
             "inherits": "macos-debug",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release"
-            }
-        },
-        {
-            "name": "macos-release-tests",
-            "displayName": "macOS Release (with tests)",
-            "inherits": "macos-release",
-            "cacheVariables": {
-                "MPSS_BUILD_TESTS": "ON"
             }
         }
     ]
