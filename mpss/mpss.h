@@ -2,3 +2,7 @@
 // Licensed under the MIT license.
 
 #pragma once
+
+namespace mpss {
+    void myfun();
+}

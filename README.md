@@ -1,1 +1,1 @@
-# mpss
+# mpss is a multi-platform secret storage library

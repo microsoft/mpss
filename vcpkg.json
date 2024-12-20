@@ -1,0 +1,12 @@
+{
+  "name": "mpss",
+  "version": "0.1.0",
+  "description": "A C++ library for multi-platform secret storage.",
+  "license": "MIT",
+  "features": {
+    "tests": {
+      "description": "Build the test suite.",
+      "dependencies": [ "gtest" ]
+    }
+  }
+}
