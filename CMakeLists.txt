@@ -24,11 +24,6 @@ project(mpss VERSION 0.1.0 LANGUAGES CXX)
 # All our modules are in cmake/.
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_LIST_DIR}/cmake)
 
-# Only C++17 or higher is supported.
-if (CMAKE_CXX_STANDARD LESS 17)
-    message(FATAL_ERROR "C++17 or higher is required.")
-endif()
-
 # Define additional directory path variables.
 include(GNUInstallDirs)
 

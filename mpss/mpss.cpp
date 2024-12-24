@@ -5,11 +5,27 @@
 #include <iostream>
 
 namespace mpss {
-    void myfun()
-    {
-    #ifdef MPSS_DEBUG_BUILD
-        std::cout << "Debug build" << std::endl;
-    #endif
-	    std::cout << "Hello world" << std::endl;
+    bool create_key(const std::string& name) {
+        throw std::runtime_error("Not implemented");
+    }
+
+    bool delete_key(const std::string& name) {
+        throw std::runtime_error("Not implemented");
+    }
+
+    std::optional<std::string> sign(const std::string& name, const std::string& data) {
+        throw std::runtime_error("Not implemented");
+    }
+
+    bool verify(const std::string& name, const std::string& data) {
+        throw std::runtime_error("Not implemented");
+    }
+
+    bool set_key(const std::string& name, const std::string& vk, const std::string& sk) {
+        throw std::runtime_error("Not implemented");
+    }
+
+    bool get_key(const std::string& name, std::string& vk_out, std::string& sk_out) {
+        throw std::runtime_error("Not implemented");
     }
 } // namespace mpss

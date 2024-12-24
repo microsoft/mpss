@@ -13,7 +13,8 @@
             "cacheVariables": {
                 "CMAKE_EXPORT_COMPILE_COMMANDS": "YES",
                 "MPSS_BUILD_TESTS": "YES",
-                "MPSS_BUILD_SHARED": "NO"
+                "MPSS_BUILD_SHARED": "NO",
+                "CMAKE_CXX_STANDARD": "17"
             }
         },
         {

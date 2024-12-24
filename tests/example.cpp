@@ -9,9 +9,5 @@
 
 namespace mpss {
     namespace tests {
-        TEST(MpssTests, MyFunTest) {
-            myfun();
-            EXPECT_EQ(1, 1);
-        }
     }
 }
