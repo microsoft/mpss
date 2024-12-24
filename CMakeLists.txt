@@ -82,6 +82,15 @@ target_compile_definitions(mpss PRIVATE
     $<BUILD_INTERFACE:$<$<CONFIG:Debug>:MPSS_DEBUG_BUILD>>
 )
 
+# Set the platform macro based on the target platform.
+target_compile_definitions(mpss PUBLIC
+    $<BUILD_INTERFACE:$<$<PLATFORM_ID:Windows>:MPSS_PLATFORM_WINDOWS>>
+    $<BUILD_INTERFACE:$<$<PLATFORM_ID:Linux>:MPSS_PLATFORM_LINUX>>
+    $<BUILD_INTERFACE:$<$<PLATFORM_ID:Darwin>:MPSS_PLATFORM_MACOS>>
+    $<BUILD_INTERFACE:$<$<PLATFORM_ID:iOS>:MPSS_PLATFORM_IOS>>
+    $<BUILD_INTERFACE:$<$<PLATFORM_ID:Android>:MPSS_PLATFORM_ANDROID>>
+)
+
 # For debug builds, append "-d" to the library name.
 set_target_properties(mpss PROPERTIES DEBUG_POSTFIX "-d")
 

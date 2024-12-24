@@ -4,6 +4,16 @@
 #include "mpss/mpss.h"
 #include <iostream>
 
+// Verify that we are compiling for a supported platform.
+#if defined(MPSS_PLATFORM_WINDOWS)
+#elif defined(MPSS_PLATFORM_LINUX)
+#elif defined(MPSS_PLATFORM_MACOS)
+#elif defined(MPSS_PLATFORM_IOS)
+#elif defined(MPSS_PLATFORM_ANDROID)
+#else
+#error "Unsupported platform"
+#endif
+
 namespace mpss {
     bool create_key(const std::string& name) {
         throw std::runtime_error("Not implemented");
