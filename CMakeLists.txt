@@ -83,7 +83,7 @@ target_compile_definitions(mpss PRIVATE
 )
 
 # Set the platform macro based on the target platform.
-target_compile_definitions(mpss PUBLIC
+target_compile_definitions(mpss PRIVATE
     $<BUILD_INTERFACE:$<$<PLATFORM_ID:Windows>:MPSS_PLATFORM_WINDOWS>>
     $<BUILD_INTERFACE:$<$<PLATFORM_ID:Linux>:MPSS_PLATFORM_LINUX>>
     $<BUILD_INTERFACE:$<$<PLATFORM_ID:Darwin>:MPSS_PLATFORM_MACOS>>
