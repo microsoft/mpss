@@ -4,6 +4,9 @@
 #include "mpss/mpss.h"
 #include <iostream>
 
+// Implementation of the MPSS API.
+#include "implementations/mpss_impl.h"
+
 // Verify that we are compiling for a supported platform.
 #if defined(MPSS_PLATFORM_WINDOWS)
 #elif defined(MPSS_PLATFORM_LINUX)
@@ -16,7 +19,12 @@
 
 namespace mpss {
     bool create_key(const std::string& name) {
-        throw std::runtime_error("Not implemented");
+        int result = mpss::implementation::create_key(name);
+        if (result != 0) {
+            return false;
+        }
+
+        return true;
     }
 
     bool delete_key(const std::string& name) {

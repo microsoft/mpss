@@ -1,0 +1,28 @@
+# Copyright(c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT license.
+
+# Check that this CMakeFile is not invoked directly.
+if(${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_CURRENT_SOURCE_DIR})
+    message(FATAL_ERROR "mpss/implementations/CMakeLists.txt must not be invoked directly.")
+endif()
+
+# Add appropriate subdirectory
+if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
+    message(STATUS "Building for Windows")
+    add_subdirectory(windows)
+elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    message(STATUS "Building for Linux")
+    add_subdirectory(linux)
+elseif (CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    message(STATUS "Building for macOS")
+    add_subdirectory(macos)
+elseif (CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    message(STATUS "Building for iOS")
+    add_subdirectory(ios)
+elseif (CMAKE_SYSTEM_NAME STREQUAL "Android")
+    message(STATUS "Building for Android")
+    add_subdirectory(android)
+endif()
+
+# Update mpss_SOURCE_FILES variable in the parent scope.
+set(mpss_SOURCE_FILES ${mpss_SOURCE_FILES} PARENT_SCOPE)

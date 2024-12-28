@@ -91,6 +91,11 @@ target_compile_definitions(mpss PRIVATE
     $<BUILD_INTERFACE:$<$<PLATFORM_ID:Android>:MPSS_PLATFORM_ANDROID>>
 )
 
+# Platform-specific libraries.
+if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
+    target_link_libraries(mpss PRIVATE ncrypt)
+endif()
+
 # For debug builds, append "-d" to the library name.
 set_target_properties(mpss PROPERTIES DEBUG_POSTFIX "-d")
 
