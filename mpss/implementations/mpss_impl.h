@@ -10,5 +10,7 @@ namespace mpss
     namespace implementation
     {
         int create_key(const std::string& name);
+
+        int delete_key(const std::string& name);
     }
 }

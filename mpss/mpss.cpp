@@ -28,7 +28,12 @@ namespace mpss {
     }
 
     bool delete_key(const std::string& name) {
-        throw std::runtime_error("Not implemented");
+        int result = mpss::implementation::delete_key(name);
+        if (result != 0) {
+            return false;
+        }
+
+        return true;
     }
 
     std::optional<std::string> sign(const std::string& name, const std::string& data) {

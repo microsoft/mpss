@@ -37,7 +37,6 @@ namespace mpss
             if (!hProvider) {
                 return -1;
             }
-
             SCOPE_GUARD(::NCryptFreeObject(hProvider));
 
             NCRYPT_KEY_HANDLE hKey = 0;
@@ -58,6 +57,37 @@ namespace mpss
                 mpss::utils::set_error(ss.str());
                 return -1;
             }
+
+            return 0;
+        }
+
+        int delete_key(const std::string& name)
+        {
+            NCRYPT_PROV_HANDLE hProvider = GetProvider();
+            if (!hProvider) {
+                return -1;
+            }
+            SCOPE_GUARD(::NCryptFreeObject(hProvider));
+
+            NCRYPT_KEY_HANDLE hKey = 0;
+            std::wstring wname(name.begin(), name.end());
+
+            SECURITY_STATUS status = ::NCryptOpenKey(hProvider, &hKey, wname.c_str(), /* dwLegacyKeySpec */ 0, /* dwFlags */ 0);
+            if (ERROR_SUCCESS != status) {
+                std::stringstream ss;
+                ss << "NCryptOpenKey failed with error code " << mpss::utils::to_hex(status);
+                mpss::utils::set_error(ss.str());
+                return -1;
+            }
+
+            status = ::NCryptDeleteKey(hKey, /* dwFlags */ 0);
+            if (ERROR_SUCCESS != status) {
+                std::stringstream ss;
+                ss << "NCryptDeleteKey failed with error code " << mpss::utils::to_hex(status);
+                mpss::utils::set_error(ss.str());
+                return -1;
+            }
+            SCOPE_GUARD(::NCryptFreeObject(hKey));
 
             return 0;
         }
