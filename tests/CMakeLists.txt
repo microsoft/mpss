@@ -9,7 +9,7 @@ endif()
 # Add the source files from this directory.
 set(mpss_TESTS_FILES ${mpss_TESTS_FILES}
     ${CMAKE_CURRENT_LIST_DIR}/test_runner.cpp
-    ${CMAKE_CURRENT_LIST_DIR}/example.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/simple_scenario.cpp
 )
 
 # Update mpss_TESTS_FILES variable in the parent scope.
