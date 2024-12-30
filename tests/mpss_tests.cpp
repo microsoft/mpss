@@ -10,36 +10,42 @@
 namespace mpss {
     namespace tests {
         class MPSS : public ::testing::Test {
-        protected:
-            void SetUp() override {
+        public:
+            static void DeleteKey(const std::string& name) {
                 // Check if key exists, delete if it does
-                bool deleted = mpss::delete_key("test_key");
+                bool deleted = mpss::delete_key(name);
                 if (!deleted) {
                     std::cout << "Key does not exist or could not be deleted: " << mpss::get_error() << std::endl;
                 }
-                else {
-                    std::cout << "Key deleted" << std::endl;
-                }
+                ASSERT_TRUE(deleted);
+            }
 
+            static void CreateKey(const std::string& name) {
                 // Create a key pair
-                bool created = mpss::create_key("test_key");
+                bool created = mpss::create_key(name);
                 if (!created) {
                     std::cout << "Key could not be created: " << mpss::get_error() << std::endl;
                 }
                 ASSERT_TRUE(created);
             }
-            void TearDown() override {
-                // Delete the key pair
-                ASSERT_TRUE(mpss::delete_key("test_key"));
-            }
         };
 
         TEST_F(MPSS, SignAndVerify) {
+            // Delete key if it exists
+            MPSS::DeleteKey("test_key");
+
+            // Create a key pair for testing
+            MPSS::CreateKey("test_key");
+
             // Sign the data
             auto signature = mpss::sign("test_key", "test_data");
             ASSERT_TRUE(signature.has_value());
+
             // Verify the data
             ASSERT_TRUE(mpss::verify("test_key", "test_data", signature.value()));
+
+            // Delete the key pair
+            MPSS::DeleteKey("test_key");
         }
 
         TEST_F(MPSS, SetAndGetKey) {
