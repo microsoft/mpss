@@ -15,14 +15,14 @@ namespace mpss {
                 // Check if key exists, delete if it does
                 bool deleted = mpss::delete_key("test_key");
                 if (!deleted) {
-					std::cout << "Key does not exist or could not be deleted: " << mpss::get_error() << std::endl;
+                    std::cout << "Key does not exist or could not be deleted: " << mpss::get_error() << std::endl;
                 }
                 else {
-					std::cout << "Key deleted" << std::endl;
+                    std::cout << "Key deleted" << std::endl;
                 }
 
                 // Create a key pair
-				bool created = mpss::create_key("test_key");
+                bool created = mpss::create_key("test_key");
                 if (!created) {
                     std::cout << "Key could not be created: " << mpss::get_error() << std::endl;
                 }

@@ -11,13 +11,13 @@
 #include <ncrypt.h>
 
 namespace {
-	// Error code of the last error that occurred
-	thread_local SECURITY_STATUS _last_error = ERROR_SUCCESS;
+    // Error code of the last error that occurred
+    thread_local SECURITY_STATUS _last_error = ERROR_SUCCESS;
 
     void set_error(SECURITY_STATUS status, const std::string& error)
     {
-		_last_error = status;
-		mpss::utils::set_error(error);
+        _last_error = status;
+        mpss::utils::set_error(error);
     }
 
     NCRYPT_PROV_HANDLE GetProvider()
@@ -35,26 +35,26 @@ namespace {
         return hProvider;
     }
 
-	NCRYPT_KEY_HANDLE GetKey(const std::string& name)
-	{
-		NCRYPT_PROV_HANDLE hProvider = GetProvider();
-		if (!hProvider) {
-			return 0;
-		}
+    NCRYPT_KEY_HANDLE GetKey(const std::string& name)
+    {
+        NCRYPT_PROV_HANDLE hProvider = GetProvider();
+        if (!hProvider) {
+            return 0;
+        }
 
-		SCOPE_GUARD(::NCryptFreeObject(hProvider));
+        SCOPE_GUARD(::NCryptFreeObject(hProvider));
 
-		NCRYPT_KEY_HANDLE hKey = 0;
-		std::wstring wname(name.begin(), name.end());
-		SECURITY_STATUS status = ::NCryptOpenKey(hProvider, &hKey, wname.c_str(), /* dwLegacyKeySpec */ 0, /* dwFlags */ NCRYPT_MACHINE_KEY_FLAG);
-		if (ERROR_SUCCESS != status) {
-			std::stringstream ss;
-			ss << "NCryptOpenKey failed with error code " << mpss::utils::to_hex(status);
+        NCRYPT_KEY_HANDLE hKey = 0;
+        std::wstring wname(name.begin(), name.end());
+        SECURITY_STATUS status = ::NCryptOpenKey(hProvider, &hKey, wname.c_str(), /* dwLegacyKeySpec */ 0, /* dwFlags */ NCRYPT_MACHINE_KEY_FLAG);
+        if (ERROR_SUCCESS != status) {
+            std::stringstream ss;
+            ss << "NCryptOpenKey failed with error code " << mpss::utils::to_hex(status);
             set_error(status, ss.str());
             return 0;
-		}
-		return hKey;
-	}
+        }
+        return hKey;
+    }
 }
 
 namespace mpss
@@ -100,13 +100,13 @@ namespace mpss
         int delete_key(const std::string& name)
         {
             NCRYPT_KEY_HANDLE hKey = GetKey(name);
-			if (!hKey) {
-				// If the key does not exist, consider it deleted
-				if (NTE_BAD_KEYSET == _last_error) {
-					return 0;
-				}
-				return -1;
-			}
+            if (!hKey) {
+                // If the key does not exist, consider it deleted
+                if (NTE_BAD_KEYSET == _last_error) {
+                    return 0;
+                }
+                return -1;
+            }
             SCOPE_GUARD(::NCryptFreeObject(hKey));
 
             SECURITY_STATUS status = ::NCryptDeleteKey(hKey, /* dwFlags */ 0);
@@ -120,20 +120,20 @@ namespace mpss
             return 0;
         }
 
-		std::string sign(const std::string& name, const std::string& data)
-		{
-			std::string signature;
-			NCRYPT_KEY_HANDLE hKey = GetKey(name);
-			if (!hKey) {
-				return signature;
-			}
+        std::string sign(const std::string& name, const std::string& data)
+        {
+            std::string signature;
+            NCRYPT_KEY_HANDLE hKey = GetKey(name);
+            if (!hKey) {
+                return signature;
+            }
 
-			SCOPE_GUARD(::NCryptFreeObject(hKey));
+            SCOPE_GUARD(::NCryptFreeObject(hKey));
 
-			DWORD dwSignatureSize = 0;
+            DWORD dwSignatureSize = 0;
 
             // Get signature size
-			SECURITY_STATUS status = ::NCryptSignHash(
+            SECURITY_STATUS status = ::NCryptSignHash(
                 hKey,
                 /* pPaddingInfo */ nullptr,
                 reinterpret_cast<BYTE*>(const_cast<char*>(data.data())),
@@ -142,16 +142,16 @@ namespace mpss
                 0,
                 &dwSignatureSize,
                 /* dwFlags */ 0);
-			if (ERROR_SUCCESS != status) {
-				std::stringstream ss;
-				ss << "NCryptSignHash failed with error code " << mpss::utils::to_hex(status);
-				set_error(status, ss.str());
-				return signature;
-			}
+            if (ERROR_SUCCESS != status) {
+                std::stringstream ss;
+                ss << "NCryptSignHash failed with error code " << mpss::utils::to_hex(status);
+                set_error(status, ss.str());
+                return signature;
+            }
 
             // Get actual signature
-			signature.resize(dwSignatureSize);
-			status = ::NCryptSignHash(
+            signature.resize(dwSignatureSize);
+            status = ::NCryptSignHash(
                 hKey,
                 /* pPaddingInfo */ nullptr,
                 reinterpret_cast<BYTE*>(const_cast<char*>(data.data())),
@@ -160,33 +160,33 @@ namespace mpss
                 static_cast<DWORD>(signature.size()),
                 &dwSignatureSize,
                 /* dwFlags */ 0);
-			if (ERROR_SUCCESS != status) {
-				std::stringstream ss;
-				ss << "NCryptSignHash failed with error code " << mpss::utils::to_hex(status);
-				set_error(status, ss.str());
-				return std::string();
-			}
+            if (ERROR_SUCCESS != status) {
+                std::stringstream ss;
+                ss << "NCryptSignHash failed with error code " << mpss::utils::to_hex(status);
+                set_error(status, ss.str());
+                return std::string();
+            }
 
-			return signature;
-		}
+            return signature;
+        }
 
-		int verify(const std::string& name, const std::string& data, const std::string& signature)
-		{
-			NCRYPT_KEY_HANDLE hKey = GetKey(name);
+        int verify(const std::string& name, const std::string& data, const std::string& signature)
+        {
+            NCRYPT_KEY_HANDLE hKey = GetKey(name);
             if (!hKey) {
                 return -1;
             }
-			SCOPE_GUARD(::NCryptFreeObject(hKey));
+            SCOPE_GUARD(::NCryptFreeObject(hKey));
 
-			std::string data_copy = data;
-			SECURITY_STATUS status = ::NCryptVerifySignature(
-				hKey,
-				/* pPaddingInfo */ nullptr,
-				reinterpret_cast<BYTE*>(data_copy.data()),
-				static_cast<DWORD>(data_copy.size()),
-				reinterpret_cast<BYTE*>(const_cast<char*>(signature.data())),
-				static_cast<DWORD>(signature.size()),
-				/* dwFlags */ 0);
+            std::string data_copy = data;
+            SECURITY_STATUS status = ::NCryptVerifySignature(
+                hKey,
+                /* pPaddingInfo */ nullptr,
+                reinterpret_cast<BYTE*>(data_copy.data()),
+                static_cast<DWORD>(data_copy.size()),
+                reinterpret_cast<BYTE*>(const_cast<char*>(signature.data())),
+                static_cast<DWORD>(signature.size()),
+                /* dwFlags */ 0);
             if (ERROR_SUCCESS != status) {
                 std::stringstream ss;
                 ss << "NCryptVerifySignature failed with error code " << mpss::utils::to_hex(status);
@@ -195,11 +195,11 @@ namespace mpss
             }
 
             return 0;
-		}
+        }
 
         const std::string& get_error()
         {
-			return mpss::utils::get_error();
+            return mpss::utils::get_error();
         }
     }
 }

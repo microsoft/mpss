@@ -37,20 +37,20 @@ namespace mpss {
     }
 
     std::optional<std::string> sign(const std::string& name, const std::string& data) {
-		std::string signature = mpss::implementation::sign(name, data);
+        std::string signature = mpss::implementation::sign(name, data);
         if (signature.size() == 0) {
-			return std::nullopt;
+            return std::nullopt;
         }
 
-		return signature;
+        return signature;
     }
 
     bool verify(const std::string& name, const std::string& data, const std::string& signature) {
-		int result = mpss::implementation::verify(name, data, signature);
-		if (result != 0) {
-			return false;
-		}
-		return true;
+        int result = mpss::implementation::verify(name, data, signature);
+        if (result != 0) {
+            return false;
+        }
+        return true;
     }
 
     bool set_key(const std::string& name, const std::string& vk, const std::string& sk) {
@@ -61,7 +61,7 @@ namespace mpss {
         throw std::runtime_error("Not implemented");
     }
 
-	const std::string& get_error() {
+    const std::string& get_error() {
         return mpss::implementation::get_error();
-	}
+    }
 } // namespace mpss
