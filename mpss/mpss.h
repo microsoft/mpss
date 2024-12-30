@@ -35,9 +35,10 @@ namespace mpss {
     * @brief Verifies the given data with the key pair with the given name.
     * @param name The name of the key pair.
     * @param data The data to verify.
+	* @param signature The signature to verify.
     * @return True if the data was verified successfully, false otherwise.
     */
-    bool verify(const std::string& name, const std::string& data);
+    bool verify(const std::string& name, const std::string& data, const std::string& signature);
 
     /**
     * @brief Stores a verification-signing (public-private) key pair with the given name.
@@ -60,4 +61,6 @@ namespace mpss {
     * Instead, the sign function should be used to sign data and the verify function should be used to verify signatures.
     */
     bool get_key(const std::string& name, std::string& vk_out, std::string& sk_out);
+
+    const std::string& get_error();
 }

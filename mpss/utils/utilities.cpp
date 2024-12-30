@@ -19,7 +19,7 @@ namespace mpss {
             return ss.str();
         }
 
-        std::string get_error()
+        const std::string& get_error()
         {
             return _last_error;
         }

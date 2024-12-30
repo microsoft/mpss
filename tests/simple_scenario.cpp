@@ -12,8 +12,21 @@ namespace mpss {
         class MPSS : public ::testing::Test {
         protected:
             void SetUp() override {
+                // Check if key exists, delete if it does
+                bool deleted = mpss::delete_key("test_key");
+                if (!deleted) {
+					std::cout << "Key does not exist or could not be deleted: " << mpss::get_error() << std::endl;
+                }
+                else {
+					std::cout << "Key deleted" << std::endl;
+                }
+
                 // Create a key pair
-                ASSERT_TRUE(mpss::create_key("test_key"));
+				bool created = mpss::create_key("test_key");
+                if (!created) {
+                    std::cout << "Key could not be created: " << mpss::get_error() << std::endl;
+                }
+                ASSERT_TRUE(created);
             }
             void TearDown() override {
                 // Delete the key pair
@@ -26,7 +39,7 @@ namespace mpss {
             auto signature = mpss::sign("test_key", "test_data");
             ASSERT_TRUE(signature.has_value());
             // Verify the data
-            ASSERT_TRUE(mpss::verify("test_key", "test_data"));
+            ASSERT_TRUE(mpss::verify("test_key", "test_data", signature.value()));
         }
 
         TEST_F(MPSS, SetAndGetKey) {
