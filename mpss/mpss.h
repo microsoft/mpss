@@ -62,5 +62,9 @@ namespace mpss {
     */
     bool get_key(const std::string& name, std::string& vk_out, std::string& sk_out);
 
+    /**
+    * @brief Retrieves the last error that occurred.
+    * @return The last error that occurred.
+    */
     const std::string& get_error();
 }
