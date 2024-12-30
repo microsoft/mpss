@@ -11,6 +11,7 @@
 #include <ncrypt.h>
 
 namespace {
+	// Error code of the last error that occurred
 	thread_local SECURITY_STATUS _last_error = ERROR_SUCCESS;
 
     void set_error(SECURITY_STATUS status, const std::string& error)
@@ -71,7 +72,13 @@ namespace mpss
             NCRYPT_KEY_HANDLE hKey = 0;
             std::wstring wname(name.begin(), name.end());
 
-            SECURITY_STATUS status = ::NCryptCreatePersistedKey(hProvider, &hKey, BCRYPT_ECDSA_P256_ALGORITHM, wname.c_str(), 0, NCRYPT_MACHINE_KEY_FLAG | NCRYPT_PREFER_VIRTUAL_ISOLATION_FLAG);
+            SECURITY_STATUS status = ::NCryptCreatePersistedKey(
+                hProvider,
+                &hKey,
+                BCRYPT_ECDSA_P256_ALGORITHM,
+                wname.c_str(),
+                /* dwLegacyKeySpec */ 0,
+                NCRYPT_MACHINE_KEY_FLAG | NCRYPT_PREFER_VIRTUAL_ISOLATION_FLAG);
             if (ERROR_SUCCESS != status) {
                 std::stringstream ss;
                 ss << "NCryptCreatePersistedKey failed with error code " << mpss::utils::to_hex(status);
