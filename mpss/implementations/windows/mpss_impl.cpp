@@ -53,6 +53,7 @@ namespace {
             set_error(status, ss.str());
             return 0;
         }
+
         return hKey;
     }
 }
@@ -193,6 +194,111 @@ namespace mpss
                 set_error(status, ss.str());
                 return -1;
             }
+
+            return 0;
+        }
+
+        int get_key(const std::string& name, std::string& vk_out, std::string& sk_out)
+        {
+            NCRYPT_KEY_HANDLE hKey = GetKey(name);
+            if (!hKey) {
+                return -1;
+            }
+            SCOPE_GUARD(::NCryptFreeObject(hKey));
+
+            // Get the public key size
+            DWORD dwPublicKeySize = 0;
+            SECURITY_STATUS status = ::NCryptExportKey(
+                hKey,
+                /* hExportKey */ 0,
+                BCRYPT_ECCPUBLIC_BLOB,
+                /* pParameterList */ nullptr,
+                /* pbOutput */ nullptr,
+                /* cbOutput */ 0,
+                &dwPublicKeySize,
+                /* dwFlags */ 0);
+            if (ERROR_SUCCESS != status) {
+                std::stringstream ss;
+                ss << "NCryptExportKey failed with error code " << mpss::utils::to_hex(status);
+                set_error(status, ss.str());
+                return -1;
+            }
+
+            // Actually get the public key
+            BYTE* pbPublicKey = new BYTE[dwPublicKeySize];
+            SCOPE_GUARD(delete[] pbPublicKey);
+
+            status = ::NCryptExportKey(
+                hKey,
+                /* hExportKey */ 0,
+                BCRYPT_ECCPUBLIC_BLOB,
+                /* pParameterList */ nullptr,
+                pbPublicKey,
+                dwPublicKeySize,
+                &dwPublicKeySize,
+                /* dwFlags */ 0);
+            if (ERROR_SUCCESS != status) {
+                std::stringstream ss;
+                ss << "NCryptExportKey failed with error code " << mpss::utils::to_hex(status);
+                set_error(status, ss.str());
+                return -1;
+            }
+
+            BCRYPT_ECCKEY_BLOB* pEccKeyBlob = reinterpret_cast<BCRYPT_ECCKEY_BLOB*>(pbPublicKey);
+            if (pEccKeyBlob->dwMagic != BCRYPT_ECDSA_PUBLIC_P256_MAGIC) {
+                set_error(status, "Invalid public key magic, should be BCRYPT_ECDSA_PUBLIC_P256_MAGIC");
+                return -1;
+            }
+
+            BYTE* pDataStart = reinterpret_cast<BYTE*>(pEccKeyBlob) + sizeof(BCRYPT_ECCKEY_BLOB);
+            vk_out.assign(reinterpret_cast<char*>(pDataStart), dwPublicKeySize - sizeof(BCRYPT_ECCKEY_BLOB));
+
+            // Get the private key size
+            DWORD dwPrivateKeySize = 0;
+            status = ::NCryptExportKey(
+                hKey,
+                /* hExportKey */ 0,
+                BCRYPT_PRIVATE_KEY_BLOB,
+                /* pParameterList */ nullptr,
+                /* pbOutput */ nullptr,
+                /* cbOutput */ 0,
+                &dwPrivateKeySize,
+                /* dwFlags */ 0);
+            if (ERROR_SUCCESS != status) {
+                std::stringstream ss;
+                ss << "NCryptExportKey failed with error code " << mpss::utils::to_hex(status);
+                set_error(status, ss.str());
+                return -1;
+            }
+
+            // Actually get the private key
+            BYTE* pbPrivateKey = new BYTE[dwPrivateKeySize];
+            SCOPE_GUARD(delete[] pbPrivateKey);
+
+            status = ::NCryptExportKey(
+                hKey,
+                /* hExportKey */ 0,
+                BCRYPT_PRIVATE_KEY_BLOB,
+                /* pParameterList */ nullptr,
+                pbPrivateKey,
+                dwPrivateKeySize,
+                &dwPrivateKeySize,
+                /* dwFlags */ 0);
+            if (ERROR_SUCCESS != status) {
+                std::stringstream ss;
+                ss << "NCryptExportKey failed with error code " << mpss::utils::to_hex(status);
+                set_error(status, ss.str());
+                return -1;
+            }
+
+            BCRYPT_KEY_BLOB* pPrivateKeyBlob = reinterpret_cast<BCRYPT_KEY_BLOB*>(pbPrivateKey);
+            if (pPrivateKeyBlob->Magic != BCRYPT_ECDSA_PRIVATE_P256_MAGIC) {
+                set_error(status, "Invalid private key magic, should be BCRYPT_ECDSA_PRIVATE_P256_MAGIC");
+                return -1;
+            }
+
+            pDataStart = reinterpret_cast<BYTE*>(pPrivateKeyBlob) + sizeof(BCRYPT_KEY_BLOB);
+            sk_out.assign(reinterpret_cast<char*>(pDataStart), dwPrivateKeySize - sizeof(BCRYPT_KEY_BLOB));
 
             return 0;
         }

@@ -23,7 +23,6 @@ namespace mpss {
         if (result != 0) {
             return false;
         }
-
         return true;
     }
 
@@ -32,7 +31,6 @@ namespace mpss {
         if (result != 0) {
             return false;
         }
-
         return true;
     }
 
@@ -41,7 +39,6 @@ namespace mpss {
         if (signature.size() == 0) {
             return std::nullopt;
         }
-
         return signature;
     }
 
@@ -58,7 +55,11 @@ namespace mpss {
     }
 
     bool get_key(const std::string& name, std::string& vk_out, std::string& sk_out) {
-        throw std::runtime_error("Not implemented");
+        int result = mpss::implementation::get_key(name, vk_out, sk_out);
+        if (result != 0) {
+            return false;
+        }
+        return true;
     }
 
     const std::string& get_error() {

@@ -49,13 +49,26 @@ namespace mpss {
         }
 
         TEST_F(MPSS, SetAndGetKey) {
-            // Set the key pair
-            ASSERT_TRUE(mpss::set_key("test_key", "test_vk", "test_sk"));
+            // Delete key if it exists
+            DeleteKey("test_key_2");
+
+            // Create a key pair for testing
+            CreateKey("test_key_2");
+
             // Get the key pair
             std::string vk, sk;
-            ASSERT_TRUE(mpss::get_key("test_key", vk, sk));
-            ASSERT_EQ(vk, "test_vk");
-            ASSERT_EQ(sk, "test_sk");
+            bool got_key = mpss::get_key("test_key_2", vk, sk);
+            if (!got_key) {
+                std::cout << "Key could not be retrieved: " << mpss::get_error() << std::endl;
+            }
+            ASSERT_TRUE(got_key);
+            std::cout << "VK size: " << vk.size() << std::endl;
+            std::cout << "SK size: " << sk.size() << std::endl;
+            ASSERT_TRUE(vk.size() > 0);
+            ASSERT_TRUE(sk.size() > 0);
+
+            // Delete the key pair
+            DeleteKey("test_key_2");
         }
     }
 }

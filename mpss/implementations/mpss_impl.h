@@ -17,6 +17,8 @@ namespace mpss
 
 		int verify(const std::string& name, const std::string& data, const std::string& signature);
 
+        int get_key(const std::string& name, std::string& vk_out, std::string& sk_out);
+
 		const std::string& get_error();
     }
 }
