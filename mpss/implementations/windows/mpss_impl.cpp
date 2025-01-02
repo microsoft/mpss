@@ -79,10 +79,24 @@ namespace mpss
                 BCRYPT_ECDSA_P256_ALGORITHM,
                 wname.c_str(),
                 /* dwLegacyKeySpec */ 0,
-                NCRYPT_MACHINE_KEY_FLAG | NCRYPT_PREFER_VIRTUAL_ISOLATION_FLAG);
+                NCRYPT_MACHINE_KEY_FLAG);
             if (ERROR_SUCCESS != status) {
                 std::stringstream ss;
                 ss << "NCryptCreatePersistedKey failed with error code " << mpss::utils::to_hex(status);
+                set_error(status, ss.str());
+                return -1;
+            }
+
+            DWORD dwExportPolicy = NCRYPT_ALLOW_EXPORT_FLAG | NCRYPT_ALLOW_PLAINTEXT_EXPORT_FLAG;
+            status = ::NCryptSetProperty(
+                hKey,
+                NCRYPT_EXPORT_POLICY_PROPERTY,
+                reinterpret_cast<PBYTE>(&dwExportPolicy),
+                sizeof(dwExportPolicy),
+                NCRYPT_PERSIST_FLAG);
+            if (ERROR_SUCCESS != status) {
+                std::stringstream ss;
+                ss << "NCryptSetProperty failed with error code " << mpss::utils::to_hex(status);
                 set_error(status, ss.str());
                 return -1;
             }
@@ -258,7 +272,7 @@ namespace mpss
             status = ::NCryptExportKey(
                 hKey,
                 /* hExportKey */ 0,
-                BCRYPT_PRIVATE_KEY_BLOB,
+                BCRYPT_ECCPRIVATE_BLOB,
                 /* pParameterList */ nullptr,
                 /* pbOutput */ nullptr,
                 /* cbOutput */ 0,
@@ -278,7 +292,7 @@ namespace mpss
             status = ::NCryptExportKey(
                 hKey,
                 /* hExportKey */ 0,
-                BCRYPT_PRIVATE_KEY_BLOB,
+                BCRYPT_ECCPRIVATE_BLOB,
                 /* pParameterList */ nullptr,
                 pbPrivateKey,
                 dwPrivateKeySize,
@@ -291,14 +305,14 @@ namespace mpss
                 return -1;
             }
 
-            BCRYPT_KEY_BLOB* pPrivateKeyBlob = reinterpret_cast<BCRYPT_KEY_BLOB*>(pbPrivateKey);
-            if (pPrivateKeyBlob->Magic != BCRYPT_ECDSA_PRIVATE_P256_MAGIC) {
+            BCRYPT_ECCKEY_BLOB* pPrivateKeyBlob = reinterpret_cast<BCRYPT_ECCKEY_BLOB*>(pbPrivateKey);
+            if (pPrivateKeyBlob->dwMagic != BCRYPT_ECDSA_PRIVATE_P256_MAGIC) {
                 set_error(status, "Invalid private key magic, should be BCRYPT_ECDSA_PRIVATE_P256_MAGIC");
                 return -1;
             }
 
-            pDataStart = reinterpret_cast<BYTE*>(pPrivateKeyBlob) + sizeof(BCRYPT_KEY_BLOB);
-            sk_out.assign(reinterpret_cast<char*>(pDataStart), dwPrivateKeySize - sizeof(BCRYPT_KEY_BLOB));
+            pDataStart = reinterpret_cast<BYTE*>(pPrivateKeyBlob) + sizeof(BCRYPT_ECCKEY_BLOB);
+            sk_out.assign(reinterpret_cast<char*>(pDataStart), dwPrivateKeySize - sizeof(BCRYPT_ECCKEY_BLOB));
 
             return 0;
         }

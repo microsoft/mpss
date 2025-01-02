@@ -38,7 +38,10 @@ namespace mpss {
             MPSS::CreateKey("test_key");
 
             // Sign the data
-            auto signature = mpss::sign("test_key", "test_data");
+            std::optional<std::string> signature = mpss::sign("test_key", "test_data");
+            if (!signature.has_value()) {
+                std::cout << "Data could not be signed: " << mpss::get_error() << std::endl;
+            }
             ASSERT_TRUE(signature.has_value());
 
             // Verify the data
@@ -48,7 +51,7 @@ namespace mpss {
             MPSS::DeleteKey("test_key");
         }
 
-        TEST_F(MPSS, SetAndGetKey) {
+        TEST_F(MPSS, GetKey) {
             // Delete key if it exists
             DeleteKey("test_key_2");
 
