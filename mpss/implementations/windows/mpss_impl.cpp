@@ -32,7 +32,15 @@ namespace {
     constexpr DWORD key_open_mode = 0;
 
     // Namespace alias to choose the crypto parameters.
+#if   MPSS_CRYPTO_PARAMS == P256
+    namespace crypto = p256;
+#elif MPSS_CRYPTO_PARAMS == P384
     namespace crypto = p384;
+#elif MPSS_CRYPTO_PARAMS == P521
+    namespace crypto = p521;
+#else
+#error "Unsupported MPSS_CRYPTO_PARAMS value"
+#endif
 
     void set_error(SECURITY_STATUS status, std::string error)
     {

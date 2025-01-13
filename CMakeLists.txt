@@ -13,6 +13,16 @@ endif()
 # Setting up our options.
 option(MPSS_BUILD_SHARED "Build a shared library." NO)
 option(MPSS_BUILD_TESTS "Build the test suite." NO)
+set(MPSS_CRYPTO_PARAMS "P256" CACHE STRING "Define cryptographic parameters to use")
+
+# Validate MPSS_CRYPTO_PARAMS
+set(ALLOWED_CRYPTO_PARAMS "P256;P384;P521")
+list(FIND ALLOWED_CRYPTO_PARAMS ${MPSS_CRYPTO_PARAMS} _index)
+if (_index EQUAL -1)
+    message(FATAL_ERROR "Invalid value for MPSS_CRYPTO_PARAMS: ${MPSS_CRYPTO_PARAMS}. Allowed values are: ${ALLOWED_CRYPTO_PARAMS}")
+else()
+    message(STATUS "Using cryptographic parameters: ${MPSS_CRYPTO_PARAMS}")
+endif()
 
 # Enable tests feature in vcpkg if MPSS_BUILD_TESTS is YES.
 if (MPSS_BUILD_TESTS)

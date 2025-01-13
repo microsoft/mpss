@@ -2,3 +2,6 @@
 // Licensed under the MIT license.
 
 #pragma once
+
+/* Define cryptographic parameters to use. */
+#define MPSS_CRYPTO_PARAMS @MPSS_CRYPTO_PARAMS@
