@@ -2,67 +2,54 @@
 // Licensed under the MIT license.
 
 #include "mpss/mpss.h"
+#include "mpss/implementations/mpss_impl.h"
+
 #include <iostream>
-
-// Implementation of the MPSS API.
-#include "implementations/mpss_impl.h"
-
-// Verify that we are compiling for a supported platform.
-#if defined(MPSS_PLATFORM_WINDOWS)
-#elif defined(MPSS_PLATFORM_LINUX)
-#elif defined(MPSS_PLATFORM_MACOS)
-#elif defined(MPSS_PLATFORM_IOS)
-#elif defined(MPSS_PLATFORM_ANDROID)
-#else
-#error "Unsupported platform"
-#endif
+#include <stdexcept>
+#include <utility>
 
 namespace mpss {
-    bool create_key(const std::string& name) {
-        int result = mpss::implementation::create_key(name);
+    bool create_key(std::string_view name) {
+        int result = impl::create_key(name);
         if (result != 0) {
             return false;
         }
         return true;
     }
 
-    bool delete_key(const std::string& name) {
-        int result = mpss::implementation::delete_key(name);
+    bool delete_key(std::string_view name) {
+        int result = impl::delete_key(name);
         if (result != 0) {
             return false;
         }
         return true;
     }
 
-    std::optional<std::string> sign(const std::string& name, const std::string& data) {
-        std::string signature = mpss::implementation::sign(name, data);
+    std::optional<std::string> sign(std::string_view name, std::string data) {
+        std::string signature = impl::sign(name, std::move(data));
         if (signature.size() == 0) {
             return std::nullopt;
         }
         return signature;
     }
 
-    bool verify(const std::string& name, const std::string& data, const std::string& signature) {
-        int result = mpss::implementation::verify(name, data, signature);
+    bool verify(std::string_view name, std::string data, std::string signature) {
+        int result = impl::verify(name, std::move(data), std::move(signature));
         if (result != 0) {
             return false;
         }
         return true;
     }
 
-    bool set_key(const std::string& name, const std::string& vk, const std::string& sk) {
-        throw std::runtime_error("Not implemented");
-    }
-
-    bool get_key(const std::string& name, std::string& vk_out, std::string& sk_out) {
-        int result = mpss::implementation::get_key(name, vk_out, sk_out);
+    bool get_key(std::string_view name, std::string& vk_out, std::string& sk_out) {
+        int result = impl::get_key(name, vk_out, sk_out);
         if (result != 0) {
             return false;
         }
         return true;
     }
 
-    const std::string& get_error() {
-        return mpss::implementation::get_error();
+    std::string get_error() {
+        return impl::get_error();
     }
 } // namespace mpss

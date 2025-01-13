@@ -1,30 +1,53 @@
 // Copyright(c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#include "../mpss_impl.h"
-#include "../../utils/scope_guard.h"
-#include "../../utils/utilities.h"
+#include "mpss/implementations/mpss_impl.h"
+#include "mpss/implementations/windows/p256.h"
+#include "mpss/implementations/windows/p384.h"
+#include "mpss/implementations/windows/p521.h"
+#include "mpss/utils/scope_guard.h"
+#include "mpss/utils/utilities.h"
 
 #include <sstream>
+#include <utility>
 
 #include <windows.h>
 #include <ncrypt.h>
 
 namespace {
-    // Error code of the last error that occurred
-    thread_local SECURITY_STATUS _last_error = ERROR_SUCCESS;
+    using namespace mpss::impl;
 
-    void set_error(SECURITY_STATUS status, const std::string& error)
+    // Error code of the last error that occurred.
+    thread_local SECURITY_STATUS last_error = ERROR_SUCCESS;
+
+    // Legacy key spec. We only store signing keys.
+    constexpr DWORD key_spec = AT_SIGNATURE;
+
+    // Choose the provider name. To use TPM, use MS_PLATFORM_KEY_STORAGE_PROVIDER.
+    // To use software provider, use MS_KEY_STORAGE_PROVIDER instead.
+    constexpr LPCWSTR provider_name = MS_KEY_STORAGE_PROVIDER;
+
+    // To open the key for the local machine, set this to NCRYPT_MACHINE_KEY_FLAG.
+    // Setting this to 0 opens the key for the current user.
+    constexpr DWORD key_open_mode = 0;
+
+    // Namespace alias to choose the crypto parameters.
+    namespace crypto = p384;
+
+    void set_error(SECURITY_STATUS status, std::string error)
     {
-        _last_error = status;
-        mpss::utils::set_error(error);
+        last_error = status;
+        mpss::utils::set_error(std::move(error));
     }
 
     NCRYPT_PROV_HANDLE GetProvider()
     {
-        NCRYPT_PROV_HANDLE hProvider = 0;
+        NCRYPT_PROV_HANDLE provider_handle = 0;
 
-        SECURITY_STATUS status = ::NCryptOpenStorageProvider(&hProvider, MS_KEY_STORAGE_PROVIDER, /* dwFlags */ 0);
+        // This function uses no extra flags.
+        DWORD flags = 0;
+
+        SECURITY_STATUS status = ::NCryptOpenStorageProvider(&provider_handle, provider_name, flags);
         if (ERROR_SUCCESS != status) {
             std::stringstream ss;
             ss << "NCryptOpenStorageProvider failed with error code " << mpss::utils::to_hex(status);
@@ -32,21 +55,22 @@ namespace {
             return 0;
         }
 
-        return hProvider;
+        return provider_handle;
     }
 
-    NCRYPT_KEY_HANDLE GetKey(const std::string& name)
+    NCRYPT_KEY_HANDLE GetKey(std::string_view name)
     {
-        NCRYPT_PROV_HANDLE hProvider = GetProvider();
-        if (!hProvider) {
+        NCRYPT_PROV_HANDLE provider_handle = GetProvider();
+        if (!provider_handle) {
             return 0;
         }
 
-        SCOPE_GUARD(::NCryptFreeObject(hProvider));
+        SCOPE_GUARD(::NCryptFreeObject(provider_handle));
 
-        NCRYPT_KEY_HANDLE hKey = 0;
+        NCRYPT_KEY_HANDLE key_handle = 0;
         std::wstring wname(name.begin(), name.end());
-        SECURITY_STATUS status = ::NCryptOpenKey(hProvider, &hKey, wname.c_str(), /* dwLegacyKeySpec */ 0, /* dwFlags */ NCRYPT_MACHINE_KEY_FLAG);
+
+        SECURITY_STATUS status = ::NCryptOpenKey(provider_handle, &key_handle, wname.c_str(), key_spec, key_open_mode);
         if (ERROR_SUCCESS != status) {
             std::stringstream ss;
             ss << "NCryptOpenKey failed with error code " << mpss::utils::to_hex(status);
@@ -54,32 +78,32 @@ namespace {
             return 0;
         }
 
-        return hKey;
+        return key_handle;
     }
 }
 
 namespace mpss
 {
-    namespace implementation
+    namespace impl
     {
-        int create_key(const std::string& name)
+        int create_key(std::string_view name)
         {
-            NCRYPT_PROV_HANDLE hProvider = GetProvider();
-            if (!hProvider) {
+            NCRYPT_PROV_HANDLE provider_handle = GetProvider();
+            if (!provider_handle) {
                 return -1;
             }
-            SCOPE_GUARD(::NCryptFreeObject(hProvider));
+            SCOPE_GUARD(::NCryptFreeObject(provider_handle));
 
-            NCRYPT_KEY_HANDLE hKey = 0;
+            NCRYPT_KEY_HANDLE key_handle = 0;
             std::wstring wname(name.begin(), name.end());
 
             SECURITY_STATUS status = ::NCryptCreatePersistedKey(
-                hProvider,
-                &hKey,
-                BCRYPT_ECDSA_P256_ALGORITHM,
+                provider_handle,
+                &key_handle,
+                crypto::key_type_name,
                 wname.c_str(),
-                /* dwLegacyKeySpec */ 0,
-                NCRYPT_MACHINE_KEY_FLAG);
+                key_spec,
+                key_open_mode);
             if (ERROR_SUCCESS != status) {
                 std::stringstream ss;
                 ss << "NCryptCreatePersistedKey failed with error code " << mpss::utils::to_hex(status);
@@ -87,12 +111,13 @@ namespace mpss
                 return -1;
             }
 
-            DWORD dwExportPolicy = NCRYPT_ALLOW_EXPORT_FLAG | NCRYPT_ALLOW_PLAINTEXT_EXPORT_FLAG;
+            // Set the export policy to allow exporting the key.
+            DWORD export_policy = NCRYPT_ALLOW_EXPORT_FLAG | NCRYPT_ALLOW_PLAINTEXT_EXPORT_FLAG;
             status = ::NCryptSetProperty(
-                hKey,
+                key_handle,
                 NCRYPT_EXPORT_POLICY_PROPERTY,
-                reinterpret_cast<PBYTE>(&dwExportPolicy),
-                sizeof(dwExportPolicy),
+                reinterpret_cast<PBYTE>(&export_policy),
+                sizeof(export_policy),
                 NCRYPT_PERSIST_FLAG);
             if (ERROR_SUCCESS != status) {
                 std::stringstream ss;
@@ -101,7 +126,7 @@ namespace mpss
                 return -1;
             }
 
-            status = ::NCryptFinalizeKey(hKey, /* dwFlags */ 0);
+            status = ::NCryptFinalizeKey(key_handle, /* dwFlags */ 0);
             if (ERROR_SUCCESS != status) {
                 std::stringstream ss;
                 ss << "NCryptFinalizeKey failed with error code " << mpss::utils::to_hex(status);
@@ -112,19 +137,19 @@ namespace mpss
             return 0;
         }
 
-        int delete_key(const std::string& name)
+        int delete_key(std::string_view name)
         {
-            NCRYPT_KEY_HANDLE hKey = GetKey(name);
-            if (!hKey) {
-                // If the key does not exist, consider it deleted
-                if (NTE_BAD_KEYSET == _last_error) {
+            NCRYPT_KEY_HANDLE key_handle = GetKey(name);
+            if (!key_handle) {
+                // If the key does not exist, consider it deleted.
+                if (NTE_BAD_KEYSET == last_error) {
                     return 0;
                 }
                 return -1;
             }
-            SCOPE_GUARD(::NCryptFreeObject(hKey));
+            SCOPE_GUARD(::NCryptFreeObject(key_handle));
 
-            SECURITY_STATUS status = ::NCryptDeleteKey(hKey, /* dwFlags */ 0);
+            SECURITY_STATUS status = ::NCryptDeleteKey(key_handle, /* dwFlags */ 0);
             if (ERROR_SUCCESS != status) {
                 std::stringstream ss;
                 ss << "NCryptDeleteKey failed with error code " << mpss::utils::to_hex(status);
@@ -135,27 +160,27 @@ namespace mpss
             return 0;
         }
 
-        std::string sign(const std::string& name, const std::string& data)
+        std::string sign(std::string_view name, std::string data)
         {
             std::string signature;
-            NCRYPT_KEY_HANDLE hKey = GetKey(name);
-            if (!hKey) {
+            NCRYPT_KEY_HANDLE key_handle = GetKey(name);
+            if (!key_handle) {
                 return signature;
             }
 
-            SCOPE_GUARD(::NCryptFreeObject(hKey));
+            SCOPE_GUARD(::NCryptFreeObject(key_handle));
 
-            DWORD dwSignatureSize = 0;
+            DWORD signature_size = 0;
 
-            // Get signature size
+            // Get signature size.
             SECURITY_STATUS status = ::NCryptSignHash(
-                hKey,
+                key_handle,
                 /* pPaddingInfo */ nullptr,
-                reinterpret_cast<BYTE*>(const_cast<char*>(data.data())),
+                reinterpret_cast<BYTE*>(data.data()),
                 static_cast<DWORD>(data.size()),
                 nullptr,
                 0,
-                &dwSignatureSize,
+                &signature_size,
                 /* dwFlags */ 0);
             if (ERROR_SUCCESS != status) {
                 std::stringstream ss;
@@ -164,16 +189,16 @@ namespace mpss
                 return signature;
             }
 
-            // Get actual signature
-            signature.resize(dwSignatureSize);
+            // Get the actual signature.
+            signature.resize(signature_size);
             status = ::NCryptSignHash(
-                hKey,
+                key_handle,
                 /* pPaddingInfo */ nullptr,
                 reinterpret_cast<BYTE*>(const_cast<char*>(data.data())),
                 static_cast<DWORD>(data.size()),
                 reinterpret_cast<PBYTE>(&signature[0]),
                 static_cast<DWORD>(signature.size()),
-                &dwSignatureSize,
+                &signature_size,
                 /* dwFlags */ 0);
             if (ERROR_SUCCESS != status) {
                 std::stringstream ss;
@@ -185,21 +210,20 @@ namespace mpss
             return signature;
         }
 
-        int verify(const std::string& name, const std::string& data, const std::string& signature)
+        int verify(std::string_view name, std::string data, std::string signature)
         {
-            NCRYPT_KEY_HANDLE hKey = GetKey(name);
-            if (!hKey) {
+            NCRYPT_KEY_HANDLE key_handle = GetKey(name);
+            if (!key_handle) {
                 return -1;
             }
-            SCOPE_GUARD(::NCryptFreeObject(hKey));
+            SCOPE_GUARD(::NCryptFreeObject(key_handle));
 
-            std::string data_copy = data;
             SECURITY_STATUS status = ::NCryptVerifySignature(
-                hKey,
+                key_handle,
                 /* pPaddingInfo */ nullptr,
-                reinterpret_cast<BYTE*>(data_copy.data()),
-                static_cast<DWORD>(data_copy.size()),
-                reinterpret_cast<BYTE*>(const_cast<char*>(signature.data())),
+                reinterpret_cast<BYTE*>(data.data()),
+                static_cast<DWORD>(data.size()),
+                reinterpret_cast<BYTE*>(signature.data()),
                 static_cast<DWORD>(signature.size()),
                 /* dwFlags */ 0);
             if (ERROR_SUCCESS != status) {
@@ -212,24 +236,24 @@ namespace mpss
             return 0;
         }
 
-        int get_key(const std::string& name, std::string& vk_out, std::string& sk_out)
+        int get_key(std::string_view name, std::string& vk_out, std::string& sk_out)
         {
-            NCRYPT_KEY_HANDLE hKey = GetKey(name);
-            if (!hKey) {
+            NCRYPT_KEY_HANDLE key_handle = GetKey(name);
+            if (!key_handle) {
                 return -1;
             }
-            SCOPE_GUARD(::NCryptFreeObject(hKey));
+            SCOPE_GUARD(::NCryptFreeObject(key_handle));
 
-            // Get the public key size
-            DWORD dwPublicKeySize = 0;
+            // Get the public key size.
+            DWORD public_key_size = 0;
             SECURITY_STATUS status = ::NCryptExportKey(
-                hKey,
+                key_handle,
                 /* hExportKey */ 0,
-                BCRYPT_ECCPUBLIC_BLOB,
+                crypto::public_key_blob_name,
                 /* pParameterList */ nullptr,
                 /* pbOutput */ nullptr,
                 /* cbOutput */ 0,
-                &dwPublicKeySize,
+                &public_key_size,
                 /* dwFlags */ 0);
             if (ERROR_SUCCESS != status) {
                 std::stringstream ss;
@@ -239,17 +263,17 @@ namespace mpss
             }
 
             // Actually get the public key
-            BYTE* pbPublicKey = new BYTE[dwPublicKeySize];
-            SCOPE_GUARD(delete[] pbPublicKey);
+            BYTE* public_key_ptr = new BYTE[public_key_size];
+            SCOPE_GUARD(delete[] public_key_ptr);
 
             status = ::NCryptExportKey(
-                hKey,
+                key_handle,
                 /* hExportKey */ 0,
-                BCRYPT_ECCPUBLIC_BLOB,
+                crypto::public_key_blob_name,
                 /* pParameterList */ nullptr,
-                pbPublicKey,
-                dwPublicKeySize,
-                &dwPublicKeySize,
+                public_key_ptr,
+                public_key_size,
+                &public_key_size,
                 /* dwFlags */ 0);
             if (ERROR_SUCCESS != status) {
                 std::stringstream ss;
@@ -258,25 +282,25 @@ namespace mpss
                 return -1;
             }
 
-            BCRYPT_ECCKEY_BLOB* pEccKeyBlob = reinterpret_cast<BCRYPT_ECCKEY_BLOB*>(pbPublicKey);
-            if (pEccKeyBlob->dwMagic != BCRYPT_ECDSA_PUBLIC_P256_MAGIC) {
-                set_error(status, "Invalid public key magic, should be BCRYPT_ECDSA_PUBLIC_P256_MAGIC");
+            crypto::key_blob_t* public_key_blob_ptr = reinterpret_cast<crypto::key_blob_t*>(public_key_ptr);
+            if (public_key_blob_ptr->dwMagic != crypto::public_key_magic) {
+                set_error(status, "Invalid public key magic");
                 return -1;
             }
 
-            BYTE* pDataStart = reinterpret_cast<BYTE*>(pEccKeyBlob) + sizeof(BCRYPT_ECCKEY_BLOB);
-            vk_out.assign(reinterpret_cast<char*>(pDataStart), dwPublicKeySize - sizeof(BCRYPT_ECCKEY_BLOB));
+            BYTE* data_start_ptr = reinterpret_cast<BYTE*>(public_key_blob_ptr) + sizeof(crypto::key_blob_t);
+            vk_out.assign(reinterpret_cast<char*>(data_start_ptr), public_key_size - sizeof(crypto::key_blob_t));
 
-            // Get the private key size
-            DWORD dwPrivateKeySize = 0;
+            // Get the private key size.
+            DWORD private_key_size = 0;
             status = ::NCryptExportKey(
-                hKey,
+                key_handle,
                 /* hExportKey */ 0,
-                BCRYPT_ECCPRIVATE_BLOB,
+                crypto::private_key_blob_name,
                 /* pParameterList */ nullptr,
                 /* pbOutput */ nullptr,
                 /* cbOutput */ 0,
-                &dwPrivateKeySize,
+                &private_key_size,
                 /* dwFlags */ 0);
             if (ERROR_SUCCESS != status) {
                 std::stringstream ss;
@@ -286,17 +310,17 @@ namespace mpss
             }
 
             // Actually get the private key
-            BYTE* pbPrivateKey = new BYTE[dwPrivateKeySize];
-            SCOPE_GUARD(delete[] pbPrivateKey);
+            BYTE* private_key_ptr = new BYTE[private_key_size];
+            SCOPE_GUARD(delete[] private_key_ptr);
 
             status = ::NCryptExportKey(
-                hKey,
+                key_handle,
                 /* hExportKey */ 0,
-                BCRYPT_ECCPRIVATE_BLOB,
+                crypto::private_key_blob_name,
                 /* pParameterList */ nullptr,
-                pbPrivateKey,
-                dwPrivateKeySize,
-                &dwPrivateKeySize,
+                private_key_ptr,
+                private_key_size,
+                &private_key_size,
                 /* dwFlags */ 0);
             if (ERROR_SUCCESS != status) {
                 std::stringstream ss;
@@ -305,19 +329,19 @@ namespace mpss
                 return -1;
             }
 
-            BCRYPT_ECCKEY_BLOB* pPrivateKeyBlob = reinterpret_cast<BCRYPT_ECCKEY_BLOB*>(pbPrivateKey);
-            if (pPrivateKeyBlob->dwMagic != BCRYPT_ECDSA_PRIVATE_P256_MAGIC) {
-                set_error(status, "Invalid private key magic, should be BCRYPT_ECDSA_PRIVATE_P256_MAGIC");
+            crypto::key_blob_t* private_key_blob_ptr = reinterpret_cast<crypto::key_blob_t*>(private_key_ptr);
+            if (private_key_blob_ptr->dwMagic != crypto::private_key_magic) {
+                set_error(status, "Invalid private key magic");
                 return -1;
             }
 
-            pDataStart = reinterpret_cast<BYTE*>(pPrivateKeyBlob) + sizeof(BCRYPT_ECCKEY_BLOB);
-            sk_out.assign(reinterpret_cast<char*>(pDataStart), dwPrivateKeySize - sizeof(BCRYPT_ECCKEY_BLOB));
+            data_start_ptr = reinterpret_cast<BYTE*>(private_key_blob_ptr) + sizeof(crypto::key_blob_t);
+            sk_out.assign(reinterpret_cast<char*>(data_start_ptr), private_key_size - sizeof(crypto::key_blob_t));
 
             return 0;
         }
 
-        const std::string& get_error()
+        std::string get_error()
         {
             return mpss::utils::get_error();
         }

@@ -82,15 +82,6 @@ target_compile_definitions(mpss PRIVATE
     $<BUILD_INTERFACE:$<$<CONFIG:Debug>:MPSS_DEBUG_BUILD>>
 )
 
-# Set the platform macro based on the target platform.
-target_compile_definitions(mpss PRIVATE
-    $<BUILD_INTERFACE:$<$<PLATFORM_ID:Windows>:MPSS_PLATFORM_WINDOWS>>
-    $<BUILD_INTERFACE:$<$<PLATFORM_ID:Linux>:MPSS_PLATFORM_LINUX>>
-    $<BUILD_INTERFACE:$<$<PLATFORM_ID:Darwin>:MPSS_PLATFORM_MACOS>>
-    $<BUILD_INTERFACE:$<$<PLATFORM_ID:iOS>:MPSS_PLATFORM_IOS>>
-    $<BUILD_INTERFACE:$<$<PLATFORM_ID:Android>:MPSS_PLATFORM_ANDROID>>
-)
-
 # Platform-specific libraries.
 if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
     target_link_libraries(mpss PRIVATE ncrypt)

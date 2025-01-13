@@ -11,9 +11,9 @@ namespace mpss {
         std::string to_hex(long value);
 
         // Get the last error string that occurred
-        const std::string& get_error();
+        std::string get_error();
 
         // Set the last error string that occurred
-        void set_error(const std::string& error);
+        void set_error(std::string error);
     }
 }

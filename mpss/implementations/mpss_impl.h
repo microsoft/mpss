@@ -3,22 +3,24 @@
 
 #pragma once
 
+#include <optional>
 #include <string>
+#include <string_view>
 
 namespace mpss
 {
-    namespace implementation
+    namespace impl
     {
-        int create_key(const std::string& name);
+        int create_key(std::string_view name);
 
-        int delete_key(const std::string& name);
+        int delete_key(std::string_view name);
 
-		std::string sign(const std::string& name, const std::string& data);
+		std::string sign(std::string_view name, std::string data);
 
-		int verify(const std::string& name, const std::string& data, const std::string& signature);
+        int verify(std::string_view name, std::string data, std::string signature);
 
-        int get_key(const std::string& name, std::string& vk_out, std::string& sk_out);
+        int get_key(std::string_view name, std::string& vk_out, std::string& sk_out);
 
-		const std::string& get_error();
+		std::string get_error();
     }
 }
