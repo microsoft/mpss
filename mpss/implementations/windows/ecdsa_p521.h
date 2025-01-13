@@ -4,9 +4,9 @@
 #include <windows.h>
 #include <ncrypt.h>
 
-namespace mpss::impl::p256 {
+namespace mpss::impl::ecdsa_p521 {
     // Signing key type identifier.
-    constexpr LPCWSTR key_type_name = NCRYPT_ECDSA_P256_ALGORITHM;
+    constexpr LPCWSTR key_type_name = NCRYPT_ECDSA_P521_ALGORITHM;
 
     // Key blob type.
     using key_blob_t = BCRYPT_ECCKEY_BLOB;
@@ -18,8 +18,8 @@ namespace mpss::impl::p256 {
     constexpr LPCWSTR private_key_blob_name = BCRYPT_ECCPRIVATE_BLOB;
 
     // Public key magic value.
-    constexpr DWORD public_key_magic = BCRYPT_ECDSA_PUBLIC_P256_MAGIC;
+    constexpr DWORD public_key_magic = BCRYPT_ECDSA_PUBLIC_P521_MAGIC;
 
     // Private key magic value.
-    constexpr DWORD private_key_magic = BCRYPT_ECDSA_PRIVATE_P256_MAGIC;
+    constexpr DWORD private_key_magic = BCRYPT_ECDSA_PRIVATE_P521_MAGIC;
 }

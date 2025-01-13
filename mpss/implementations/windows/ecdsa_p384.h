@@ -4,7 +4,7 @@
 #include <windows.h>
 #include <ncrypt.h>
 
-namespace mpss::impl::p384{
+namespace mpss::impl::ecdsa_p384{
     // Signing key type identifier.
     constexpr LPCWSTR key_type_name = NCRYPT_ECDSA_P384_ALGORITHM;
 

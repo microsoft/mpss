@@ -2,9 +2,9 @@
 // Licensed under the MIT license.
 
 #include "mpss/implementations/mpss_impl.h"
-#include "mpss/implementations/windows/p256.h"
-#include "mpss/implementations/windows/p384.h"
-#include "mpss/implementations/windows/p521.h"
+#include "mpss/implementations/windows/ecdsa_p256.h"
+#include "mpss/implementations/windows/ecdsa_p384.h"
+#include "mpss/implementations/windows/ecdsa_p521.h"
 #include "mpss/utils/scope_guard.h"
 #include "mpss/utils/utilities.h"
 
@@ -33,11 +33,11 @@ namespace {
 
     // Namespace alias to choose the crypto parameters.
 #if   MPSS_CRYPTO_PARAMS == P256
-    namespace crypto = p256;
+    namespace crypto = ecdsa_p256;
 #elif MPSS_CRYPTO_PARAMS == P384
-    namespace crypto = p384;
+    namespace crypto = ecdsa_p384;
 #elif MPSS_CRYPTO_PARAMS == P521
-    namespace crypto = p521;
+    namespace crypto = ecdsa_p521;
 #else
 #error "Unsupported MPSS_CRYPTO_PARAMS value"
 #endif
