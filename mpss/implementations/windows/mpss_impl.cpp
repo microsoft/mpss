@@ -2,9 +2,9 @@
 // Licensed under the MIT license.
 
 #include "mpss/implementations/mpss_impl.h"
-#include "mpss/implementations/windows/p256.h"
-#include "mpss/implementations/windows/p384.h"
-#include "mpss/implementations/windows/p521.h"
+#include "mpss/implementations/windows/ecdsa_p256.h"
+#include "mpss/implementations/windows/ecdsa_p384.h"
+#include "mpss/implementations/windows/ecdsa_p521.h"
 #include "mpss/utils/scope_guard.h"
 #include "mpss/utils/utilities.h"
 
@@ -32,7 +32,7 @@ namespace {
     constexpr DWORD key_open_mode = 0;
 
     // Namespace alias to choose the crypto parameters.
-    namespace crypto = p384;
+    namespace crypto = ecdsa_p384;
 
     void set_error(SECURITY_STATUS status, std::string error)
     {
