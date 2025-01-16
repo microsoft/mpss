@@ -88,6 +88,40 @@ namespace {
 
         return key_handle;
     }
+
+	bool HashData(const std::string& data, BYTE* hash, DWORD hash_size)
+	{
+		BCRYPT_ALG_HANDLE hHashAlgorithm = nullptr;
+		SECURITY_STATUS status = ::BCryptOpenAlgorithmProvider(
+			&hHashAlgorithm,
+			BCRYPT_SHA256_ALGORITHM,
+			/* pszImplementation */ nullptr,
+			/* dwFlags */ 0);
+		if (ERROR_SUCCESS != status) {
+			std::stringstream ss;
+			ss << "BCryptOpenAlgorithmProvider failed with error code " << mpss::utils::to_hex(status);
+			set_error(status, ss.str());
+			return false;
+		}
+		SCOPE_GUARD(::BCryptCloseAlgorithmProvider(hHashAlgorithm, /* dwFlags */ 0));
+
+		status = ::BCryptHash(
+			hHashAlgorithm,
+			/* pbSecret */ nullptr,
+			/* cbSecret */ 0,
+			reinterpret_cast<BYTE*>(const_cast<char*>(data.data())),
+			static_cast<DWORD>(data.size()),
+			hash,
+			hash_size);
+		if (ERROR_SUCCESS != status) {
+			std::stringstream ss;
+			ss << "BCryptHash failed with error code " << mpss::utils::to_hex(status);
+			set_error(status, ss.str());
+			return false;
+		}
+
+        return true;
+	}
 }
 
 namespace mpss
@@ -178,40 +212,15 @@ namespace mpss
 
             SCOPE_GUARD(::NCryptFreeObject(key_handle));
 
-            BCRYPT_ALG_HANDLE hHashAlgorithm = nullptr;
-            SECURITY_STATUS status = ::BCryptOpenAlgorithmProvider(
-                &hHashAlgorithm,
-                BCRYPT_SHA256_ALGORITHM,
-                nullptr,
-                /* dwFlags */ 0);
-            if (ERROR_SUCCESS != status) {
-                std::stringstream ss;
-                ss << "BCryptOpenAlgorithmProvider failed with error code " << mpss::utils::to_hex(status);
-                set_error(status, ss.str());
-                return signature;
-            }
-            SCOPE_GUARD(::BCryptCloseAlgorithmProvider(hHashAlgorithm, /* dwFlags */ 0));
-
             BYTE hash[32];
-            status = ::BCryptHash(
-                hHashAlgorithm,
-                /* pbSecret */ nullptr,
-                /* cbSecret */ 0,
-                reinterpret_cast<BYTE*>(const_cast<char*>(data.data())),
-                static_cast<DWORD>(data.size()),
-                hash,
-                sizeof(hash));
-            if (ERROR_SUCCESS != status) {
-                std::stringstream ss;
-                ss << "BCryptHash failed with error code " << mpss::utils::to_hex(status);
-                set_error(status, ss.str());
-                return signature;
-            }
+			if (!HashData(data, hash, sizeof(hash))) {
+				return signature;
+			}
 
             DWORD signature_size = 0;
 
             // Get signature size.
-            status = ::NCryptSignHash(
+            SECURITY_STATUS status = ::NCryptSignHash(
                 key_handle,
                 /* pPaddingInfo */ nullptr,
                 hash,
@@ -232,8 +241,8 @@ namespace mpss
             status = ::NCryptSignHash(
                 key_handle,
                 /* pPaddingInfo */ nullptr,
-                reinterpret_cast<BYTE*>(const_cast<char*>(data.data())),
-                static_cast<DWORD>(data.size()),
+                hash,
+                sizeof(hash),
                 reinterpret_cast<PBYTE>(&signature[0]),
                 static_cast<DWORD>(signature.size()),
                 &signature_size,
@@ -256,11 +265,16 @@ namespace mpss
             }
             SCOPE_GUARD(::NCryptFreeObject(key_handle));
 
+			BYTE hash[32];
+            if (!HashData(data, hash, sizeof(hash))) {
+                return -1;
+            }
+
             SECURITY_STATUS status = ::NCryptVerifySignature(
                 key_handle,
                 /* pPaddingInfo */ nullptr,
-                reinterpret_cast<BYTE*>(data.data()),
-                static_cast<DWORD>(data.size()),
+                hash,
+                sizeof(hash),
                 reinterpret_cast<BYTE*>(signature.data()),
                 static_cast<DWORD>(signature.size()),
                 /* dwFlags */ 0);
