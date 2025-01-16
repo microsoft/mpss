@@ -21,11 +21,11 @@ namespace {
     thread_local SECURITY_STATUS last_error = ERROR_SUCCESS;
 
     // Legacy key spec. We only store signing keys.
-    constexpr DWORD key_spec = AT_SIGNATURE;
+    constexpr DWORD key_spec = 0;
 
     // Choose the provider name. To use TPM, use MS_PLATFORM_KEY_STORAGE_PROVIDER.
     // To use software provider, use MS_KEY_STORAGE_PROVIDER instead.
-    constexpr LPCWSTR provider_name = MS_KEY_STORAGE_PROVIDER;
+    constexpr LPCWSTR provider_name = MS_PLATFORM_KEY_STORAGE_PROVIDER;
 
     // To open the key for the local machine, set this to NCRYPT_MACHINE_KEY_FLAG.
     // Setting this to 0 opens the key for the current user.
@@ -119,20 +119,20 @@ namespace mpss
                 return -1;
             }
 
-            // Set the export policy to allow exporting the key.
-            DWORD export_policy = NCRYPT_ALLOW_EXPORT_FLAG | NCRYPT_ALLOW_PLAINTEXT_EXPORT_FLAG;
-            status = ::NCryptSetProperty(
-                key_handle,
-                NCRYPT_EXPORT_POLICY_PROPERTY,
-                reinterpret_cast<PBYTE>(&export_policy),
-                sizeof(export_policy),
-                NCRYPT_PERSIST_FLAG);
-            if (ERROR_SUCCESS != status) {
-                std::stringstream ss;
-                ss << "NCryptSetProperty failed with error code " << mpss::utils::to_hex(status);
-                set_error(status, ss.str());
-                return -1;
-            }
+            //// Set the export policy to allow exporting the key.
+            //DWORD export_policy = NCRYPT_ALLOW_EXPORT_FLAG | NCRYPT_ALLOW_PLAINTEXT_EXPORT_FLAG;
+            //status = ::NCryptSetProperty(
+            //    key_handle,
+            //    NCRYPT_EXPORT_POLICY_PROPERTY,
+            //    reinterpret_cast<PBYTE>(&export_policy),
+            //    sizeof(export_policy),
+            //    NCRYPT_PERSIST_FLAG);
+            //if (ERROR_SUCCESS != status) {
+            //    std::stringstream ss;
+            //    ss << "NCryptSetProperty failed with error code " << mpss::utils::to_hex(status);
+            //    set_error(status, ss.str());
+            //    return -1;
+            //}
 
             status = ::NCryptFinalizeKey(key_handle, /* dwFlags */ 0);
             if (ERROR_SUCCESS != status) {
@@ -178,21 +178,51 @@ namespace mpss
 
             SCOPE_GUARD(::NCryptFreeObject(key_handle));
 
+            BCRYPT_ALG_HANDLE hHashAlgorithm = nullptr;
+            SECURITY_STATUS status = ::BCryptOpenAlgorithmProvider(
+                &hHashAlgorithm,
+                BCRYPT_SHA256_ALGORITHM,
+                nullptr,
+                /* dwFlags */ 0);
+            if (ERROR_SUCCESS != status) {
+                std::stringstream ss;
+                ss << "BCryptOpenAlgorithmProvider failed with error code " << mpss::utils::to_hex(status);
+                set_error(status, ss.str());
+                return signature;
+            }
+            SCOPE_GUARD(::BCryptCloseAlgorithmProvider(hHashAlgorithm, /* dwFlags */ 0));
+
+            BYTE hash[32];
+            status = ::BCryptHash(
+                hHashAlgorithm,
+                /* pbSecret */ nullptr,
+                /* cbSecret */ 0,
+                reinterpret_cast<BYTE*>(const_cast<char*>(data.data())),
+                static_cast<DWORD>(data.size()),
+                hash,
+                sizeof(hash));
+            if (ERROR_SUCCESS != status) {
+                std::stringstream ss;
+                ss << "BCryptHash failed with error code " << mpss::utils::to_hex(status);
+                set_error(status, ss.str());
+                return signature;
+            }
+
             DWORD signature_size = 0;
 
             // Get signature size.
-            SECURITY_STATUS status = ::NCryptSignHash(
+            status = ::NCryptSignHash(
                 key_handle,
                 /* pPaddingInfo */ nullptr,
-                reinterpret_cast<BYTE*>(data.data()),
-                static_cast<DWORD>(data.size()),
-                nullptr,
-                0,
+                hash,
+                sizeof(hash),
+                /* pbSignature */ nullptr,
+                /* cbSignature */ 0,
                 &signature_size,
                 /* dwFlags */ 0);
             if (ERROR_SUCCESS != status) {
                 std::stringstream ss;
-                ss << "NCryptSignHash failed with error code " << mpss::utils::to_hex(status);
+                ss << "NCryptSignHash to get signature size failed with error code " << mpss::utils::to_hex(status);
                 set_error(status, ss.str());
                 return signature;
             }
