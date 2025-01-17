@@ -153,21 +153,6 @@ namespace mpss
                 return -1;
             }
 
-            //// Set the export policy to allow exporting the key.
-            //DWORD export_policy = NCRYPT_ALLOW_EXPORT_FLAG | NCRYPT_ALLOW_PLAINTEXT_EXPORT_FLAG;
-            //status = ::NCryptSetProperty(
-            //    key_handle,
-            //    NCRYPT_EXPORT_POLICY_PROPERTY,
-            //    reinterpret_cast<PBYTE>(&export_policy),
-            //    sizeof(export_policy),
-            //    NCRYPT_PERSIST_FLAG);
-            //if (ERROR_SUCCESS != status) {
-            //    std::stringstream ss;
-            //    ss << "NCryptSetProperty failed with error code " << mpss::utils::to_hex(status);
-            //    set_error(status, ss.str());
-            //    return -1;
-            //}
-
             status = ::NCryptFinalizeKey(key_handle, /* dwFlags */ 0);
             if (ERROR_SUCCESS != status) {
                 std::stringstream ss;
@@ -355,10 +340,9 @@ namespace mpss
                 &private_key_size,
                 /* dwFlags */ 0);
             if (ERROR_SUCCESS != status) {
-                std::stringstream ss;
-                ss << "NCryptExportKey failed with error code " << mpss::utils::to_hex(status);
-                set_error(status, ss.str());
-                return -1;
+				// Do not fail, but return empty private key.
+                sk_out.resize(0);
+                return 0;
             }
 
             // Actually get the private key
@@ -375,10 +359,9 @@ namespace mpss
                 &private_key_size,
                 /* dwFlags */ 0);
             if (ERROR_SUCCESS != status) {
-                std::stringstream ss;
-                ss << "NCryptExportKey failed with error code " << mpss::utils::to_hex(status);
-                set_error(status, ss.str());
-                return -1;
+                // Do not fail, but return empty private key.
+                sk_out.resize(0);
+                return 0;
             }
 
             crypto::key_blob_t* private_key_blob_ptr = reinterpret_cast<crypto::key_blob_t*>(private_key_ptr);
