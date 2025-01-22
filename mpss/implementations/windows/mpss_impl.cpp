@@ -89,39 +89,39 @@ namespace {
         return key_handle;
     }
 
-	bool HashData(const std::string& data, BYTE* hash, DWORD hash_size)
-	{
-		BCRYPT_ALG_HANDLE hHashAlgorithm = nullptr;
-		SECURITY_STATUS status = ::BCryptOpenAlgorithmProvider(
-			&hHashAlgorithm,
-			BCRYPT_SHA256_ALGORITHM,
-			/* pszImplementation */ nullptr,
-			/* dwFlags */ 0);
-		if (ERROR_SUCCESS != status) {
-			std::stringstream ss;
-			ss << "BCryptOpenAlgorithmProvider failed with error code " << mpss::utils::to_hex(status);
-			set_error(status, ss.str());
-			return false;
-		}
-		SCOPE_GUARD(::BCryptCloseAlgorithmProvider(hHashAlgorithm, /* dwFlags */ 0));
+    bool HashData(const std::string& data, BYTE* hash, DWORD hash_size)
+    {
+        BCRYPT_ALG_HANDLE hHashAlgorithm = nullptr;
+        SECURITY_STATUS status = ::BCryptOpenAlgorithmProvider(
+            &hHashAlgorithm,
+            BCRYPT_SHA256_ALGORITHM,
+            /* pszImplementation */ nullptr,
+            /* dwFlags */ 0);
+        if (ERROR_SUCCESS != status) {
+            std::stringstream ss;
+            ss << "BCryptOpenAlgorithmProvider failed with error code " << mpss::utils::to_hex(status);
+            set_error(status, ss.str());
+            return false;
+        }
+        SCOPE_GUARD(::BCryptCloseAlgorithmProvider(hHashAlgorithm, /* dwFlags */ 0));
 
-		status = ::BCryptHash(
-			hHashAlgorithm,
-			/* pbSecret */ nullptr,
-			/* cbSecret */ 0,
-			reinterpret_cast<BYTE*>(const_cast<char*>(data.data())),
-			static_cast<DWORD>(data.size()),
-			hash,
-			hash_size);
-		if (ERROR_SUCCESS != status) {
-			std::stringstream ss;
-			ss << "BCryptHash failed with error code " << mpss::utils::to_hex(status);
-			set_error(status, ss.str());
-			return false;
-		}
+        status = ::BCryptHash(
+            hHashAlgorithm,
+            /* pbSecret */ nullptr,
+            /* cbSecret */ 0,
+            reinterpret_cast<BYTE*>(const_cast<char*>(data.data())),
+            static_cast<DWORD>(data.size()),
+            hash,
+            hash_size);
+        if (ERROR_SUCCESS != status) {
+            std::stringstream ss;
+            ss << "BCryptHash failed with error code " << mpss::utils::to_hex(status);
+            set_error(status, ss.str());
+            return false;
+        }
 
         return true;
-	}
+    }
 }
 
 namespace mpss
@@ -198,9 +198,9 @@ namespace mpss
             SCOPE_GUARD(::NCryptFreeObject(key_handle));
 
             BYTE hash[32];
-			if (!HashData(data, hash, sizeof(hash))) {
-				return signature;
-			}
+            if (!HashData(data, hash, sizeof(hash))) {
+                return signature;
+            }
 
             DWORD signature_size = 0;
 
@@ -250,7 +250,7 @@ namespace mpss
             }
             SCOPE_GUARD(::NCryptFreeObject(key_handle));
 
-			BYTE hash[32];
+            BYTE hash[32];
             if (!HashData(data, hash, sizeof(hash))) {
                 return -1;
             }
@@ -340,7 +340,7 @@ namespace mpss
                 &private_key_size,
                 /* dwFlags */ 0);
             if (ERROR_SUCCESS != status) {
-				// Do not fail, but return empty private key.
+                // Do not fail, but return empty private key.
                 sk_out.resize(0);
                 return 0;
             }
