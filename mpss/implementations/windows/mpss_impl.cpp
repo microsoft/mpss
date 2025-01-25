@@ -25,11 +25,17 @@ namespace {
 
     // Choose the provider name. To use TPM, use MS_PLATFORM_KEY_STORAGE_PROVIDER.
     // To use software provider, use MS_KEY_STORAGE_PROVIDER instead.
-    constexpr LPCWSTR provider_name = MS_PLATFORM_KEY_STORAGE_PROVIDER;
+    constexpr LPCWSTR provider_name = MS_KEY_STORAGE_PROVIDER;
+
+	// For some reason NCRYPT_REQUIRE_VBS_FLAG is not defined in the headers.
+	constexpr DWORD require_vbs = 0x00020000;
 
     // To open the key for the local machine, set this to NCRYPT_MACHINE_KEY_FLAG.
     // Setting this to 0 opens the key for the current user.
     constexpr DWORD key_open_mode = 0;
+
+	// Additional flags to specify only when creating a key.
+	constexpr DWORD key_create_flags = require_vbs;
 
     ecdsa_p256 p256_crypto_params;
     ecdsa_p384 p384_crypto_params;
@@ -120,7 +126,7 @@ namespace mpss
                 crypto.get_key_type_name(),
                 wname.c_str(),
                 key_spec,
-                key_open_mode);
+                key_open_mode | key_create_flags);
             if (ERROR_SUCCESS != status) {
                 std::stringstream ss;
                 ss << "NCryptCreatePersistedKey failed with error code " << mpss::utils::to_hex(status);
