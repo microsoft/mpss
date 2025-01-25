@@ -31,37 +31,56 @@ namespace mpss {
             }
         };
 
-        TEST_F(MPSS, SignAndVerify) {
+        void SignAndVerify(SignatureAlgorithm algorithm, std::string_view suffix, int hash_size)
+        {
+			std::string key_name = "test_key_"s + suffix.data();
+
             // Delete key if it exists
-            MPSS::DeleteKey("test_key"s);
+            MPSS::DeleteKey(key_name);
 
             // Create a key pair for testing
-            MPSS::CreateKey("test_key"s, SignatureAlgorithm::ECDSA_P256_SHA256);
+            MPSS::CreateKey(key_name, algorithm);
 
             // Sign the data
-            std::optional<std::string> signature = mpss::sign("test_key"sv, "test_data"s, SignatureAlgorithm::ECDSA_P256_SHA256);
+            std::string hash(hash_size, 'a');
+            std::optional<std::string> signature = mpss::sign(key_name, hash, algorithm);
             if (!signature.has_value()) {
                 std::cout << "Data could not be signed: " << mpss::get_error() << std::endl;
             }
             ASSERT_TRUE(signature.has_value());
 
             // Verify the data
-            ASSERT_TRUE(mpss::verify("test_key"sv, "test_data"s, signature.value(), SignatureAlgorithm::ECDSA_P256_SHA256));
+            ASSERT_TRUE(mpss::verify(key_name, hash, signature.value(), algorithm));
 
             // Delete the key pair
-            MPSS::DeleteKey("test_key"s);
+            MPSS::DeleteKey(key_name);
         }
 
-        TEST_F(MPSS, GetKey) {
+        TEST_F(MPSS, SignAndVerify256) {
+			SignAndVerify(SignatureAlgorithm::ECDSA_P256_SHA256, "256", 32);
+        }
+
+        TEST_F(MPSS, SignAndVerify384) {
+            SignAndVerify(SignatureAlgorithm::ECDSA_P384_SHA384, "384", 48);
+        }
+
+		TEST_F(MPSS, SignAndVerify521) {
+			SignAndVerify(SignatureAlgorithm::ECDSA_P521_SHA512, "521", 64);
+		}
+
+        void GetKey(SignatureAlgorithm algorithm, std::string_view suffix)
+        {
+            std::string key_name = "test_key_2_"s + suffix.data();
+
             // Delete key if it exists
-            DeleteKey("test_key_2");
+            MPSS::DeleteKey(key_name);
 
             // Create a key pair for testing
-            CreateKey("test_key_2", SignatureAlgorithm::ECDSA_P384_SHA384);
+            MPSS::CreateKey(key_name, algorithm);
 
             // Get the key pair
             std::string vk;
-            bool got_key = mpss::get_key("test_key_2", SignatureAlgorithm::ECDSA_P384_SHA384, vk);
+            bool got_key = mpss::get_key(key_name, algorithm, vk);
             if (!got_key) {
                 std::cout << "Key could not be retrieved: " << mpss::get_error() << std::endl;
             }
@@ -70,7 +89,19 @@ namespace mpss {
             ASSERT_TRUE(vk.size() > 0);
 
             // Delete the key pair
-            DeleteKey("test_key_2");
+            MPSS::DeleteKey(key_name);
+        }
+
+        TEST_F(MPSS, GetKey256) {
+			GetKey(SignatureAlgorithm::ECDSA_P256_SHA256, "256");
+        }
+
+		TEST_F(MPSS, GetKey384) {
+			GetKey(SignatureAlgorithm::ECDSA_P384_SHA384, "384");
+		}
+
+        TEST_F(MPSS, GetKey521) {
+            GetKey(SignatureAlgorithm::ECDSA_P521_SHA512, "521");
         }
     }
 }
