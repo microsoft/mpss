@@ -4,6 +4,7 @@
 #pragma once
 
 #include <string>
+#include "mpss/mpss.h"
 
 namespace mpss {
     namespace utils {
@@ -15,5 +16,8 @@ namespace mpss {
 
         // Set the last error string that occurred
         void set_error(std::string error);
+
+		// Verify the length of the hash based on the signature algorithm
+		bool verify_hash_length(std::string_view hash, SignatureAlgorithm algorithm);
     }
 }

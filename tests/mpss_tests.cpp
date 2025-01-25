@@ -21,9 +21,9 @@ namespace mpss {
                 ASSERT_TRUE(deleted);
             }
 
-            static void CreateKey(std::string name) {
+            static void CreateKey(std::string name, SignatureAlgorithm algorithm) {
                 // Create a key pair
-                bool created = mpss::create_key(std::move(name));
+                bool created = mpss::create_key(std::move(name), algorithm);
                 if (!created) {
                     std::cout << "Key could not be created: " << mpss::get_error() << std::endl;
                 }
@@ -36,17 +36,17 @@ namespace mpss {
             MPSS::DeleteKey("test_key"s);
 
             // Create a key pair for testing
-            MPSS::CreateKey("test_key"s);
+            MPSS::CreateKey("test_key"s, SignatureAlgorithm::ECDSA_P256_SHA256);
 
             // Sign the data
-            std::optional<std::string> signature = mpss::sign("test_key"sv, "test_data"s);
+            std::optional<std::string> signature = mpss::sign("test_key"sv, "test_data"s, SignatureAlgorithm::ECDSA_P256_SHA256);
             if (!signature.has_value()) {
                 std::cout << "Data could not be signed: " << mpss::get_error() << std::endl;
             }
             ASSERT_TRUE(signature.has_value());
 
             // Verify the data
-            ASSERT_TRUE(mpss::verify("test_key"sv, "test_data"s, signature.value()));
+            ASSERT_TRUE(mpss::verify("test_key"sv, "test_data"s, signature.value(), SignatureAlgorithm::ECDSA_P256_SHA256));
 
             // Delete the key pair
             MPSS::DeleteKey("test_key"s);
@@ -57,25 +57,17 @@ namespace mpss {
             DeleteKey("test_key_2");
 
             // Create a key pair for testing
-            CreateKey("test_key_2");
+            CreateKey("test_key_2", SignatureAlgorithm::ECDSA_P384_SHA384);
 
             // Get the key pair
-            std::string vk, sk;
-            bool got_key = mpss::get_key("test_key_2", vk, sk);
+            std::string vk;
+            bool got_key = mpss::get_key("test_key_2", SignatureAlgorithm::ECDSA_P384_SHA384, vk);
             if (!got_key) {
                 std::cout << "Key could not be retrieved: " << mpss::get_error() << std::endl;
             }
             ASSERT_TRUE(got_key);
             std::cout << "VK size: " << vk.size() << std::endl;
-            std::cout << "SK size: " << sk.size() << std::endl;
             ASSERT_TRUE(vk.size() > 0);
-
-			if (sk.empty()) {
-				std::cout << "SK is empty, but this is not an error." << std::endl;
-			}
-			else {
-				ASSERT_TRUE(sk.size() > 0);
-			}
 
             // Delete the key pair
             DeleteKey("test_key_2");

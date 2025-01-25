@@ -1,25 +1,38 @@
 // Copyright(c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+#pragma once
+
 #include <windows.h>
 #include <ncrypt.h>
+#include "crypto_params.h"
 
-namespace mpss::impl::ecdsa_p256 {
-    // Signing key type identifier.
-    constexpr LPCWSTR key_type_name = NCRYPT_ECDSA_P256_ALGORITHM;
+namespace mpss::impl {
+    class ecdsa_p256 : public crypto_params {
+    public:
+        // Signing key type identifier.
+        virtual LPCWSTR get_key_type_name() const override {
+            return NCRYPT_ECDSA_P256_ALGORITHM;
+        };
 
-    // Key blob type.
-    using key_blob_t = BCRYPT_ECCKEY_BLOB;
+        // Public key blob type identifier.
+        virtual LPCWSTR get_public_key_blob_name() const override {
+            return BCRYPT_ECCPUBLIC_BLOB;
+        }
 
-    // Public key blob type identifier.
-    constexpr LPCWSTR public_key_blob_name = BCRYPT_ECCPUBLIC_BLOB;
+        // Private key blob type identifier.
+        virtual LPCWSTR get_private_key_blob_name() const override {
+            return BCRYPT_ECCPRIVATE_BLOB;
+        }
 
-    // Private key blob type identifier.
-    constexpr LPCWSTR private_key_blob_name = BCRYPT_ECCPRIVATE_BLOB;
+        // Public key magic value.
+        virtual DWORD get_public_key_magic() const override {
+            return BCRYPT_ECDSA_PUBLIC_P256_MAGIC;
+        }
 
-    // Public key magic value.
-    constexpr DWORD public_key_magic = BCRYPT_ECDSA_PUBLIC_P256_MAGIC;
-
-    // Private key magic value.
-    constexpr DWORD private_key_magic = BCRYPT_ECDSA_PRIVATE_P256_MAGIC;
+        // Private key magic value.
+        virtual DWORD get_private_key_magic() const override {
+            return BCRYPT_ECDSA_PRIVATE_P256_MAGIC;
+        }
+    };
 }

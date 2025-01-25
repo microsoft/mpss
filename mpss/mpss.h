@@ -55,7 +55,7 @@ namespace mpss {
     * @param vk_out The verification key.
     * @return True if the verification key retrieved successfully, false otherwise.
     */
-    bool get_key(std::string_view name, std::string& vk_out);
+    bool get_key(std::string_view name, SignatureAlgorithm algorithm, std::string& vk_out);
 
     /**
     * @brief Determines whether the given signature algorithm is supported in the safe storage system.

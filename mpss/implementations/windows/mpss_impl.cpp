@@ -31,16 +31,9 @@ namespace {
     // Setting this to 0 opens the key for the current user.
     constexpr DWORD key_open_mode = 0;
 
-    // Namespace alias to choose the crypto parameters.
-#if   MPSS_CRYPTO_PARAMS == P256
-    namespace crypto = ecdsa_p256;
-#elif MPSS_CRYPTO_PARAMS == P384
-    namespace crypto = ecdsa_p384;
-#elif MPSS_CRYPTO_PARAMS == P521
-    namespace crypto = ecdsa_p521;
-#else
-#error "Unsupported MPSS_CRYPTO_PARAMS value"
-#endif
+    ecdsa_p256 p256_crypto_params;
+    ecdsa_p384 p384_crypto_params;
+    ecdsa_p521 p521_crypto_params;
 
     void set_error(SECURITY_STATUS status, std::string error)
     {
@@ -89,47 +82,29 @@ namespace {
         return key_handle;
     }
 
-    bool HashData(const std::string& data, BYTE* hash, DWORD hash_size)
-    {
-        BCRYPT_ALG_HANDLE hHashAlgorithm = nullptr;
-        SECURITY_STATUS status = ::BCryptOpenAlgorithmProvider(
-            &hHashAlgorithm,
-            BCRYPT_SHA256_ALGORITHM,
-            /* pszImplementation */ nullptr,
-            /* dwFlags */ 0);
-        if (ERROR_SUCCESS != status) {
-            std::stringstream ss;
-            ss << "BCryptOpenAlgorithmProvider failed with error code " << mpss::utils::to_hex(status);
-            set_error(status, ss.str());
-            return false;
-        }
-        SCOPE_GUARD(::BCryptCloseAlgorithmProvider(hHashAlgorithm, /* dwFlags */ 0));
-
-        status = ::BCryptHash(
-            hHashAlgorithm,
-            /* pbSecret */ nullptr,
-            /* cbSecret */ 0,
-            reinterpret_cast<BYTE*>(const_cast<char*>(data.data())),
-            static_cast<DWORD>(data.size()),
-            hash,
-            hash_size);
-        if (ERROR_SUCCESS != status) {
-            std::stringstream ss;
-            ss << "BCryptHash failed with error code " << mpss::utils::to_hex(status);
-            set_error(status, ss.str());
-            return false;
-        }
-
-        return true;
-    }
+	const crypto_params& GetCryptoParams(mpss::SignatureAlgorithm algorithm)
+	{
+		switch (algorithm) {
+        case mpss::SignatureAlgorithm::ECDSA_P256_SHA256:
+            return p256_crypto_params;
+        case mpss::SignatureAlgorithm::ECDSA_P384_SHA384:
+            return p384_crypto_params;
+        case mpss::SignatureAlgorithm::ECDSA_P521_SHA512:
+            return p521_crypto_params;
+		default:
+			throw std::invalid_argument("Unsupported algorithm");
+		}
+	}
 }
 
 namespace mpss
 {
     namespace impl
     {
-        int create_key(std::string_view name)
+        int create_key(std::string_view name, SignatureAlgorithm algorithm)
         {
+			const crypto_params& crypto = GetCryptoParams(algorithm);
+
             NCRYPT_PROV_HANDLE provider_handle = GetProvider();
             if (!provider_handle) {
                 return -1;
@@ -142,7 +117,7 @@ namespace mpss
             SECURITY_STATUS status = ::NCryptCreatePersistedKey(
                 provider_handle,
                 &key_handle,
-                crypto::key_type_name,
+                crypto.get_key_type_name(),
                 wname.c_str(),
                 key_spec,
                 key_open_mode);
@@ -187,9 +162,18 @@ namespace mpss
             return 0;
         }
 
-        std::string sign(std::string_view name, std::string data)
+        std::string sign(std::string_view name, std::string_view hash, SignatureAlgorithm algorithm)
         {
             std::string signature;
+            const crypto_params& crypto = GetCryptoParams(algorithm);
+
+            if (!utils::verify_hash_length(hash, algorithm)) {
+                std::stringstream ss;
+				ss << "Invalid hash length for algorithm. Length is: " << hash.size();
+				set_error(ERROR_INVALID_PARAMETER, ss.str());
+				return signature;
+            }
+
             NCRYPT_KEY_HANDLE key_handle = GetKey(name);
             if (!key_handle) {
                 return signature;
@@ -197,10 +181,10 @@ namespace mpss
 
             SCOPE_GUARD(::NCryptFreeObject(key_handle));
 
-            BYTE hash[32];
-            if (!HashData(data, hash, sizeof(hash))) {
-                return signature;
-            }
+            //BYTE hash[32];
+            //if (!HashData(data, hash, sizeof(hash))) {
+            //    return signature;
+            //}
 
             DWORD signature_size = 0;
 
@@ -208,8 +192,8 @@ namespace mpss
             SECURITY_STATUS status = ::NCryptSignHash(
                 key_handle,
                 /* pPaddingInfo */ nullptr,
-                hash,
-                sizeof(hash),
+                reinterpret_cast<PBYTE>(const_cast<char*>(hash.data())),
+                hash.size(),
                 /* pbSignature */ nullptr,
                 /* cbSignature */ 0,
                 &signature_size,
@@ -226,8 +210,8 @@ namespace mpss
             status = ::NCryptSignHash(
                 key_handle,
                 /* pPaddingInfo */ nullptr,
-                hash,
-                sizeof(hash),
+                reinterpret_cast<PBYTE>(const_cast<char*>(hash.data())),
+                hash.size(),
                 reinterpret_cast<PBYTE>(&signature[0]),
                 static_cast<DWORD>(signature.size()),
                 &signature_size,
@@ -242,25 +226,32 @@ namespace mpss
             return signature;
         }
 
-        int verify(std::string_view name, std::string data, std::string signature)
+        int verify(std::string_view name, std::string_view hash, std::string_view signature, SignatureAlgorithm algorithm)
         {
+            if (!utils::verify_hash_length(hash, algorithm)) {
+                std::stringstream ss;
+                ss << "Invalid hash length for algorithm. Length is: " << hash.size();
+                set_error(ERROR_INVALID_PARAMETER, ss.str());
+                return -1;
+            }
+
             NCRYPT_KEY_HANDLE key_handle = GetKey(name);
             if (!key_handle) {
                 return -1;
             }
             SCOPE_GUARD(::NCryptFreeObject(key_handle));
 
-            BYTE hash[32];
-            if (!HashData(data, hash, sizeof(hash))) {
-                return -1;
-            }
+            //BYTE hash[32];
+            //if (!HashData(data, hash, sizeof(hash))) {
+            //    return -1;
+            //}
 
             SECURITY_STATUS status = ::NCryptVerifySignature(
                 key_handle,
                 /* pPaddingInfo */ nullptr,
-                hash,
-                sizeof(hash),
-                reinterpret_cast<BYTE*>(signature.data()),
+                reinterpret_cast<PBYTE>(const_cast<char*>(hash.data())),
+                hash.size(),
+                reinterpret_cast<PBYTE>(const_cast<char*>(signature.data())),
                 static_cast<DWORD>(signature.size()),
                 /* dwFlags */ 0);
             if (ERROR_SUCCESS != status) {
@@ -273,8 +264,10 @@ namespace mpss
             return 0;
         }
 
-        int get_key(std::string_view name, std::string& vk_out, std::string& sk_out)
+        int get_key(std::string_view name, SignatureAlgorithm algorithm, std::string& vk_out)
         {
+			const crypto_params& crypto = GetCryptoParams(algorithm);
+
             NCRYPT_KEY_HANDLE key_handle = GetKey(name);
             if (!key_handle) {
                 return -1;
@@ -286,7 +279,7 @@ namespace mpss
             SECURITY_STATUS status = ::NCryptExportKey(
                 key_handle,
                 /* hExportKey */ 0,
-                crypto::public_key_blob_name,
+                crypto.get_public_key_blob_name(),
                 /* pParameterList */ nullptr,
                 /* pbOutput */ nullptr,
                 /* cbOutput */ 0,
@@ -306,7 +299,7 @@ namespace mpss
             status = ::NCryptExportKey(
                 key_handle,
                 /* hExportKey */ 0,
-                crypto::public_key_blob_name,
+                crypto.get_public_key_blob_name(),
                 /* pParameterList */ nullptr,
                 public_key_ptr,
                 public_key_size,
@@ -319,62 +312,23 @@ namespace mpss
                 return -1;
             }
 
-            crypto::key_blob_t* public_key_blob_ptr = reinterpret_cast<crypto::key_blob_t*>(public_key_ptr);
-            if (public_key_blob_ptr->dwMagic != crypto::public_key_magic) {
+            crypto_params::key_blob_t* public_key_blob_ptr = reinterpret_cast<crypto_params::key_blob_t*>(public_key_ptr);
+            if (public_key_blob_ptr->dwMagic != crypto.get_public_key_magic()) {
                 set_error(status, "Invalid public key magic");
                 return -1;
             }
 
-            BYTE* data_start_ptr = reinterpret_cast<BYTE*>(public_key_blob_ptr) + sizeof(crypto::key_blob_t);
-            vk_out.assign(reinterpret_cast<char*>(data_start_ptr), public_key_size - sizeof(crypto::key_blob_t));
-
-            // Get the private key size.
-            DWORD private_key_size = 0;
-            status = ::NCryptExportKey(
-                key_handle,
-                /* hExportKey */ 0,
-                crypto::private_key_blob_name,
-                /* pParameterList */ nullptr,
-                /* pbOutput */ nullptr,
-                /* cbOutput */ 0,
-                &private_key_size,
-                /* dwFlags */ 0);
-            if (ERROR_SUCCESS != status) {
-                // Do not fail, but return empty private key.
-                sk_out.resize(0);
-                return 0;
-            }
-
-            // Actually get the private key
-            BYTE* private_key_ptr = new BYTE[private_key_size];
-            SCOPE_GUARD(delete[] private_key_ptr);
-
-            status = ::NCryptExportKey(
-                key_handle,
-                /* hExportKey */ 0,
-                crypto::private_key_blob_name,
-                /* pParameterList */ nullptr,
-                private_key_ptr,
-                private_key_size,
-                &private_key_size,
-                /* dwFlags */ 0);
-            if (ERROR_SUCCESS != status) {
-                // Do not fail, but return empty private key.
-                sk_out.resize(0);
-                return 0;
-            }
-
-            crypto::key_blob_t* private_key_blob_ptr = reinterpret_cast<crypto::key_blob_t*>(private_key_ptr);
-            if (private_key_blob_ptr->dwMagic != crypto::private_key_magic) {
-                set_error(status, "Invalid private key magic");
-                return -1;
-            }
-
-            data_start_ptr = reinterpret_cast<BYTE*>(private_key_blob_ptr) + sizeof(crypto::key_blob_t);
-            sk_out.assign(reinterpret_cast<char*>(data_start_ptr), private_key_size - sizeof(crypto::key_blob_t));
+            BYTE* data_start_ptr = reinterpret_cast<BYTE*>(public_key_blob_ptr) + sizeof(crypto_params::key_blob_t);
+            vk_out.assign(reinterpret_cast<char*>(data_start_ptr), public_key_size - sizeof(crypto_params::key_blob_t));
 
             return 0;
         }
+
+		bool is_safe_storage_supported(SignatureAlgorithm algorithm)
+		{
+			// Check if the algorithm is supported.
+			return false;
+		}
 
         std::string get_error()
         {
