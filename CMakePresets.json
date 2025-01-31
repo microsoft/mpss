@@ -23,7 +23,7 @@
             "inherits": "settings-base",
             "generator": "Ninja",
             "binaryDir": "${sourceDir}/out/build/${presetName}",
-            "installDir": "${sourceDir}/out/install/${presetName}",
+            "installDir": "${sourceDir}/out/install",
             "cacheVariables": {
                 "CMAKE_C_COMPILER": "cl.exe",
                 "CMAKE_CXX_COMPILER": "cl.exe"
@@ -80,7 +80,7 @@
             "generator": "Ninja",
             "inherits": "settings-base",
             "binaryDir": "${sourceDir}/out/build/${presetName}",
-            "installDir": "${sourceDir}/out/install/${presetName}",
+            "installDir": "${sourceDir}/out/install",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug"
             },
@@ -109,7 +109,7 @@
             "generator": "Ninja",
             "inherits": "settings-base",
             "binaryDir": "${sourceDir}/out/build/${presetName}",
-            "installDir": "${sourceDir}/out/install/${presetName}",
+            "installDir": "${sourceDir}/out/install",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug"
             },

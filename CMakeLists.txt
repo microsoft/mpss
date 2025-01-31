@@ -82,43 +82,76 @@ else()
     set(mpss_LIBRARY_TYPE STATIC)
 endif()
 
-# Create the library target.
-add_library(mpss ${mpss_LIBRARY_TYPE} ${mpss_SOURCE_FILES})
+# If mpss_LIBRARY_TYPE is STATIC, set up static library target.
+# If it is SHARED, set up shared library target. Otherwise, error out.
+if (mpss_LIBRARY_TYPE STREQUAL "STATIC")
+    message(STATUS "Building static library")
+    set(mpss_TARGET mpss_static)
+    add_library(${mpss_TARGET} ${mpss_LIBRARY_TYPE} ${mpss_SOURCE_FILES})
+elseif (mpss_LIBRARY_TYPE STREQUAL "SHARED")
+    message(STATUS "Building shared library")
+    set(mpss_TARGET mpss_dynamic)
+    message(FATAL_ERROR "NOT IMPLEMENTED")
+else()
+    message(FATAL_ERROR "Invalid value for mpss_LIBRARY_TYPE: ${mpss_LIBRARY_TYPE}")
+endif()
+
+# Require C++17 for mpss and downstream.
+target_compile_features(${mpss_TARGET} PUBLIC cxx_std_17)
 
 # Internally, mpss indicates a debug build with the macro MPSS_DEBUG_BUILD. This is
 # only used in the mpss source files, so it does not need to be set when compiling
 # downstream code that includes mpss headers.
-target_compile_definitions(mpss PRIVATE
+target_compile_definitions(${mpss_TARGET} PRIVATE
     $<BUILD_INTERFACE:$<$<CONFIG:Debug>:MPSS_DEBUG_BUILD>>
 )
 
 # Platform-specific libraries.
 if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
-    target_link_libraries(mpss PRIVATE ncrypt)
+    target_link_libraries(${mpss_TARGET} PRIVATE ncrypt)
 endif()
 
-# For debug builds, append "-d" to the library name.
-set_target_properties(mpss PROPERTIES DEBUG_POSTFIX "-d")
+# For debug builds, append "_debug" to the library name.
+set_target_properties(${mpss_TARGET} PROPERTIES DEBUG_POSTFIX "_debug")
 
 # Set the VERSION and SOVERSION properties for semantic versioning.
-set_target_properties(mpss PROPERTIES
+set_target_properties(${mpss_TARGET} PROPERTIES
     VERSION ${mpss_VERSION}
     SOVERSION ${mpss_VERSION_MAJOR}
 )
 
 # Set the include directory for build.
-target_include_directories(mpss PUBLIC
+target_include_directories(${mpss_TARGET} PUBLIC
     $<BUILD_INTERFACE:${mpss_INCLUDES_DIR}>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
     $<INSTALL_INTERFACE:${mpss_INCLUDES_INSTALL_DIR}>
 )
 
-# Add mpss to export mpssTargets.
-install(TARGETS mpss EXPORT mpssTargets
-    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-)
+# Add our target to an export mpssTargets.
+if (mpss_LIBRARY_TYPE STREQUAL "STATIC")
+    # This allows multiple versions for static libraries since the directories
+    # are named according to the version. Works both on Windows and Linux.
+    install(TARGETS ${mpss_TARGET} EXPORT mpssTargets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}/mpss-${mpss_VERSION_MAJOR}.${mpss_VERSION_MINOR}
+    )
+elseif (mpss_LIBRARY_TYPE STREQUAL "DYNAMIC")
+    # This allows multiple versions for shared libraries on Linux since the
+    # filenames are disambiguated by the version. On Windows, only a single
+    # version can be installed at a time. On Windows, import libraries go to
+    # ARCHIVE and DLLs to RUNTIME. On Linux, shared libraries go to LIBRARY.
+    install(TARGETS ${mpss_TARGET} EXPORT mpssTargets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    )
+
+    # THERE IS A REMAINING PROBLEM: ON WINDOWS THE SOME DIRECTORIES ARE BEING
+    # NUMBERED WITH VERSION, SO IT MAY NOT BE CLEAR TO THE USER THAT THERE IS
+    # JUST ONE LIBRARY ACTUALLY INSTALLED IN THIS CASE. THIS NEEDS TO BE FIXED.
+    message(FATAL_ERROR "NOT IMPLEMENTED")
+else()
+    message(FATAL_ERROR "Invalid value for mpss_LIBRARY_TYPE: ${mpss_LIBRARY_TYPE}")
+endif()
 
 # Create the CMake config file.
 include(CMakePackageConfigHelpers)
@@ -169,5 +202,5 @@ if (MPSS_BUILD_TESTS)
     add_subdirectory(tests)
 
     add_executable(mpss_tests ${mpss_TESTS_FILES})
-    target_link_libraries(mpss_tests mpss GTest::gtest)
+    target_link_libraries(mpss_tests ${mpss_TARGET} GTest::gtest)
 endif()
