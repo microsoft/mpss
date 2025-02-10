@@ -31,5 +31,19 @@ namespace mpss {
         {
             _last_error = std::move(error);
         }
+
+        bool verify_hash_length(std::string_view hash, SignatureAlgorithm algorithm)
+        {
+            switch (algorithm) {
+            case SignatureAlgorithm::ECDSA_P256_SHA256:
+                return hash.size() == 32;
+            case SignatureAlgorithm::ECDSA_P384_SHA384:
+                return hash.size() == 48;
+            case SignatureAlgorithm::ECDSA_P521_SHA512:
+                return hash.size() == 64;
+            default:
+                throw new std::invalid_argument("Unsupported algorithm");
+            }
+        }
     }
 }
