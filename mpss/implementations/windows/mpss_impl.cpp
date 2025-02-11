@@ -107,9 +107,12 @@ namespace mpss
 {
     namespace impl
     {
-        int create_key(std::string_view name, SignatureAlgorithm algorithm)
+        int create_key(std::string_view name, SignatureAlgorithm algorithm, KeyPairHandle* handle)
         {
+			utils::throw_if_null(handle, "handle");
+
 			const crypto_params& crypto = GetCryptoParams(algorithm);
+			*handle = nullptr;
 
             NCRYPT_PROV_HANDLE provider_handle = GetProvider();
             if (!provider_handle) {

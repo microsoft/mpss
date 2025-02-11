@@ -3,46 +3,68 @@
 
 #include "mpss/mpss.h"
 #include "mpss/implementations/mpss_impl.h"
+#include "mpss/utils/utilities.h"
 
 #include <iostream>
 #include <stdexcept>
 #include <utility>
 
+
 namespace mpss {
-    bool create_key(std::string_view name, SignatureAlgorithm algorithm) {
-        int result = impl::create_key(name, algorithm);
+    std::optional<KeyPairHandle> create_key(std::string_view name, SignatureAlgorithm algorithm) {
+        KeyPairHandle handle = nullptr;
+
+        int result = impl::create_key(name, algorithm, &handle);
+        if (result != 0) {
+            return nullptr;
+        }
+        return handle;
+    }
+
+    std::optional<KeyPairHandle> open_key(std::string_view name)
+    {
+		KeyPairHandle handle = nullptr;
+		int result = impl::open_key(name, &handle);
+		if (result != 0) {
+			return nullptr;
+		}
+		return handle;
+    }
+
+    bool delete_key(KeyPairHandle handle) {
+		utils::throw_if_null(handle, "handle");
+
+        int result = impl::delete_key(handle);
         if (result != 0) {
             return false;
         }
         return true;
     }
 
-    bool delete_key(std::string_view name) {
-        int result = impl::delete_key(name);
-        if (result != 0) {
-            return false;
-        }
-        return true;
-    }
+    std::optional<std::string> sign(KeyPairHandle handle, std::string_view hash, SignatureAlgorithm algorithm) {
+		utils::throw_if_null(handle, "handle");
 
-    std::optional<std::string> sign(std::string_view name, std::string_view hash, SignatureAlgorithm algorithm) {
-        std::string signature = impl::sign(name, std::move(hash), algorithm);
+        std::string signature = impl::sign(handle, std::move(hash), algorithm);
         if (signature.size() == 0) {
             return std::nullopt;
         }
         return signature;
     }
 
-    bool verify(std::string_view name, std::string_view hash, std::string_view signature, SignatureAlgorithm algorithm) {
-        int result = impl::verify(name, std::move(hash), std::move(signature), algorithm);
+    bool verify(KeyPairHandle handle, std::string_view hash, std::string_view signature, SignatureAlgorithm algorithm) {
+		utils::throw_if_null(handle, "handle");
+
+        int result = impl::verify(handle, std::move(hash), std::move(signature), algorithm);
         if (result != 0) {
             return false;
         }
         return true;
     }
 
-    bool get_key(std::string_view name, SignatureAlgorithm algorithm, std::string& vk_out) {
-        int result = impl::get_key(name, algorithm, vk_out);
+    bool get_key(KeyPairHandle handle, SignatureAlgorithm algorithm, std::string& vk_out) {
+		utils::throw_if_null(handle, "handle");
+
+        int result = impl::get_key(handle, algorithm, vk_out);
         if (result != 0) {
             return false;
         }
@@ -52,6 +74,11 @@ namespace mpss {
 	bool is_safe_storage_supported(SignatureAlgorithm algorithm) {
 		return impl::is_safe_storage_supported(algorithm);
 	}
+
+    void release_key(KeyPairHandle handle)
+    {
+        impl::release_key(handle);
+    }
 
     std::string get_error() {
         return impl::get_error();

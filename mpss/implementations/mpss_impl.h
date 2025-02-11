@@ -13,17 +13,21 @@ namespace mpss
 {
     namespace impl
     {
-        int create_key(std::string_view name, SignatureAlgorithm algorithm);
+        int create_key(std::string_view name, SignatureAlgorithm algorithm, KeyPairHandle* handle);
 
-        int delete_key(std::string_view name);
+		int open_key(std::string_view name, KeyPairHandle* handle);
 
-		std::string sign(std::string_view name, std::string_view data, SignatureAlgorithm algorithm);
+        int delete_key(KeyPairHandle handle);
 
-        int verify(std::string_view name, std::string_view data, std::string_view signature, SignatureAlgorithm algorithm);
+		std::string sign(KeyPairHandle handle, std::string_view data, SignatureAlgorithm algorithm);
 
-        int get_key(std::string_view name, SignatureAlgorithm algorithm, std::string& vk_out);
+        int verify(KeyPairHandle handle, std::string_view data, std::string_view signature, SignatureAlgorithm algorithm);
+
+        int get_key(KeyPairHandle handle, SignatureAlgorithm algorithm, std::string& vk_out);
 
 		bool is_safe_storage_supported(SignatureAlgorithm algorithm);
+
+		void release_key(KeyPairHandle handle);
 
 		std::string get_error();
     }
