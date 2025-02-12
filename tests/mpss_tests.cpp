@@ -39,7 +39,7 @@ namespace mpss {
 
         void SignAndVerify(SignatureAlgorithm algorithm, std::string_view suffix)
         {
-			std::string key_name = "test_key_"s + suffix.data();
+            std::string key_name = "test_key_"s + suffix.data();
 
             // Delete key if it exists
             MPSS::DeleteKey(key_name);
@@ -67,16 +67,16 @@ namespace mpss {
         }
 
         TEST_F(MPSS, SignAndVerify256) {
-			SignAndVerify(SignatureAlgorithm::ECDSA_P256_SHA256, "256");
+            SignAndVerify(SignatureAlgorithm::ECDSA_P256_SHA256, "256");
         }
 
         TEST_F(MPSS, SignAndVerify384) {
             SignAndVerify(SignatureAlgorithm::ECDSA_P384_SHA384, "384");
         }
 
-		TEST_F(MPSS, SignAndVerify521) {
-			SignAndVerify(SignatureAlgorithm::ECDSA_P521_SHA512, "521");
-		}
+        TEST_F(MPSS, SignAndVerify521) {
+            SignAndVerify(SignatureAlgorithm::ECDSA_P521_SHA512, "521");
+        }
 
         void GetKey(SignatureAlgorithm algorithm, std::string_view suffix)
         {
@@ -107,12 +107,12 @@ namespace mpss {
         }
 
         TEST_F(MPSS, GetKey256) {
-			GetKey(SignatureAlgorithm::ECDSA_P256_SHA256, "256");
+            GetKey(SignatureAlgorithm::ECDSA_P256_SHA256, "256");
         }
 
-		TEST_F(MPSS, GetKey384) {
-			GetKey(SignatureAlgorithm::ECDSA_P384_SHA384, "384");
-		}
+        TEST_F(MPSS, GetKey384) {
+            GetKey(SignatureAlgorithm::ECDSA_P384_SHA384, "384");
+        }
 
         TEST_F(MPSS, GetKey521) {
             GetKey(SignatureAlgorithm::ECDSA_P521_SHA512, "521");
