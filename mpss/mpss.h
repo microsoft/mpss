@@ -21,7 +21,7 @@ namespace mpss {
     /**
 	* @brief The handle to a key pair in the safe storage system.
     */
-    using KeyPairHandle = void*;
+    class KeyPairHandle;
 
     /**
     * @brief Creates a new key pair with the given name.
@@ -92,4 +92,18 @@ namespace mpss {
     * @return The last error that occurred.
     */
     std::string get_error();
+
+
+
+    class KeyPairHandle {
+    public:
+        KeyPairHandle() = delete;
+
+    protected:
+		std::string name_;
+		SignatureAlgorithm algorithm_;
+        std::size_t hash_size_;
+
+        KeyPairHandle(std::string_view name, SignatureAlgorithm algorithm);
+    };
 }

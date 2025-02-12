@@ -12,7 +12,7 @@
 
 namespace mpss {
     std::optional<KeyPairHandle> create_key(std::string_view name, SignatureAlgorithm algorithm) {
-        KeyPairHandle handle = nullptr;
+        KeyPairHandle handle(name, algorithm);
 
         int result = impl::create_key(name, algorithm, &handle);
         if (result != 0) {
@@ -83,4 +83,21 @@ namespace mpss {
     std::string get_error() {
         return impl::get_error();
     }
+
+	KeyPairHandle::KeyPairHandle(std::string_view name, SignatureAlgorithm algorithm)
+		: name_(std::move(name)), algorithm_(algorithm) {
+		switch (algorithm) {
+		case SignatureAlgorithm::ECDSA_P256_SHA256:
+			hash_size_ = 32;
+			break;
+		case SignatureAlgorithm::ECDSA_P384_SHA384:
+			hash_size_ = 48;
+			break;
+		case SignatureAlgorithm::ECDSA_P521_SHA512:
+			hash_size_ = 64;
+			break;
+		default:
+			throw std::invalid_argument("Unsupported algorithm");
+	}
+
 } // namespace mpss
