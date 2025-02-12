@@ -10,6 +10,9 @@
 
 #include <sstream>
 #include <utility>
+#include <string>
+#include <locale>
+#include <codecvt>
 
 #include <windows.h>
 #include <ncrypt.h>
@@ -27,15 +30,15 @@ namespace {
     // To use software provider, use MS_KEY_STORAGE_PROVIDER instead.
     constexpr LPCWSTR provider_name = MS_KEY_STORAGE_PROVIDER;
 
-	// For some reason NCRYPT_REQUIRE_VBS_FLAG is not defined in the headers.
-	constexpr DWORD require_vbs = 0x00020000;
+    // For some reason NCRYPT_REQUIRE_VBS_FLAG is not defined in the headers.
+    constexpr DWORD require_vbs = 0x00020000;
 
     // To open the key for the local machine, set this to NCRYPT_MACHINE_KEY_FLAG.
     // Setting this to 0 opens the key for the current user.
     constexpr DWORD key_open_mode = 0;
 
-	// Additional flags to specify only when creating a key.
-	constexpr DWORD key_create_flags = require_vbs;
+    // Additional flags to specify only when creating a key.
+    constexpr DWORD key_create_flags = require_vbs;
 
     ecdsa_p256 p256_crypto_params;
     ecdsa_p384 p384_crypto_params;
@@ -88,28 +91,32 @@ namespace {
         return key_handle;
     }
 
-	const crypto_params& GetCryptoParams(mpss::SignatureAlgorithm algorithm)
-	{
-		switch (algorithm) {
+    const crypto_params& GetCryptoParams(mpss::SignatureAlgorithm algorithm)
+    {
+        switch (algorithm) {
         case mpss::SignatureAlgorithm::ECDSA_P256_SHA256:
             return p256_crypto_params;
         case mpss::SignatureAlgorithm::ECDSA_P384_SHA384:
             return p384_crypto_params;
         case mpss::SignatureAlgorithm::ECDSA_P521_SHA512:
             return p521_crypto_params;
-		default:
-			throw std::invalid_argument("Unsupported algorithm");
-		}
-	}
+        default:
+            throw std::invalid_argument("Unsupported algorithm");
+        }
+    }
 
     class WindowsKeyPairHandle : public mpss::KeyPairHandle
     {
     public:
-		WindowsKeyPairHandle(std::string_view name, mpss::SignatureAlgorithm algorithm, NCRYPT_KEY_HANDLE handle)
-			: mpss::KeyPairHandle(name, algorithm), key_handle_(handle) {}
+        WindowsKeyPairHandle(std::string_view name, mpss::SignatureAlgorithm algorithm, NCRYPT_KEY_HANDLE handle)
+            : mpss::KeyPairHandle(name, algorithm), key_handle_(handle) {}
+
+        virtual ~WindowsKeyPairHandle() = default;
+
+        NCRYPT_KEY_HANDLE key_handle() const { return key_handle_; }
 
     private:
-		NCRYPT_KEY_HANDLE key_handle_ = 0;
+        NCRYPT_KEY_HANDLE key_handle_ = 0;
     };
 }
 
@@ -119,7 +126,7 @@ namespace mpss
     {
         std::optional<KeyPairHandle> create_key(std::string_view name, SignatureAlgorithm algorithm)
         {
-			const crypto_params& crypto = GetCryptoParams(algorithm);
+            const crypto_params& crypto = GetCryptoParams(algorithm);
 
             NCRYPT_PROV_HANDLE provider_handle = GetProvider();
             if (!provider_handle) {
@@ -157,37 +164,76 @@ namespace mpss
 
         std::optional<KeyPairHandle> open_key(std::string_view name)
         {
-			NCRYPT_KEY_HANDLE key_handle = GetKey(name);
-			if (!key_handle) {
-				return std::nullopt;
-			}
+            SignatureAlgorithm algorithm = SignatureAlgorithm::Undefined;
 
-			// Get the algorithm name to dectect SignatureAlgorithm
-			SignatureAlgorithm algorithm = SignatureAlgorithm::ECDSA_P256_SHA256;
-            SECURITY_STATUS status = ::NCryptGetProperty(key_handle, NCRYPT_ALGORITHM_PROPERTY);
-			if (ERROR_SUCCESS != status) {
-				std::stringstream ss;
-				ss << "NCryptGetProperty failed with error code " << mpss::utils::to_hex(status);
-				set_error(status, ss.str());
-				return std::nullopt;
-			}
-
-			return std::make_optional<WindowsKeyPairHandle>(name, algorithm, key_handle);
-        }
-
-        int delete_key(std::string_view name)
-        {
             NCRYPT_KEY_HANDLE key_handle = GetKey(name);
             if (!key_handle) {
-                // If the key does not exist, consider it deleted.
-                if (NTE_BAD_KEYSET == last_error) {
-                    return 0;
-                }
-                return -1;
+                return std::nullopt;
             }
-            SCOPE_GUARD(::NCryptFreeObject(key_handle));
 
-            SECURITY_STATUS status = ::NCryptDeleteKey(key_handle, /* dwFlags */ 0);
+            SCOPE_GUARD({
+                if (algorithm != SignatureAlgorithm::Undefined) {
+                    ::NCryptFreeObject(key_handle);
+                }
+            });
+
+            // Get the algorithm name to deduce SignatureAlgorithm
+            DWORD dwOutputSize = 0;
+            SECURITY_STATUS status = ::NCryptGetProperty(
+                key_handle,
+                NCRYPT_ALGORITHM_PROPERTY,
+                /* pbOutput */ nullptr,
+                /* cbOutput */ 0,
+                &dwOutputSize,
+                /* dwFlags */ 0);
+            if (ERROR_SUCCESS != status) {
+                std::stringstream ss;
+                ss << "NCryptGetProperty failed with error code " << mpss::utils::to_hex(status);
+                set_error(status, ss.str());
+                return std::nullopt;
+            }
+
+            std::wstring algorithm_name(dwOutputSize, '\0');
+            status = ::NCryptGetProperty(
+                key_handle,
+                NCRYPT_ALGORITHM_PROPERTY,
+                reinterpret_cast<PBYTE>(&algorithm_name[0]),
+                static_cast<DWORD>(algorithm_name.size()),
+                &dwOutputSize,
+                /* dwFlags */ 0);
+            if (ERROR_SUCCESS != status) {
+                std::stringstream ss;
+                ss << "NCryptGetProperty failed with error code " << mpss::utils::to_hex(status);
+                set_error(status, ss.str());
+                return std::nullopt;
+            }
+
+            if (algorithm_name == NCRYPT_ECDSA_P256_ALGORITHM) {
+                algorithm = SignatureAlgorithm::ECDSA_P256_SHA256;
+            }
+            else if (algorithm_name == NCRYPT_ECDSA_P384_ALGORITHM) {
+                algorithm = SignatureAlgorithm::ECDSA_P384_SHA384;
+            }
+            else if (algorithm_name == NCRYPT_ECDSA_P521_ALGORITHM) {
+                algorithm = SignatureAlgorithm::ECDSA_P521_SHA512;
+            }
+            else {
+                std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
+                std::string alg_name = converter.to_bytes(algorithm_name);
+                std::stringstream ss;
+                ss << "Unsupported algorithm: " << alg_name;
+                set_error(ERROR_INVALID_PARAMETER, ss.str());
+                return std::nullopt;
+            }
+
+            return std::make_optional<WindowsKeyPairHandle>(name, algorithm, key_handle);
+        }
+
+        int delete_key(const KeyPairHandle& handle)
+        {
+            const WindowsKeyPairHandle& win_handle = static_cast<const WindowsKeyPairHandle&>(handle);
+
+            SECURITY_STATUS status = ::NCryptDeleteKey(win_handle.key_handle(), /* dwFlags */ 0);
             if (ERROR_SUCCESS != status) {
                 std::stringstream ss;
                 ss << "NCryptDeleteKey failed with error code " << mpss::utils::to_hex(status);
@@ -195,38 +241,30 @@ namespace mpss
                 return -1;
             }
 
+            // Release the key handle.
+            ::NCryptFreeObject(win_handle.key_handle());
+
             return 0;
         }
 
-        std::string sign(std::string_view name, std::string_view hash, SignatureAlgorithm algorithm)
+        std::string sign(const KeyPairHandle& handle, std::string_view hash)
         {
+            const WindowsKeyPairHandle& win_handle = static_cast<const WindowsKeyPairHandle&>(handle);
             std::string signature;
-            const crypto_params& crypto = GetCryptoParams(algorithm);
+            const crypto_params& crypto = GetCryptoParams(win_handle.algorithm());
 
-            if (!utils::verify_hash_length(hash, algorithm)) {
+            if (!utils::verify_hash_length(hash, win_handle.algorithm())) {
                 std::stringstream ss;
-				ss << "Invalid hash length for algorithm. Length is: " << hash.size();
-				set_error(ERROR_INVALID_PARAMETER, ss.str());
-				return signature;
-            }
-
-            NCRYPT_KEY_HANDLE key_handle = GetKey(name);
-            if (!key_handle) {
+                ss << "Invalid hash length for algorithm. Length is: " << hash.size();
+                set_error(ERROR_INVALID_PARAMETER, ss.str());
                 return signature;
             }
-
-            SCOPE_GUARD(::NCryptFreeObject(key_handle));
-
-            //BYTE hash[32];
-            //if (!HashData(data, hash, sizeof(hash))) {
-            //    return signature;
-            //}
 
             DWORD signature_size = 0;
 
             // Get signature size.
             SECURITY_STATUS status = ::NCryptSignHash(
-                key_handle,
+                win_handle.key_handle(),
                 /* pPaddingInfo */ nullptr,
                 reinterpret_cast<PBYTE>(const_cast<char*>(hash.data())),
                 hash.size(),
@@ -244,7 +282,7 @@ namespace mpss
             // Get the actual signature.
             signature.resize(signature_size);
             status = ::NCryptSignHash(
-                key_handle,
+                win_handle.key_handle(),
                 /* pPaddingInfo */ nullptr,
                 reinterpret_cast<PBYTE>(const_cast<char*>(hash.data())),
                 hash.size(),
@@ -262,28 +300,18 @@ namespace mpss
             return signature;
         }
 
-        int verify(std::string_view name, std::string_view hash, std::string_view signature, SignatureAlgorithm algorithm)
+        int verify(const KeyPairHandle& handle, std::string_view hash, std::string_view signature)
         {
-            if (!utils::verify_hash_length(hash, algorithm)) {
+            const WindowsKeyPairHandle& win_handle = static_cast<const WindowsKeyPairHandle&>(handle);
+            if (!utils::verify_hash_length(hash, win_handle.algorithm())) {
                 std::stringstream ss;
                 ss << "Invalid hash length for algorithm. Length is: " << hash.size();
                 set_error(ERROR_INVALID_PARAMETER, ss.str());
                 return -1;
             }
 
-            NCRYPT_KEY_HANDLE key_handle = GetKey(name);
-            if (!key_handle) {
-                return -1;
-            }
-            SCOPE_GUARD(::NCryptFreeObject(key_handle));
-
-            //BYTE hash[32];
-            //if (!HashData(data, hash, sizeof(hash))) {
-            //    return -1;
-            //}
-
             SECURITY_STATUS status = ::NCryptVerifySignature(
-                key_handle,
+                win_handle.key_handle(),
                 /* pPaddingInfo */ nullptr,
                 reinterpret_cast<PBYTE>(const_cast<char*>(hash.data())),
                 hash.size(),
@@ -300,20 +328,15 @@ namespace mpss
             return 0;
         }
 
-        int get_key(std::string_view name, SignatureAlgorithm algorithm, std::string& vk_out)
+        int get_key(const KeyPairHandle& handle, std::string& vk_out)
         {
-			const crypto_params& crypto = GetCryptoParams(algorithm);
-
-            NCRYPT_KEY_HANDLE key_handle = GetKey(name);
-            if (!key_handle) {
-                return -1;
-            }
-            SCOPE_GUARD(::NCryptFreeObject(key_handle));
+            const WindowsKeyPairHandle& win_handle = static_cast<const WindowsKeyPairHandle&>(handle);
+            const crypto_params& crypto = GetCryptoParams(win_handle.algorithm());
 
             // Get the public key size.
             DWORD public_key_size = 0;
             SECURITY_STATUS status = ::NCryptExportKey(
-                key_handle,
+                win_handle.key_handle(),
                 /* hExportKey */ 0,
                 crypto.get_public_key_blob_name(),
                 /* pParameterList */ nullptr,
@@ -333,7 +356,7 @@ namespace mpss
             SCOPE_GUARD(delete[] public_key_ptr);
 
             status = ::NCryptExportKey(
-                key_handle,
+                win_handle.key_handle(),
                 /* hExportKey */ 0,
                 crypto.get_public_key_blob_name(),
                 /* pParameterList */ nullptr,
@@ -360,11 +383,17 @@ namespace mpss
             return 0;
         }
 
-		bool is_safe_storage_supported(SignatureAlgorithm algorithm)
-		{
-			// Check if the algorithm is supported.
-			return false;
-		}
+        bool is_safe_storage_supported(SignatureAlgorithm algorithm)
+        {
+            // Check if the algorithm is supported.
+            return false;
+        }
+
+        void release_key(const KeyPairHandle& handle)
+        {
+            const WindowsKeyPairHandle& win_handle = static_cast<const WindowsKeyPairHandle&>(handle);
+            ::NCryptFreeObject(win_handle.key_handle());
+        }
 
         std::string get_error()
         {

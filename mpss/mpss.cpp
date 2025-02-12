@@ -12,28 +12,15 @@
 
 namespace mpss {
     std::optional<KeyPairHandle> create_key(std::string_view name, SignatureAlgorithm algorithm) {
-        KeyPairHandle handle(name, algorithm);
-
-        int result = impl::create_key(name, algorithm, &handle);
-        if (result != 0) {
-            return nullptr;
-        }
-        return handle;
+        return impl::create_key(name, algorithm);
     }
 
     std::optional<KeyPairHandle> open_key(std::string_view name)
     {
-		KeyPairHandle handle = nullptr;
-		int result = impl::open_key(name, &handle);
-		if (result != 0) {
-			return nullptr;
-		}
-		return handle;
+        return impl::open_key(name);
     }
 
-    bool delete_key(KeyPairHandle handle) {
-		utils::throw_if_null(handle, "handle");
-
+    bool delete_key(const KeyPairHandle& handle) {
         int result = impl::delete_key(handle);
         if (result != 0) {
             return false;
@@ -41,41 +28,35 @@ namespace mpss {
         return true;
     }
 
-    std::optional<std::string> sign(KeyPairHandle handle, std::string_view hash, SignatureAlgorithm algorithm) {
-		utils::throw_if_null(handle, "handle");
-
-        std::string signature = impl::sign(handle, std::move(hash), algorithm);
+    std::optional<std::string> sign(const KeyPairHandle& handle, std::string_view hash) {
+        std::string signature = impl::sign(handle, std::move(hash));
         if (signature.size() == 0) {
             return std::nullopt;
         }
         return signature;
     }
 
-    bool verify(KeyPairHandle handle, std::string_view hash, std::string_view signature, SignatureAlgorithm algorithm) {
-		utils::throw_if_null(handle, "handle");
-
-        int result = impl::verify(handle, std::move(hash), std::move(signature), algorithm);
+    bool verify(const KeyPairHandle& handle, std::string_view hash, std::string_view signature) {
+        int result = impl::verify(handle, std::move(hash), std::move(signature));
         if (result != 0) {
             return false;
         }
         return true;
     }
 
-    bool get_key(KeyPairHandle handle, SignatureAlgorithm algorithm, std::string& vk_out) {
-		utils::throw_if_null(handle, "handle");
-
-        int result = impl::get_key(handle, algorithm, vk_out);
+    bool get_key(const KeyPairHandle& handle, std::string& vk_out) {
+        int result = impl::get_key(handle, vk_out);
         if (result != 0) {
             return false;
         }
         return true;
     }
 
-	bool is_safe_storage_supported(SignatureAlgorithm algorithm) {
-		return impl::is_safe_storage_supported(algorithm);
-	}
+    bool is_safe_storage_supported(SignatureAlgorithm algorithm) {
+        return impl::is_safe_storage_supported(algorithm);
+    }
 
-    void release_key(KeyPairHandle handle)
+    void release_key(const KeyPairHandle& handle)
     {
         impl::release_key(handle);
     }
@@ -84,20 +65,21 @@ namespace mpss {
         return impl::get_error();
     }
 
-	KeyPairHandle::KeyPairHandle(std::string_view name, SignatureAlgorithm algorithm)
-		: name_(std::move(name)), algorithm_(algorithm) {
-		switch (algorithm) {
-		case SignatureAlgorithm::ECDSA_P256_SHA256:
-			hash_size_ = 32;
-			break;
-		case SignatureAlgorithm::ECDSA_P384_SHA384:
-			hash_size_ = 48;
-			break;
-		case SignatureAlgorithm::ECDSA_P521_SHA512:
-			hash_size_ = 64;
-			break;
-		default:
-			throw std::invalid_argument("Unsupported algorithm");
-	}
+    KeyPairHandle::KeyPairHandle(std::string_view name, SignatureAlgorithm algorithm)
+        : name_(std::move(name)), algorithm_(algorithm) {
+        switch (algorithm) {
+        case SignatureAlgorithm::ECDSA_P256_SHA256:
+            hash_size_ = 32;
+            break;
+        case SignatureAlgorithm::ECDSA_P384_SHA384:
+            hash_size_ = 48;
+            break;
+        case SignatureAlgorithm::ECDSA_P521_SHA512:
+            hash_size_ = 64;
+            break;
+        default:
+            throw std::invalid_argument("Unsupported algorithm");
+        }
+    }
 
 } // namespace mpss

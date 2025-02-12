@@ -14,24 +14,30 @@ namespace mpss {
         public:
             static void DeleteKey(std::string name) {
                 // Check if key exists, delete if it does
-                bool deleted = mpss::delete_key(std::move(name));
-                if (!deleted) {
-                    std::cout << "Key does not exist or could not be deleted: " << mpss::get_error() << std::endl;
+                std::optional<mpss::KeyPairHandle> handle = mpss::open_key(name);
+                if (handle.has_value()) {
+                    bool deleted = mpss::delete_key(handle.value());
+                    if (!deleted) {
+                        std::cout << "Key could not be deleted: " << mpss::get_error() << std::endl;
+                    }
+                    ASSERT_TRUE(deleted);
                 }
-                ASSERT_TRUE(deleted);
+                else {
+                    std::cout << "Key does not exist: " << mpss::get_error() << std::endl;
+                }
             }
 
-            static void CreateKey(std::string name, SignatureAlgorithm algorithm) {
+            static std::optional<mpss::KeyPairHandle> CreateKey(std::string name, SignatureAlgorithm algorithm) {
                 // Create a key pair
-                bool created = mpss::create_key(std::move(name), algorithm);
-                if (!created) {
+                std::optional<mpss::KeyPairHandle> handle = mpss::create_key(std::move(name), algorithm);
+                if (!handle.has_value()) {
                     std::cout << "Key could not be created: " << mpss::get_error() << std::endl;
                 }
-                ASSERT_TRUE(created);
+                return handle;
             }
         };
 
-        void SignAndVerify(SignatureAlgorithm algorithm, std::string_view suffix, int hash_size)
+        void SignAndVerify(SignatureAlgorithm algorithm, std::string_view suffix)
         {
 			std::string key_name = "test_key_"s + suffix.data();
 
@@ -39,33 +45,37 @@ namespace mpss {
             MPSS::DeleteKey(key_name);
 
             // Create a key pair for testing
-            MPSS::CreateKey(key_name, algorithm);
+            std::optional<mpss::KeyPairHandle> handle = MPSS::CreateKey(key_name, algorithm);
+            ASSERT_TRUE(handle.has_value());
 
             // Sign the data
-            std::string hash(hash_size, 'a');
-            std::optional<std::string> signature = mpss::sign(key_name, hash, algorithm);
+            std::string hash(handle.value().hash_size(), 'a');
+            std::optional<std::string> signature = mpss::sign(handle.value(), hash);
             if (!signature.has_value()) {
                 std::cout << "Data could not be signed: " << mpss::get_error() << std::endl;
             }
             ASSERT_TRUE(signature.has_value());
 
             // Verify the data
-            ASSERT_TRUE(mpss::verify(key_name, hash, signature.value(), algorithm));
+            ASSERT_TRUE(mpss::verify(handle.value(), hash, signature.value()));
+
+            // Release the key pair handle
+            mpss::release_key(handle.value());
 
             // Delete the key pair
             MPSS::DeleteKey(key_name);
         }
 
         TEST_F(MPSS, SignAndVerify256) {
-			SignAndVerify(SignatureAlgorithm::ECDSA_P256_SHA256, "256", 32);
+			SignAndVerify(SignatureAlgorithm::ECDSA_P256_SHA256, "256");
         }
 
         TEST_F(MPSS, SignAndVerify384) {
-            SignAndVerify(SignatureAlgorithm::ECDSA_P384_SHA384, "384", 48);
+            SignAndVerify(SignatureAlgorithm::ECDSA_P384_SHA384, "384");
         }
 
 		TEST_F(MPSS, SignAndVerify521) {
-			SignAndVerify(SignatureAlgorithm::ECDSA_P521_SHA512, "521", 64);
+			SignAndVerify(SignatureAlgorithm::ECDSA_P521_SHA512, "521");
 		}
 
         void GetKey(SignatureAlgorithm algorithm, std::string_view suffix)
@@ -76,17 +86,21 @@ namespace mpss {
             MPSS::DeleteKey(key_name);
 
             // Create a key pair for testing
-            MPSS::CreateKey(key_name, algorithm);
+            std::optional<mpss::KeyPairHandle> handle = MPSS::CreateKey(key_name, algorithm);
+            ASSERT_TRUE(handle.has_value());
 
             // Get the key pair
             std::string vk;
-            bool got_key = mpss::get_key(key_name, algorithm, vk);
+            bool got_key = mpss::get_key(handle.value(), vk);
             if (!got_key) {
                 std::cout << "Key could not be retrieved: " << mpss::get_error() << std::endl;
             }
             ASSERT_TRUE(got_key);
             std::cout << "VK size: " << vk.size() << std::endl;
             ASSERT_TRUE(vk.size() > 0);
+
+            // Release the key pair handle
+            mpss::release_key(handle.value());
 
             // Delete the key pair
             MPSS::DeleteKey(key_name);
