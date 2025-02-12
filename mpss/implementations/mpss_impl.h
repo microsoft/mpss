@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include <optional>
+#include <memory>
 #include <string>
 #include <string_view>
 
@@ -13,9 +13,9 @@ namespace mpss
 {
     namespace impl
     {
-        std::optional<KeyPairHandle> create_key(std::string_view name, SignatureAlgorithm algorithm);
+        std::unique_ptr<KeyPairHandle> create_key(std::string_view name, SignatureAlgorithm algorithm);
 
-        std::optional<KeyPairHandle> open_key(std::string_view name);
+        std::unique_ptr<KeyPairHandle> open_key(std::string_view name);
 
         int delete_key(const KeyPairHandle& handle);
 

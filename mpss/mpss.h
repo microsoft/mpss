@@ -7,6 +7,7 @@
 #include <string>
 #include <string_view>
 #include <optional>
+#include <memory>
 
 namespace mpss {
     /**
@@ -30,14 +31,14 @@ namespace mpss {
     * @param algorithm The signature algorithm to use.
     * @return Key pair handle if the key pair was created successfully, an empty optional otherwise.
     */
-    std::optional<KeyPairHandle> create_key(std::string_view name, SignatureAlgorithm algorithm);
+    std::unique_ptr<KeyPairHandle> create_key(std::string_view name, SignatureAlgorithm algorithm);
 
     /**
     * @brief Opens the key pair with the given name.
     * @param name The name of the key pair to open.
     * @return Key pair handle if the key pair was opened successfully, an empty optional otherwise.
     */
-    std::optional<KeyPairHandle> open_key(std::string_view name);
+    std::unique_ptr<KeyPairHandle> open_key(std::string_view name);
 
     /**
     * @brief Deletes the key pair with the given name.

@@ -124,13 +124,13 @@ namespace mpss
 {
     namespace impl
     {
-        std::optional<KeyPairHandle> create_key(std::string_view name, SignatureAlgorithm algorithm)
+        std::unique_ptr<KeyPairHandle> create_key(std::string_view name, SignatureAlgorithm algorithm)
         {
             const crypto_params& crypto = GetCryptoParams(algorithm);
 
             NCRYPT_PROV_HANDLE provider_handle = GetProvider();
             if (!provider_handle) {
-                return std::nullopt;
+                return nullptr;
             }
             SCOPE_GUARD(::NCryptFreeObject(provider_handle));
 
@@ -148,7 +148,7 @@ namespace mpss
                 std::stringstream ss;
                 ss << "NCryptCreatePersistedKey failed with error code " << mpss::utils::to_hex(status);
                 set_error(status, ss.str());
-                return std::nullopt;
+                return nullptr;
             }
 
             status = ::NCryptFinalizeKey(key_handle, /* dwFlags */ 0);
@@ -156,23 +156,24 @@ namespace mpss
                 std::stringstream ss;
                 ss << "NCryptFinalizeKey failed with error code " << mpss::utils::to_hex(status);
                 set_error(status, ss.str());
-                return std::nullopt;
+                return nullptr;
             }
 
-            return std::make_optional<WindowsKeyPairHandle>(name, algorithm, key_handle);
+            return std::make_unique<WindowsKeyPairHandle>(name, algorithm, key_handle);
         }
 
-        std::optional<KeyPairHandle> open_key(std::string_view name)
+        std::unique_ptr<KeyPairHandle> open_key(std::string_view name)
         {
             SignatureAlgorithm algorithm = SignatureAlgorithm::Undefined;
 
             NCRYPT_KEY_HANDLE key_handle = GetKey(name);
             if (!key_handle) {
-                return std::nullopt;
+                return nullptr;
             }
 
             SCOPE_GUARD({
-                if (algorithm != SignatureAlgorithm::Undefined) {
+                // Release if algorithm is not set, which means there was an error opening the key
+                if (algorithm == SignatureAlgorithm::Undefined) {
                     ::NCryptFreeObject(key_handle);
                 }
             });
@@ -190,7 +191,7 @@ namespace mpss
                 std::stringstream ss;
                 ss << "NCryptGetProperty failed with error code " << mpss::utils::to_hex(status);
                 set_error(status, ss.str());
-                return std::nullopt;
+                return nullptr;
             }
 
             std::wstring algorithm_name(dwOutputSize, '\0');
@@ -205,16 +206,16 @@ namespace mpss
                 std::stringstream ss;
                 ss << "NCryptGetProperty failed with error code " << mpss::utils::to_hex(status);
                 set_error(status, ss.str());
-                return std::nullopt;
+                return nullptr;
             }
 
-            if (algorithm_name == NCRYPT_ECDSA_P256_ALGORITHM) {
+            if (algorithm_name.compare(/* offset */ 0, ::wcslen(NCRYPT_ECDSA_P256_ALGORITHM), NCRYPT_ECDSA_P256_ALGORITHM) == 0) {
                 algorithm = SignatureAlgorithm::ECDSA_P256_SHA256;
             }
-            else if (algorithm_name == NCRYPT_ECDSA_P384_ALGORITHM) {
+            else if (algorithm_name.compare(/* offset */ 0, ::wcslen(NCRYPT_ECDSA_P384_ALGORITHM), NCRYPT_ECDSA_P384_ALGORITHM) == 0) {
                 algorithm = SignatureAlgorithm::ECDSA_P384_SHA384;
             }
-            else if (algorithm_name == NCRYPT_ECDSA_P521_ALGORITHM) {
+            else if (algorithm_name.compare(/* offset */ 0, ::wcslen(NCRYPT_ECDSA_P521_ALGORITHM), NCRYPT_ECDSA_P521_ALGORITHM) == 0) {
                 algorithm = SignatureAlgorithm::ECDSA_P521_SHA512;
             }
             else {
@@ -223,10 +224,10 @@ namespace mpss
                 std::stringstream ss;
                 ss << "Unsupported algorithm: " << alg_name;
                 set_error(ERROR_INVALID_PARAMETER, ss.str());
-                return std::nullopt;
+                return nullptr;
             }
 
-            return std::make_optional<WindowsKeyPairHandle>(name, algorithm, key_handle);
+            return std::make_unique<WindowsKeyPairHandle>(name, algorithm, key_handle);
         }
 
         int delete_key(const KeyPairHandle& handle)

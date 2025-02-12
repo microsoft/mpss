@@ -14,9 +14,9 @@ namespace mpss {
         public:
             static void DeleteKey(std::string name) {
                 // Check if key exists, delete if it does
-                std::optional<mpss::KeyPairHandle> handle = mpss::open_key(name);
-                if (handle.has_value()) {
-                    bool deleted = mpss::delete_key(handle.value());
+                std::unique_ptr<mpss::KeyPairHandle> handle = mpss::open_key(name);
+                if (handle != nullptr) {
+                    bool deleted = mpss::delete_key(*handle);
                     if (!deleted) {
                         std::cout << "Key could not be deleted: " << mpss::get_error() << std::endl;
                     }
@@ -27,10 +27,10 @@ namespace mpss {
                 }
             }
 
-            static std::optional<mpss::KeyPairHandle> CreateKey(std::string name, SignatureAlgorithm algorithm) {
+            static std::unique_ptr<mpss::KeyPairHandle> CreateKey(std::string name, SignatureAlgorithm algorithm) {
                 // Create a key pair
-                std::optional<mpss::KeyPairHandle> handle = mpss::create_key(std::move(name), algorithm);
-                if (!handle.has_value()) {
+                std::unique_ptr<mpss::KeyPairHandle> handle = mpss::create_key(std::move(name), algorithm);
+                if (handle == nullptr) {
                     std::cout << "Key could not be created: " << mpss::get_error() << std::endl;
                 }
                 return handle;
@@ -45,22 +45,22 @@ namespace mpss {
             MPSS::DeleteKey(key_name);
 
             // Create a key pair for testing
-            std::optional<mpss::KeyPairHandle> handle = MPSS::CreateKey(key_name, algorithm);
-            ASSERT_TRUE(handle.has_value());
+            std::unique_ptr<mpss::KeyPairHandle> handle = MPSS::CreateKey(key_name, algorithm);
+            ASSERT_TRUE(handle != nullptr);
 
             // Sign the data
-            std::string hash(handle.value().hash_size(), 'a');
-            std::optional<std::string> signature = mpss::sign(handle.value(), hash);
+            std::string hash(handle->hash_size(), 'a');
+            std::optional<std::string> signature = mpss::sign(*handle, hash);
             if (!signature.has_value()) {
                 std::cout << "Data could not be signed: " << mpss::get_error() << std::endl;
             }
             ASSERT_TRUE(signature.has_value());
 
             // Verify the data
-            ASSERT_TRUE(mpss::verify(handle.value(), hash, signature.value()));
+            ASSERT_TRUE(mpss::verify(*handle, hash, signature.value()));
 
             // Release the key pair handle
-            mpss::release_key(handle.value());
+            mpss::release_key(*handle);
 
             // Delete the key pair
             MPSS::DeleteKey(key_name);
@@ -86,12 +86,12 @@ namespace mpss {
             MPSS::DeleteKey(key_name);
 
             // Create a key pair for testing
-            std::optional<mpss::KeyPairHandle> handle = MPSS::CreateKey(key_name, algorithm);
-            ASSERT_TRUE(handle.has_value());
+            std::unique_ptr<mpss::KeyPairHandle> handle = MPSS::CreateKey(key_name, algorithm);
+            ASSERT_TRUE(handle != nullptr);
 
             // Get the key pair
             std::string vk;
-            bool got_key = mpss::get_key(handle.value(), vk);
+            bool got_key = mpss::get_key(*handle, vk);
             if (!got_key) {
                 std::cout << "Key could not be retrieved: " << mpss::get_error() << std::endl;
             }
@@ -100,7 +100,7 @@ namespace mpss {
             ASSERT_TRUE(vk.size() > 0);
 
             // Release the key pair handle
-            mpss::release_key(handle.value());
+            mpss::release_key(*handle);
 
             // Delete the key pair
             MPSS::DeleteKey(key_name);
