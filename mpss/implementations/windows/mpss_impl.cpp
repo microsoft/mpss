@@ -230,11 +230,12 @@ namespace mpss
             return std::make_unique<WindowsKeyPairHandle>(name, algorithm, key_handle);
         }
 
-        int delete_key(const KeyPairHandle& handle)
+        int delete_key(const KeyPairHandlePtr handle)
         {
-            const WindowsKeyPairHandle& win_handle = static_cast<const WindowsKeyPairHandle&>(handle);
+            utils::throw_if_null(handle, "handle");
+            const WindowsKeyPairHandle* win_handle = reinterpret_cast<const WindowsKeyPairHandle*>(handle);
 
-            SECURITY_STATUS status = ::NCryptDeleteKey(win_handle.key_handle(), /* dwFlags */ 0);
+            SECURITY_STATUS status = ::NCryptDeleteKey(win_handle->key_handle(), /* dwFlags */ 0);
             if (ERROR_SUCCESS != status) {
                 std::stringstream ss;
                 ss << "NCryptDeleteKey failed with error code " << mpss::utils::to_hex(status);
@@ -243,18 +244,19 @@ namespace mpss
             }
 
             // Release the key handle.
-            ::NCryptFreeObject(win_handle.key_handle());
+            ::NCryptFreeObject(win_handle->key_handle());
 
             return 0;
         }
 
-        std::string sign(const KeyPairHandle& handle, std::string_view hash)
+        std::string sign(const KeyPairHandlePtr handle, std::string_view hash)
         {
-            const WindowsKeyPairHandle& win_handle = static_cast<const WindowsKeyPairHandle&>(handle);
+            utils::throw_if_null(handle, "handle");
+            const WindowsKeyPairHandle* win_handle = reinterpret_cast<const WindowsKeyPairHandle*>(handle);
             std::string signature;
-            const crypto_params& crypto = GetCryptoParams(win_handle.algorithm());
+            const crypto_params& crypto = GetCryptoParams(win_handle->algorithm());
 
-            if (!utils::verify_hash_length(hash, win_handle.algorithm())) {
+            if (!utils::verify_hash_length(hash, win_handle->algorithm())) {
                 std::stringstream ss;
                 ss << "Invalid hash length for algorithm. Length is: " << hash.size();
                 set_error(ERROR_INVALID_PARAMETER, ss.str());
@@ -265,7 +267,7 @@ namespace mpss
 
             // Get signature size.
             SECURITY_STATUS status = ::NCryptSignHash(
-                win_handle.key_handle(),
+                win_handle->key_handle(),
                 /* pPaddingInfo */ nullptr,
                 reinterpret_cast<PBYTE>(const_cast<char*>(hash.data())),
                 hash.size(),
@@ -283,7 +285,7 @@ namespace mpss
             // Get the actual signature.
             signature.resize(signature_size);
             status = ::NCryptSignHash(
-                win_handle.key_handle(),
+                win_handle->key_handle(),
                 /* pPaddingInfo */ nullptr,
                 reinterpret_cast<PBYTE>(const_cast<char*>(hash.data())),
                 hash.size(),
@@ -301,10 +303,11 @@ namespace mpss
             return signature;
         }
 
-        int verify(const KeyPairHandle& handle, std::string_view hash, std::string_view signature)
+        int verify(const KeyPairHandlePtr handle, std::string_view hash, std::string_view signature)
         {
-            const WindowsKeyPairHandle& win_handle = static_cast<const WindowsKeyPairHandle&>(handle);
-            if (!utils::verify_hash_length(hash, win_handle.algorithm())) {
+            utils::throw_if_null(handle, "handle");
+            const WindowsKeyPairHandle* win_handle = reinterpret_cast<const WindowsKeyPairHandle*>(handle);
+            if (!utils::verify_hash_length(hash, win_handle->algorithm())) {
                 std::stringstream ss;
                 ss << "Invalid hash length for algorithm. Length is: " << hash.size();
                 set_error(ERROR_INVALID_PARAMETER, ss.str());
@@ -312,7 +315,7 @@ namespace mpss
             }
 
             SECURITY_STATUS status = ::NCryptVerifySignature(
-                win_handle.key_handle(),
+                win_handle->key_handle(),
                 /* pPaddingInfo */ nullptr,
                 reinterpret_cast<PBYTE>(const_cast<char*>(hash.data())),
                 hash.size(),
@@ -329,15 +332,16 @@ namespace mpss
             return 0;
         }
 
-        int get_key(const KeyPairHandle& handle, std::string& vk_out)
+        int get_key(const KeyPairHandlePtr handle, std::string& vk_out)
         {
-            const WindowsKeyPairHandle& win_handle = static_cast<const WindowsKeyPairHandle&>(handle);
-            const crypto_params& crypto = GetCryptoParams(win_handle.algorithm());
+            utils::throw_if_null(handle, "handle");
+            const WindowsKeyPairHandle* win_handle = reinterpret_cast<const WindowsKeyPairHandle*>(handle);
+            const crypto_params& crypto = GetCryptoParams(win_handle->algorithm());
 
             // Get the public key size.
             DWORD public_key_size = 0;
             SECURITY_STATUS status = ::NCryptExportKey(
-                win_handle.key_handle(),
+                win_handle->key_handle(),
                 /* hExportKey */ 0,
                 crypto.get_public_key_blob_name(),
                 /* pParameterList */ nullptr,
@@ -357,7 +361,7 @@ namespace mpss
             SCOPE_GUARD(delete[] public_key_ptr);
 
             status = ::NCryptExportKey(
-                win_handle.key_handle(),
+                win_handle->key_handle(),
                 /* hExportKey */ 0,
                 crypto.get_public_key_blob_name(),
                 /* pParameterList */ nullptr,
@@ -390,10 +394,11 @@ namespace mpss
             return false;
         }
 
-        void release_key(const KeyPairHandle& handle)
+        void release_key(const KeyPairHandlePtr handle)
         {
-            const WindowsKeyPairHandle& win_handle = static_cast<const WindowsKeyPairHandle&>(handle);
-            ::NCryptFreeObject(win_handle.key_handle());
+            utils::throw_if_null(handle, "handle");
+            const WindowsKeyPairHandle* win_handle = reinterpret_cast<const WindowsKeyPairHandle*>(handle);
+            ::NCryptFreeObject(win_handle->key_handle());
         }
 
         std::string get_error()

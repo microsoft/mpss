@@ -20,7 +20,9 @@ namespace mpss {
         return impl::open_key(name);
     }
 
-    bool delete_key(const KeyPairHandle& handle) {
+    bool delete_key(const KeyPairHandlePtr handle) {
+        utils::throw_if_null(handle, "handle");
+
         int result = impl::delete_key(handle);
         if (result != 0) {
             return false;
@@ -28,7 +30,9 @@ namespace mpss {
         return true;
     }
 
-    std::optional<std::string> sign(const KeyPairHandle& handle, std::string_view hash) {
+    std::optional<std::string> sign(const KeyPairHandlePtr handle, std::string_view hash) {
+        utils::throw_if_null(handle, "handle");
+
         std::string signature = impl::sign(handle, std::move(hash));
         if (signature.size() == 0) {
             return std::nullopt;
@@ -36,7 +40,9 @@ namespace mpss {
         return signature;
     }
 
-    bool verify(const KeyPairHandle& handle, std::string_view hash, std::string_view signature) {
+    bool verify(const KeyPairHandlePtr handle, std::string_view hash, std::string_view signature) {
+        utils::throw_if_null(handle, "handle");
+
         int result = impl::verify(handle, std::move(hash), std::move(signature));
         if (result != 0) {
             return false;
@@ -44,7 +50,9 @@ namespace mpss {
         return true;
     }
 
-    bool get_key(const KeyPairHandle& handle, std::string& vk_out) {
+    bool get_key(const KeyPairHandlePtr handle, std::string& vk_out) {
+        utils::throw_if_null(handle, "handle");
+
         int result = impl::get_key(handle, vk_out);
         if (result != 0) {
             return false;
@@ -56,8 +64,9 @@ namespace mpss {
         return impl::is_safe_storage_supported(algorithm);
     }
 
-    void release_key(const KeyPairHandle& handle)
+    void release_key(const KeyPairHandlePtr handle)
     {
+        utils::throw_if_null(handle, "handle");
         impl::release_key(handle);
     }
 
