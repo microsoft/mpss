@@ -30,17 +30,17 @@ namespace mpss {
         return true;
     }
 
-    std::optional<std::string> sign(const KeyPairHandlePtr handle, std::string_view hash) {
+    std::optional<std::vector<std::byte>> sign(const KeyPairHandlePtr handle, gsl::span<std::byte> hash) {
         utils::throw_if_null(handle, "handle");
 
-        std::string signature = impl::sign(handle, std::move(hash));
+        std::vector<std::byte> signature = std::move(impl::sign(handle, std::move(hash)));
         if (signature.size() == 0) {
             return std::nullopt;
         }
         return signature;
     }
 
-    bool verify(const KeyPairHandlePtr handle, std::string_view hash, std::string_view signature) {
+    bool verify(const KeyPairHandlePtr handle, gsl::span<std::byte> hash, gsl::span<std::byte> signature) {
         utils::throw_if_null(handle, "handle");
 
         int result = impl::verify(handle, std::move(hash), std::move(signature));
@@ -50,7 +50,7 @@ namespace mpss {
         return true;
     }
 
-    bool get_key(const KeyPairHandlePtr handle, std::string& vk_out) {
+    bool get_key(const KeyPairHandlePtr handle, std::vector<std::byte>& vk_out) {
         utils::throw_if_null(handle, "handle");
 
         int result = impl::get_key(handle, vk_out);

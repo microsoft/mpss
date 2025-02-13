@@ -96,6 +96,10 @@ target_compile_definitions(${mpss_TARGET} PRIVATE
     $<BUILD_INTERFACE:$<$<CONFIG:Debug>:MPSS_DEBUG_BUILD>>
 )
 
+# Dependencies
+find_package(Microsoft.GSL CONFIG REQUIRED)
+target_link_libraries(${mpss_TARGET} PRIVATE Microsoft.GSL::GSL)
+
 # Platform-specific libraries.
 if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
     target_link_libraries(${mpss_TARGET} PRIVATE ncrypt)

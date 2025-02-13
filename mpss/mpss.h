@@ -7,7 +7,10 @@
 #include <string>
 #include <string_view>
 #include <optional>
+#include <vector>
 #include <memory>
+
+#include <gsl/gsl>
 
 namespace mpss {
     /**
@@ -60,7 +63,7 @@ namespace mpss {
     * @return The signature if the data was signed successfully, an empty optional otherwise.
     * @note The data needs to be hashed before signing. The hash algorithm should match the given signature algorithm.
     */
-    std::optional<std::string> sign(const KeyPairHandlePtr handle, std::string_view hash);
+    std::optional<std::vector<std::byte>> sign(const KeyPairHandlePtr handle, gsl::span<std::byte> hash);
 
     /**
     * @brief Verifies the given data with the key pair with the given name.
@@ -69,7 +72,7 @@ namespace mpss {
     * @param signature The signature to verify.
     * @return True if the data was verified successfully, false otherwise.
     */
-    bool verify(const KeyPairHandlePtr handle, std::string_view hash, std::string_view signature);
+    bool verify(const KeyPairHandlePtr handle, gsl::span<std::byte> hash, gsl::span<std::byte> signature);
 
     /**
     * @brief Retrieves a verification (public) key with the given name.
@@ -77,7 +80,7 @@ namespace mpss {
     * @param vk_out The verification key.
     * @return True if the verification key retrieved successfully, false otherwise.
     */
-    bool get_key(const KeyPairHandlePtr handle, std::string& vk_out);
+    bool get_key(const KeyPairHandlePtr handle, std::vector<std::byte>& vk_out);
 
     /**
     * @brief Determines whether the given signature algorithm is supported in the safe storage system.

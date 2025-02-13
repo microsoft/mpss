@@ -32,7 +32,7 @@ namespace mpss {
             _last_error = std::move(error);
         }
 
-        bool verify_hash_length(std::string_view hash, SignatureAlgorithm algorithm)
+        bool verify_hash_length(gsl::span<std::byte> hash, SignatureAlgorithm algorithm)
         {
             switch (algorithm) {
             case SignatureAlgorithm::ECDSA_P256_SHA256:

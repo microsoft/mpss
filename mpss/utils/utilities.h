@@ -4,6 +4,8 @@
 #pragma once
 
 #include <string>
+#include <gsl/gsl>
+
 #include "mpss/mpss.h"
 
 namespace mpss {
@@ -18,7 +20,7 @@ namespace mpss {
         void set_error(std::string error);
 
 		// Verify the length of the hash based on the signature algorithm
-		bool verify_hash_length(std::string_view hash, SignatureAlgorithm algorithm);
+		bool verify_hash_length(gsl::span<std::byte> hash, SignatureAlgorithm algorithm);
 
         // Throw an exception if the argument is null
 		void throw_if_null(void* arg, std::string_view name);

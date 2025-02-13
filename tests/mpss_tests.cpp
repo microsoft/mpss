@@ -49,8 +49,8 @@ namespace mpss {
             ASSERT_TRUE(handle != nullptr);
 
             // Sign the data
-            std::string hash(handle->hash_size(), 'a');
-            std::optional<std::string> signature = mpss::sign(handle.get(), hash);
+            std::vector<std::byte> hash(handle->hash_size(), static_cast<std::byte>('a'));
+            std::optional<std::vector<std::byte>> signature = mpss::sign(handle.get(), hash);
             if (!signature.has_value()) {
                 std::cout << "Data could not be signed: " << mpss::get_error() << std::endl;
             }
@@ -90,7 +90,7 @@ namespace mpss {
             ASSERT_TRUE(handle != nullptr);
 
             // Get the key pair
-            std::string vk;
+            std::vector<std::byte> vk;
             bool got_key = mpss::get_key(handle.get(), vk);
             if (!got_key) {
                 std::cout << "Key could not be retrieved: " << mpss::get_error() << std::endl;

@@ -6,6 +6,9 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
+
+#include <gsl/gsl>
 
 #include "mpss/mpss.h"
 
@@ -19,11 +22,11 @@ namespace mpss
 
         int delete_key(const KeyPairHandlePtr handle);
 
-        std::string sign(const KeyPairHandlePtr handle, std::string_view data);
+        std::vector<std::byte> sign(const KeyPairHandlePtr handle, gsl::span<std::byte> hash);
 
-        int verify(const KeyPairHandlePtr handle, std::string_view data, std::string_view signature);
+        int verify(const KeyPairHandlePtr handle, gsl::span<std::byte> hash, gsl::span<std::byte> signature);
 
-        int get_key(const KeyPairHandlePtr handle, std::string& vk_out);
+        int get_key(const KeyPairHandlePtr handle, std::vector<std::byte>& vk_out);
 
         bool is_safe_storage_supported(SignatureAlgorithm algorithm);
 

@@ -249,11 +249,11 @@ namespace mpss
             return 0;
         }
 
-        std::string sign(const KeyPairHandlePtr handle, std::string_view hash)
+        std::vector<std::byte> sign(const KeyPairHandlePtr handle, gsl::span<std::byte> hash)
         {
             utils::throw_if_null(handle, "handle");
             const WindowsKeyPairHandle* win_handle = reinterpret_cast<const WindowsKeyPairHandle*>(handle);
-            std::string signature;
+            std::vector<std::byte> signature;
             const crypto_params& crypto = GetCryptoParams(win_handle->algorithm());
 
             if (!utils::verify_hash_length(hash, win_handle->algorithm())) {
@@ -269,7 +269,7 @@ namespace mpss
             SECURITY_STATUS status = ::NCryptSignHash(
                 win_handle->key_handle(),
                 /* pPaddingInfo */ nullptr,
-                reinterpret_cast<PBYTE>(const_cast<char*>(hash.data())),
+                reinterpret_cast<PBYTE>(const_cast<std::byte*>(hash.data())),
                 hash.size(),
                 /* pbSignature */ nullptr,
                 /* cbSignature */ 0,
@@ -287,7 +287,7 @@ namespace mpss
             status = ::NCryptSignHash(
                 win_handle->key_handle(),
                 /* pPaddingInfo */ nullptr,
-                reinterpret_cast<PBYTE>(const_cast<char*>(hash.data())),
+                reinterpret_cast<PBYTE>(const_cast<std::byte*>(hash.data())),
                 hash.size(),
                 reinterpret_cast<PBYTE>(&signature[0]),
                 static_cast<DWORD>(signature.size()),
@@ -297,13 +297,13 @@ namespace mpss
                 std::stringstream ss;
                 ss << "NCryptSignHash failed with error code " << mpss::utils::to_hex(status);
                 set_error(status, ss.str());
-                return std::string();
+                return {};
             }
 
             return signature;
         }
 
-        int verify(const KeyPairHandlePtr handle, std::string_view hash, std::string_view signature)
+        int verify(const KeyPairHandlePtr handle, gsl::span<std::byte> hash, gsl::span<std::byte> signature)
         {
             utils::throw_if_null(handle, "handle");
             const WindowsKeyPairHandle* win_handle = reinterpret_cast<const WindowsKeyPairHandle*>(handle);
@@ -317,9 +317,9 @@ namespace mpss
             SECURITY_STATUS status = ::NCryptVerifySignature(
                 win_handle->key_handle(),
                 /* pPaddingInfo */ nullptr,
-                reinterpret_cast<PBYTE>(const_cast<char*>(hash.data())),
+                reinterpret_cast<PBYTE>(const_cast<std::byte*>(hash.data())),
                 hash.size(),
-                reinterpret_cast<PBYTE>(const_cast<char*>(signature.data())),
+                reinterpret_cast<PBYTE>(const_cast<std::byte*>(signature.data())),
                 static_cast<DWORD>(signature.size()),
                 /* dwFlags */ 0);
             if (ERROR_SUCCESS != status) {
@@ -332,7 +332,7 @@ namespace mpss
             return 0;
         }
 
-        int get_key(const KeyPairHandlePtr handle, std::string& vk_out)
+        int get_key(const KeyPairHandlePtr handle, std::vector<std::byte>& vk_out)
         {
             utils::throw_if_null(handle, "handle");
             const WindowsKeyPairHandle* win_handle = reinterpret_cast<const WindowsKeyPairHandle*>(handle);
@@ -383,7 +383,9 @@ namespace mpss
             }
 
             BYTE* data_start_ptr = reinterpret_cast<BYTE*>(public_key_blob_ptr) + sizeof(crypto_params::key_blob_t);
-            vk_out.assign(reinterpret_cast<char*>(data_start_ptr), public_key_size - sizeof(crypto_params::key_blob_t));
+            vk_out.assign(
+                reinterpret_cast<std::byte*>(data_start_ptr),
+                reinterpret_cast<std::byte*>(data_start_ptr) + public_key_size - sizeof(crypto_params::key_blob_t));
 
             return 0;
         }
