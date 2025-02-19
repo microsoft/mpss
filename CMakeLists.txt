@@ -19,7 +19,7 @@ if (MPSS_BUILD_TESTS)
     list(APPEND VCPKG_MANIFEST_FEATURES "tests")
 endif()
 
-project(mpss VERSION 0.1.0 LANGUAGES CXX)
+project(mpss VERSION 0.1.0 LANGUAGES CXX OBJC)
 
 # All our modules are in cmake/.
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_LIST_DIR}/cmake)
@@ -87,7 +87,10 @@ else()
 endif()
 
 # Require C++17 for mpss and downstream.
-target_compile_features(${mpss_TARGET} PUBLIC cxx_std_17)
+#target_compile_features(${mpss_TARGET} PUBLIC
+#    "$<$<COMPILE_LANGUAGE:CXX>:cxx_std_17>")
+target_compile_options(${mpss_TARGET} PUBLIC
+    "$<$<COMPILE_LANGUAGE:CXX>:-std=c++17>")
 
 # Internally, mpss indicates a debug build with the macro MPSS_DEBUG_BUILD. This is
 # only used in the mpss source files, so it does not need to be set when compiling

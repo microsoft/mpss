@@ -8,6 +8,7 @@ endif()
 
 # Add the source files from this directory.
 set(mpss_SOURCE_FILES ${mpss_SOURCE_FILES}
+    ${CMAKE_CURRENT_LIST_DIR}/mac_api_wrapper.m
     ${CMAKE_CURRENT_LIST_DIR}/mpss_impl.cpp
 )
 
