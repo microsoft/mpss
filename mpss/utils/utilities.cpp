@@ -46,7 +46,7 @@ namespace mpss {
             }
         }
 
-		void throw_if_null(void* arg, std::string_view name)
+		void throw_if_null(const void* arg, std::string_view name)
 		{
 			if (arg == nullptr) {
 				throw new std::invalid_argument(std::string(name) + " cannot be null");

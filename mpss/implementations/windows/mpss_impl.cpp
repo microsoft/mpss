@@ -105,15 +105,32 @@ namespace {
         }
     }
 
-    class WindowsKeyPairHandle : public mpss::KeyPairHandle
+    class WindowsKeyPair : public mpss::KeyPair
     {
     public:
-        WindowsKeyPairHandle(std::string_view name, mpss::SignatureAlgorithm algorithm, NCRYPT_KEY_HANDLE handle)
-            : mpss::KeyPairHandle(name, algorithm), key_handle_(handle) {}
+        WindowsKeyPair(std::string_view name, mpss::SignatureAlgorithm algorithm, NCRYPT_KEY_HANDLE handle)
+            : mpss::KeyPair(name, algorithm), key_handle_(handle) {}
 
-        virtual ~WindowsKeyPairHandle() = default;
+        virtual ~WindowsKeyPair()
+        {
+            win_release();
+        }
 
         NCRYPT_KEY_HANDLE key_handle() const { return key_handle_; }
+
+        void win_release()
+        {
+            if (key_handle_) {
+                ::NCryptFreeObject(key_handle_);
+            }
+
+            clear_handle();
+        }
+
+        void clear_handle()
+        {
+            key_handle_ = 0;
+        }
 
     private:
         NCRYPT_KEY_HANDLE key_handle_ = 0;
@@ -124,7 +141,7 @@ namespace mpss
 {
     namespace impl
     {
-        std::unique_ptr<KeyPairHandle> create_key(std::string_view name, SignatureAlgorithm algorithm)
+        std::unique_ptr<KeyPair> create_key(std::string_view name, SignatureAlgorithm algorithm)
         {
             const crypto_params& crypto = GetCryptoParams(algorithm);
 
@@ -159,10 +176,10 @@ namespace mpss
                 return nullptr;
             }
 
-            return std::make_unique<WindowsKeyPairHandle>(name, algorithm, key_handle);
+            return std::make_unique<WindowsKeyPair>(name, algorithm, key_handle);
         }
 
-        std::unique_ptr<KeyPairHandle> open_key(std::string_view name)
+        std::unique_ptr<KeyPair> open_key(std::string_view name)
         {
             SignatureAlgorithm algorithm = SignatureAlgorithm::Undefined;
 
@@ -227,13 +244,13 @@ namespace mpss
                 return nullptr;
             }
 
-            return std::make_unique<WindowsKeyPairHandle>(name, algorithm, key_handle);
+            return std::make_unique<WindowsKeyPair>(name, algorithm, key_handle);
         }
 
-        int delete_key(const KeyPairHandlePtr handle)
+        int delete_key(KeyPair* handle)
         {
             utils::throw_if_null(handle, "handle");
-            const WindowsKeyPairHandle* win_handle = reinterpret_cast<const WindowsKeyPairHandle*>(handle);
+            WindowsKeyPair* win_handle = reinterpret_cast<WindowsKeyPair*>(handle);
 
             SECURITY_STATUS status = ::NCryptDeleteKey(win_handle->key_handle(), /* dwFlags */ 0);
             if (ERROR_SUCCESS != status) {
@@ -244,15 +261,15 @@ namespace mpss
             }
 
             // Release the key handle.
-            ::NCryptFreeObject(win_handle->key_handle());
+            win_handle->win_release();
 
             return 0;
         }
 
-        std::vector<std::byte> sign(const KeyPairHandlePtr handle, gsl::span<std::byte> hash)
+        std::vector<std::byte> sign(const KeyPair* handle, gsl::span<std::byte> hash)
         {
             utils::throw_if_null(handle, "handle");
-            const WindowsKeyPairHandle* win_handle = reinterpret_cast<const WindowsKeyPairHandle*>(handle);
+            const WindowsKeyPair* win_handle = reinterpret_cast<const WindowsKeyPair*>(handle);
             std::vector<std::byte> signature;
             const crypto_params& crypto = GetCryptoParams(win_handle->algorithm());
 
@@ -303,10 +320,10 @@ namespace mpss
             return signature;
         }
 
-        int verify(const KeyPairHandlePtr handle, gsl::span<std::byte> hash, gsl::span<std::byte> signature)
+        int verify(const KeyPair* handle, gsl::span<std::byte> hash, gsl::span<std::byte> signature)
         {
             utils::throw_if_null(handle, "handle");
-            const WindowsKeyPairHandle* win_handle = reinterpret_cast<const WindowsKeyPairHandle*>(handle);
+            const WindowsKeyPair* win_handle = reinterpret_cast<const WindowsKeyPair*>(handle);
             if (!utils::verify_hash_length(hash, win_handle->algorithm())) {
                 std::stringstream ss;
                 ss << "Invalid hash length for algorithm. Length is: " << hash.size();
@@ -332,10 +349,10 @@ namespace mpss
             return 0;
         }
 
-        int get_key(const KeyPairHandlePtr handle, std::vector<std::byte>& vk_out)
+        int get_key(const KeyPair* handle, std::vector<std::byte>& vk_out)
         {
             utils::throw_if_null(handle, "handle");
-            const WindowsKeyPairHandle* win_handle = reinterpret_cast<const WindowsKeyPairHandle*>(handle);
+            const WindowsKeyPair* win_handle = reinterpret_cast<const WindowsKeyPair*>(handle);
             const crypto_params& crypto = GetCryptoParams(win_handle->algorithm());
 
             // Get the public key size.
@@ -396,11 +413,11 @@ namespace mpss
             return false;
         }
 
-        void release_key(const KeyPairHandlePtr handle)
+        void release_key(KeyPair* handle)
         {
             utils::throw_if_null(handle, "handle");
-            const WindowsKeyPairHandle* win_handle = reinterpret_cast<const WindowsKeyPairHandle*>(handle);
-            ::NCryptFreeObject(win_handle->key_handle());
+            WindowsKeyPair* win_handle = reinterpret_cast<WindowsKeyPair*>(handle);
+            win_handle->win_release();
         }
 
         std::string get_error()

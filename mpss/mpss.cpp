@@ -11,49 +11,41 @@
 
 
 namespace mpss {
-    std::unique_ptr<KeyPairHandle> create_key(std::string_view name, SignatureAlgorithm algorithm) {
+    std::unique_ptr<KeyPair> KeyPair::create(std::string_view name, SignatureAlgorithm algorithm) {
         return impl::create_key(name, algorithm);
     }
 
-    std::unique_ptr<KeyPairHandle> open_key(std::string_view name)
+    std::unique_ptr<KeyPair> KeyPair::open(std::string_view name)
     {
         return impl::open_key(name);
     }
 
-    bool delete_key(const KeyPairHandlePtr handle) {
-        utils::throw_if_null(handle, "handle");
-
-        int result = impl::delete_key(handle);
+    bool KeyPair::delete_key() {
+        int result = impl::delete_key(this);
         if (result != 0) {
             return false;
         }
         return true;
     }
 
-    std::optional<std::vector<std::byte>> sign(const KeyPairHandlePtr handle, gsl::span<std::byte> hash) {
-        utils::throw_if_null(handle, "handle");
-
-        std::vector<std::byte> signature = std::move(impl::sign(handle, std::move(hash)));
+    std::optional<std::vector<std::byte>> KeyPair::sign(gsl::span<std::byte> hash) const {
+        std::vector<std::byte> signature = std::move(impl::sign(this, std::move(hash)));
         if (signature.size() == 0) {
             return std::nullopt;
         }
         return signature;
     }
 
-    bool verify(const KeyPairHandlePtr handle, gsl::span<std::byte> hash, gsl::span<std::byte> signature) {
-        utils::throw_if_null(handle, "handle");
-
-        int result = impl::verify(handle, std::move(hash), std::move(signature));
+    bool KeyPair::verify(gsl::span<std::byte> hash, gsl::span<std::byte> signature) const {
+        int result = impl::verify(this, std::move(hash), std::move(signature));
         if (result != 0) {
             return false;
         }
         return true;
     }
 
-    bool get_key(const KeyPairHandlePtr handle, std::vector<std::byte>& vk_out) {
-        utils::throw_if_null(handle, "handle");
-
-        int result = impl::get_key(handle, vk_out);
+    bool KeyPair::get_verification_key(std::vector<std::byte>& vk_out) const {
+        int result = impl::get_key(this, vk_out);
         if (result != 0) {
             return false;
         }
@@ -64,17 +56,16 @@ namespace mpss {
         return impl::is_safe_storage_supported(algorithm);
     }
 
-    void release_key(const KeyPairHandlePtr handle)
+    void KeyPair::release_key()
     {
-        utils::throw_if_null(handle, "handle");
-        impl::release_key(handle);
+        impl::release_key(this);
     }
 
     std::string get_error() {
         return impl::get_error();
     }
 
-    KeyPairHandle::KeyPairHandle(std::string_view name, SignatureAlgorithm algorithm)
+    KeyPair::KeyPair(std::string_view name, SignatureAlgorithm algorithm)
         : name_(std::move(name)), algorithm_(algorithm) {
         switch (algorithm) {
         case SignatureAlgorithm::ECDSA_P256_SHA256:
@@ -90,5 +81,4 @@ namespace mpss {
             throw std::invalid_argument("Unsupported algorithm");
         }
     }
-
 } // namespace mpss
