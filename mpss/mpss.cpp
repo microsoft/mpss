@@ -20,45 +20,8 @@ namespace mpss {
         return impl::open_key(name);
     }
 
-    bool KeyPair::delete_key() {
-        int result = impl::delete_key(this);
-        if (result != 0) {
-            return false;
-        }
-        return true;
-    }
-
-    std::optional<std::vector<std::byte>> KeyPair::sign(gsl::span<std::byte> hash) const {
-        std::vector<std::byte> signature = std::move(impl::sign(this, std::move(hash)));
-        if (signature.size() == 0) {
-            return std::nullopt;
-        }
-        return signature;
-    }
-
-    bool KeyPair::verify(gsl::span<std::byte> hash, gsl::span<std::byte> signature) const {
-        int result = impl::verify(this, std::move(hash), std::move(signature));
-        if (result != 0) {
-            return false;
-        }
-        return true;
-    }
-
-    bool KeyPair::get_verification_key(std::vector<std::byte>& vk_out) const {
-        int result = impl::get_key(this, vk_out);
-        if (result != 0) {
-            return false;
-        }
-        return true;
-    }
-
     bool is_safe_storage_supported(SignatureAlgorithm algorithm) {
         return impl::is_safe_storage_supported(algorithm);
-    }
-
-    void KeyPair::release_key()
-    {
-        impl::release_key(this);
     }
 
     std::string get_error() {

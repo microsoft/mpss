@@ -9,6 +9,8 @@ endif()
 # Add the source files from this directory.
 set(mpss_SOURCE_FILES ${mpss_SOURCE_FILES}
     ${CMAKE_CURRENT_LIST_DIR}/mpss_impl.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/win_keypair.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/win_utils.cpp
 )
 
 # Update mpss_SOURCE_FILES variable in the parent scope.
