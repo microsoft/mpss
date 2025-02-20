@@ -9,32 +9,32 @@ namespace mpss
 {
     namespace impl
     {
-        std::unique_ptr<KeyPairHandle> create_key(std::string_view name, SignatureAlgorithm algorithm)
+        std::unique_ptr<KeyPair> create_key(std::string_view name, SignatureAlgorithm algorithm)
         {
             return {};
         }
 
-        std::unique_ptr<KeyPairHandle> open_key(std::string_view name)
+        std::unique_ptr<KeyPair> open_key(std::string_view name)
         {
             return {};
         }
 
-        int delete_key(const KeyPairHandlePtr handle)
+        int delete_key(KeyPair* handle)
         {
             return 0;
         }
 
-        std::vector<std::byte> sign(const KeyPairHandlePtr handle, gsl::span<std::byte> hash)
+        std::vector<std::byte> sign(const KeyPair* handle, gsl::span<std::byte> hash)
         {
             return {};
         }
 
-        int verify(const KeyPairHandlePtr handle, gsl::span<std::byte> hash, gsl::span<std::byte> signature)
+        int verify(const KeyPair* handle, gsl::span<std::byte> hash, gsl::span<std::byte> signature)
         {
             return 0;
         }
 
-        int get_key(const KeyPairHandlePtr handle, std::vector<std::byte> &vk_out)
+        int get_key(const KeyPair* handle, std::vector<std::byte> &vk_out)
         {
             return 0;
         }
@@ -44,7 +44,7 @@ namespace mpss
             return false;
         }
 
-        void release_key(const KeyPairHandlePtr handle)
+        void release_key(KeyPair* handle)
         {
         }
 
