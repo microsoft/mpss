@@ -83,7 +83,7 @@ namespace mpss {
         * @return True if the key pair was deleted successfully, false otherwise.
         * @note After this function returns successfully, the key pair is no longer valid.
         */
-        bool delete_key();
+        virtual bool delete_key() = 0;
 
         /**
         * @brief Signs the given data with the key pair with the given name.
@@ -91,7 +91,7 @@ namespace mpss {
         * @return The signature if the data was signed successfully, an empty optional otherwise.
         * @note The data needs to be hashed before signing. The hash algorithm should match the given signature algorithm.
         */
-        std::optional<std::vector<std::byte>> sign(gsl::span<std::byte> hash) const;
+        virtual std::optional<std::vector<std::byte>> sign(gsl::span<std::byte> hash) const = 0;
 
         /**
         * @brief Verifies the given data with the key pair with the given name.
@@ -99,14 +99,14 @@ namespace mpss {
         * @param signature The signature to verify.
         * @return True if the data was verified successfully, false otherwise.
         */
-        bool verify(gsl::span<std::byte> hash, gsl::span<std::byte> signature) const;
+        virtual bool verify(gsl::span<std::byte> hash, gsl::span<std::byte> signature) const = 0;
 
         /**
         * @brief Retrieves a verification (public) key with the given name.
         * @param vk_out The verification key.
         * @return True if the verification key retrieved successfully, false otherwise.
         */
-        bool get_verification_key(std::vector<std::byte>& vk_out) const;
+        virtual bool get_verification_key(std::vector<std::byte>& vk_out) const = 0;
 
         /**
         * @brief Releases the key pair handle.
@@ -115,7 +115,7 @@ namespace mpss {
         *       when the @ref KeyPair instance is destroyed.
         *       After calling this function, the key pair handle is no longer valid.
         */
-        void release_key();
+        virtual void release_key() = 0;
 
     protected:
         std::string name_;
