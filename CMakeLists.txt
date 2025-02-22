@@ -1,10 +1,10 @@
 ﻿# Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT license.
 
-cmake_minimum_required (VERSION 3.21)
+cmake_minimum_required(VERSION 3.21)
 
 # Enable Hot Reload for MSVC compilers if supported.
-if (POLICY CMP0141)
+if(POLICY CMP0141)
     cmake_policy(SET CMP0141 NEW)
     set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT
         "$<IF:$<AND:$<C_COMPILER_ID:MSVC>,$<CXX_COMPILER_ID:MSVC>>,$<$<CONFIG:Debug,RelWithDebInfo>:EditAndContinue>,$<$<CONFIG:Debug,RelWithDebInfo>:ProgramDatabase>>")
@@ -15,7 +15,7 @@ option(MPSS_BUILD_SHARED "Build a shared library." NO)
 option(MPSS_BUILD_TESTS "Build the test suite." NO)
 
 # Enable tests feature in vcpkg if MPSS_BUILD_TESTS is YES.
-if (MPSS_BUILD_TESTS)
+if(MPSS_BUILD_TESTS)
     list(APPEND VCPKG_MANIFEST_FEATURES "tests")
 endif()
 
@@ -50,7 +50,7 @@ set(mpss_CONFIG_INSTALL_DIR ${CMAKE_INSTALL_LIBDIR}/cmake/mpss-${mpss_VERSION_MA
 set(mpss_INCLUDES_INSTALL_DIR ${CMAKE_INSTALL_INCLUDEDIR}/mpss-${mpss_VERSION_MAJOR}.${mpss_VERSION_MINOR})
 
 # Clean config.h from the source dir when configuring.
-if (EXISTS ${mpss_CONFIG_H_FILENAME})
+if(EXISTS ${mpss_CONFIG_H_FILENAME})
     message(STATUS "Cleaning up ${mpss_CONFIG_H_FILENAME}")
     FILE(REMOVE ${mpss_CONFIG_H_FILENAME})
 endif()
@@ -64,9 +64,9 @@ configure_file(${mpss_CONFIG_H_IN_FILENAME} ${mpss_CONFIG_H_FILENAME})
 
 # Set up either static or shared library, depending primarily on MPSS_BUILD_SHARED
 # and secondarily on BUILD_SHARED_LIBS.
-if (MPSS_BUILD_SHARED)
+if(MPSS_BUILD_SHARED)
     set(mpss_LIBRARY_TYPE SHARED)
-elseif (BUILD_SHARED_LIBS)
+elseif(BUILD_SHARED_LIBS)
     set(mpss_LIBRARY_TYPE SHARED)
 else()
     set(mpss_LIBRARY_TYPE STATIC)
@@ -74,11 +74,11 @@ endif()
 
 # If mpss_LIBRARY_TYPE is STATIC, set up static library target.
 # If it is SHARED, set up shared library target. Otherwise, error out.
-if (mpss_LIBRARY_TYPE STREQUAL "STATIC")
+if(mpss_LIBRARY_TYPE STREQUAL "STATIC")
     message(STATUS "Building static library")
     set(mpss_TARGET mpss_static)
     add_library(${mpss_TARGET} ${mpss_LIBRARY_TYPE} ${mpss_SOURCE_FILES})
-elseif (mpss_LIBRARY_TYPE STREQUAL "SHARED")
+elseif(mpss_LIBRARY_TYPE STREQUAL "SHARED")
     message(STATUS "Building shared library")
     set(mpss_TARGET mpss_dynamic)
     message(FATAL_ERROR "NOT IMPLEMENTED")
@@ -87,8 +87,8 @@ else()
 endif()
 
 # Require C++17 for mpss and downstream.
-#target_compile_features(${mpss_TARGET} PUBLIC
-#    "$<$<COMPILE_LANGUAGE:CXX>:cxx_std_17>")
+# target_compile_features(${mpss_TARGET} PUBLIC
+# "$<$<COMPILE_LANGUAGE:CXX>:cxx_std_17>")
 target_compile_options(${mpss_TARGET} PUBLIC
     "$<$<COMPILE_LANGUAGE:CXX>:-std=c++17>")
 
@@ -104,8 +104,10 @@ find_package(Microsoft.GSL CONFIG REQUIRED)
 target_link_libraries(${mpss_TARGET} PRIVATE Microsoft.GSL::GSL)
 
 # Platform-specific libraries.
-if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
+if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
     target_link_libraries(${mpss_TARGET} PRIVATE ncrypt)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    target_link_libraries(${mpss_TARGET} PRIVATE "-framework Foundation -framework Security")
 endif()
 
 # For debug builds, append "_debug" to the library name.
@@ -125,13 +127,13 @@ target_include_directories(${mpss_TARGET} PUBLIC
 )
 
 # Add our target to an export mpssTargets.
-if (mpss_LIBRARY_TYPE STREQUAL "STATIC")
+if(mpss_LIBRARY_TYPE STREQUAL "STATIC")
     # This allows multiple versions for static libraries since the directories
     # are named according to the version. Works both on Windows and Linux.
     install(TARGETS ${mpss_TARGET} EXPORT mpssTargets
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}/mpss-${mpss_VERSION_MAJOR}.${mpss_VERSION_MINOR}
     )
-elseif (mpss_LIBRARY_TYPE STREQUAL "DYNAMIC")
+elseif(mpss_LIBRARY_TYPE STREQUAL "DYNAMIC")
     # This allows multiple versions for shared libraries on Linux since the
     # filenames are disambiguated by the version. On Windows, only a single
     # version can be installed at a time. On Windows, import libraries go to
@@ -192,7 +194,7 @@ export(
 )
 
 # Test suite.
-if (MPSS_BUILD_TESTS)
+if(MPSS_BUILD_TESTS)
     find_package(GTest CONFIG REQUIRED)
 
     set(mpss_TESTS_FILES "")
