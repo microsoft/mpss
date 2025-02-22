@@ -5,17 +5,23 @@
 
 #include "mpss/mpss.h"
 
-namespace mpss {
-    namespace impl {
-        class MacKeyPair : public mpss::KeyPair {
+namespace mpss
+{
+    namespace impl
+    {
+        class MacKeyPair : public mpss::KeyPair
+        {
         public:
+            MacKeyPair(std::string_view name, SignatureAlgorithm algorithm);
+            virtual ~MacKeyPair();
+
             virtual bool delete_key() override;
 
             virtual std::optional<std::vector<std::byte>> sign(gsl::span<std::byte> hash) const override;
 
             virtual bool verify(gsl::span<std::byte> hash, gsl::span<std::byte> signature) const override;
 
-            virtual bool get_verification_key(std::vector<std::byte>& vk_out) const override;
+            virtual bool get_verification_key(std::vector<std::byte> &vk_out) const override;
 
             virtual void release_key() override;
         };
