@@ -11,11 +11,11 @@
 
 
 namespace mpss {
-    std::unique_ptr<KeyPair> KeyPair::create(std::string_view name, SignatureAlgorithm algorithm) {
+    std::unique_ptr<KeyPair> KeyPair::Create(std::string_view name, SignatureAlgorithm algorithm) {
         return impl::create_key(name, algorithm);
     }
 
-    std::unique_ptr<KeyPair> KeyPair::open(std::string_view name)
+    std::unique_ptr<KeyPair> KeyPair::Open(std::string_view name)
     {
         return impl::open_key(name);
     }

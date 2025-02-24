@@ -69,14 +69,14 @@ namespace mpss {
         * @param algorithm The signature algorithm to use.
         * @return Key pair if the key pair was created successfully, a null pointer otherwise.
         */
-        static std::unique_ptr<KeyPair> create(std::string_view name, SignatureAlgorithm algorithm);
+        static std::unique_ptr<KeyPair> Create(std::string_view name, SignatureAlgorithm algorithm);
 
         /**
         * @brief Opens the key pair with the given name.
         * @param name The name of the key pair to open.
         * @return Key pair instance if the key pair was opened successfully, a null pointer otherwise.
         */
-        static std::unique_ptr<KeyPair> open(std::string_view name);
+        static std::unique_ptr<KeyPair> Open(std::string_view name);
 
         /**
         * @brief Deletes the key pair with the given name from the safe storage.

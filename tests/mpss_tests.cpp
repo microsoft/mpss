@@ -14,7 +14,7 @@ namespace mpss {
         public:
             static void DeleteKey(std::string name) {
                 // Check if key exists, delete if it does
-                std::unique_ptr<mpss::KeyPair> handle = mpss::KeyPair::open(name);
+                std::unique_ptr<mpss::KeyPair> handle = mpss::KeyPair::Open(name);
                 if (handle != nullptr) {
                     bool deleted = handle->delete_key();
                     if (!deleted) {
@@ -29,7 +29,7 @@ namespace mpss {
 
             static std::unique_ptr<mpss::KeyPair> CreateKey(std::string name, SignatureAlgorithm algorithm) {
                 // Create a key pair
-                std::unique_ptr<mpss::KeyPair> handle = mpss::KeyPair::create(std::move(name), algorithm);
+                std::unique_ptr<mpss::KeyPair> handle = mpss::KeyPair::Create(std::move(name), algorithm);
                 if (handle == nullptr) {
                     std::cout << "Key could not be created: " << mpss::get_error() << std::endl;
                 }
