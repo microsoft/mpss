@@ -53,6 +53,17 @@ void RemoveKey(NSString *keyLabel)
     }
 }
 
+int GetKeySize(SecKeyRef keyRef)
+{
+    // Retrieve the key size
+    CFDictionaryRef attrs = SecKeyCopyAttributes(keyRef);
+    NSNumber *keySizeNumber = (__bridge NSNumber *)CFDictionaryGetValue(attrs, kSecAttrKeySizeInBits);
+    int bitSize = [keySizeNumber intValue];
+    CFRelease(attrs);
+
+    return bitSize;
+}
+
 ////////////////////////////////////////////////////////
 // From here on below, the public functions
 ////////////////////////////////////////////////////////
@@ -77,13 +88,17 @@ bool OpenExistingKeyMacOS(const char* keyName, int* bitSize)
 
         if (keyRef) {
             // Already exists
+            NSLog(@"Found existing key in local dictionary");
+            *bitSize = GetKeySize(keyRef);
             return true;
         }
 
+        NSLog(@"Did not find key in local dictionary, querying from OS");
+
         NSDictionary *query = @{
-            (__bridge id)kSecClass: (__bridge id)kSecClassKey,
-            (__bridge id)kSecAttrLabel: keyLabel,
-            (__bridge id)kSecReturnRef: @YES
+            (id)kSecClass: (__bridge id)kSecClassKey,
+            (id)kSecAttrApplicationTag: [keyLabel dataUsingEncoding:NSUTF8StringEncoding],
+            (id)kSecReturnRef: @YES
         };
 
         OSStatus status = SecItemCopyMatching((__bridge CFDictionaryRef)query, (CFTypeRef *)&keyRef);
@@ -92,13 +107,7 @@ bool OpenExistingKeyMacOS(const char* keyName, int* bitSize)
             NSLog(@"Successfully retrieved key: %@", keyRef);
             StoreKey(keyLabel, keyRef);
 
-            // Retrieve the key size
-            CFDataRef keyData = SecKeyCopyExternalRepresentation(keyRef, NULL);
-            if (keyData) {
-                *bitSize = (int)(CFDataGetLength(keyData) * 8);
-                CFRelease(keyData);
-            }
-
+            *bitSize = GetKeySize(keyRef);
             return true;
         } else {
             NSLog(@"Failed to retrieve key with status: %d", (int)status);
@@ -114,13 +123,28 @@ bool CreateKeyMacOS(const char *keyName, int bitSize)
     @autoreleasepool {
         NSString *keyLabel = GetKeyLabel(keyName);
 
+        int keyBitSize = 0;
+        switch (bitSize) {
+        case 1:
+            keyBitSize = 256;
+            break;
+        case 2:
+            keyBitSize = 384;
+            break;
+        case 3:
+            keyBitSize = 521;
+            break;
+        default:
+            NSLog(@"Invalid bitSize for key creation: %d", bitSize);
+            return false;
+        }
+
+        NSLog(@"Creating bit size: %d", bitSize);
         NSDictionary *keyAttributes = @{
-            (__bridge id)kSecAttrKeyType: (id)kSecAttrKeyTypeECSECPrimeRandom,
-            (__bridge id)kSecAttrKeySizeInBits: @(bitSize),
-            (__bridge id)kSecAttrIsPermanent: @YES,
-            (__bridge id)kSecAttrCanSign: @YES,
-            (__bridge id)kSecAttrCanVerify: @YES,
-            (__bridge id)kSecAttrApplicationTag: keyLabel
+            (id)kSecAttrKeyType: (id)kSecAttrKeyTypeECSECPrimeRandom,
+            (id)kSecAttrKeySizeInBits: @(keyBitSize),
+            (id)kSecAttrIsPermanent: @YES,
+            (id)kSecAttrApplicationTag: [keyLabel dataUsingEncoding:NSUTF8StringEncoding]
         };
 
         // Generate the key
@@ -250,8 +274,8 @@ bool DeleteKeyMacOS(const char *keyName)
         }
 
         NSDictionary *query = @{
-            (__bridge id)kSecClass: (__bridge id)kSecClassKey,
-            (__bridge id)kSecAttrLabel: keyLabel
+            (id)kSecClass: (__bridge id)kSecClassKey,
+            (id)kSecAttrLabel: [keyLabel dataUsingEncoding:NSUTF8StringEncoding]
         };
 
         OSStatus status = SecItemDelete((__bridge CFDictionaryRef)query);
