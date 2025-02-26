@@ -14,4 +14,5 @@ extern "C"
     bool VerifySignatureMacOS(const char *keyName, int signatureType, const std::uint8_t *hash, std::size_t hashSize, const std::uint8_t *signature, std::size_t signatureSize);
     bool DeleteKeyMacOS(const char *keyName);
     void RemoveKeyMacOS(const char *keyName);
+    const char *GetLastErrorMacOS();
 }

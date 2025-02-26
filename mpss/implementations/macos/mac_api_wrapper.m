@@ -14,6 +14,15 @@ void InitializeKeyStore()
     }
 }
 
+void SetThreadLocalError(NSString *error) {
+    NSLog(@"%@", error);
+    [[NSThread currentThread].threadDictionary setObject:error forKey:@"MyThreadLocalError"];
+}
+
+NSString* GetThreadLocalError() {
+    return [[NSThread currentThread].threadDictionary objectForKey:@"MyThreadLocalError"];
+}
+
 NSString *GetKeyLabel(const char* keyName)
 {
     NSString *keyLabel = [[NSString alloc] initWithUTF8String:keyName];
@@ -64,6 +73,21 @@ int GetKeySize(SecKeyRef keyRef)
     return bitSize;
 }
 
+SecKeyAlgorithm GetAlgorithm(int signatureType)
+{
+    switch(signatureType) {
+        case 1: // ECDSA SHA 256
+            return kSecKeyAlgorithmECDSASignatureDigestX962SHA256;
+        case 2: // ECDSA SHA 384
+            return kSecKeyAlgorithmECDSASignatureDigestX962SHA384;
+        case 3: // ECDSA SHA 512
+            return kSecKeyAlgorithmECDSASignatureDigestX962SHA512;
+        default:
+            NSLog(@"Unsupported signature type");
+            return NULL;
+    }
+}
+
 ////////////////////////////////////////////////////////
 // From here on below, the public functions
 ////////////////////////////////////////////////////////
@@ -110,7 +134,8 @@ bool OpenExistingKeyMacOS(const char* keyName, int* bitSize)
             *bitSize = GetKeySize(keyRef);
             return true;
         } else {
-            NSLog(@"Failed to retrieve key with status: %d", (int)status);
+            NSString *error = [NSString stringWithFormat:@"Failed to retrieve key with status: %d", (int)status];
+            SetThreadLocalError(error);
         }
 
         return false;
@@ -153,7 +178,8 @@ bool CreateKeyMacOS(const char *keyName, int bitSize)
 
         if (keyRef == NULL) {
             NSError *err = CFBridgingRelease(error);
-            NSLog(@"Failed to generate key: %@", err);
+            NSString* error = [NSString stringWithFormat:@"Failed to generate key: %@", err];
+            SetThreadLocalError(error);
             return false;
         } else {
             NSLog(@"Key generated successfully!");
@@ -181,20 +207,11 @@ bool SignHashMacOS(const char *keyName, int signatureType, const uint8_t *hash, 
 
         NSData *hashData = [NSData dataWithBytes:hash length:hashSize];
 
-        SecKeyAlgorithm algorithm = NULL;
-        switch(signatureType) {
-            case 0: // ECDSA SHA 256
-                algorithm = kSecKeyAlgorithmECDSASignatureDigestRFC4754SHA256;
-                break;
-            case 1: // ECDSA SHA 384
-                algorithm = kSecKeyAlgorithmECDSASignatureDigestRFC4754SHA384;
-                break;
-            case 2: // ECDSA SHA 512
-                algorithm = kSecKeyAlgorithmECDSASignatureDigestRFC4754SHA512;
-                break;
-            default:
-                NSLog(@"Unsupported signature type");
-                return false;
+        SecKeyAlgorithm algorithm = GetAlgorithm(signatureType);
+        if (algorithm == NULL) {
+            NSString* error = [NSString stringWithFormat:@"Unsupported signature type: %d", signatureType];
+            SetThreadLocalError(error);
+            return false;
         }
 
         CFErrorRef error = NULL;
@@ -202,7 +219,8 @@ bool SignHashMacOS(const char *keyName, int signatureType, const uint8_t *hash, 
 
         if (signatureData == NULL) {
             NSError *err = CFBridgingRelease(error);
-            NSLog(@"Failed to sign hash: %@", err);
+            NSString* error = [NSString stringWithFormat:@"Failed to sign hash: %@", err];
+            SetThreadLocalError(error);
             return false;
         }
 
@@ -234,20 +252,11 @@ bool VerifySignatureMacOS(const char *keyName, int signatureType, const uint8_t 
         NSData *hashData = [NSData dataWithBytes:hash length:hashSize];
         NSData *signatureData = [NSData dataWithBytes:signature length:signatureSize];
 
-        SecKeyAlgorithm algorithm = NULL;
-        switch(signatureType) {
-            case 0: // ECDSA SHA 256
-                algorithm = kSecKeyAlgorithmECDSASignatureDigestRFC4754SHA256;
-                break;
-            case 1: // ECDSA SHA 384
-                algorithm = kSecKeyAlgorithmECDSASignatureDigestRFC4754SHA384;
-                break;
-            case 2: // ECDSA SHA 512
-                algorithm = kSecKeyAlgorithmECDSASignatureDigestRFC4754SHA512;
-                break;
-            default:
-                NSLog(@"Unsupported signature type");
-                return false;
+        SecKeyAlgorithm algorithm = GetAlgorithm(signatureType);
+        if (algorithm == NULL) {
+            NSString* error = [NSString stringWithFormat:@"Unsupported signature type: %d", signatureType];
+            SetThreadLocalError(error);
+            return false;
         }
 
         CFErrorRef error = NULL;
@@ -255,7 +264,8 @@ bool VerifySignatureMacOS(const char *keyName, int signatureType, const uint8_t 
 
         if (!result) {
             NSError *err = CFBridgingRelease(error);
-            NSLog(@"Failed to verify signature: %@", err);
+            NSString* error = [NSString stringWithFormat:@"Failed to verify signature: %@", err];
+            SetThreadLocalError(error);
             return false;
         }
 
@@ -275,7 +285,7 @@ bool DeleteKeyMacOS(const char *keyName)
 
         NSDictionary *query = @{
             (id)kSecClass: (__bridge id)kSecClassKey,
-            (id)kSecAttrLabel: [keyLabel dataUsingEncoding:NSUTF8StringEncoding]
+            (id)kSecAttrApplicationTag: [keyLabel dataUsingEncoding:NSUTF8StringEncoding]
         };
 
         OSStatus status = SecItemDelete((__bridge CFDictionaryRef)query);
@@ -284,9 +294,22 @@ bool DeleteKeyMacOS(const char *keyName)
             NSLog(@"Successfully deleted key");
             return true;
         } else {
-            NSLog(@"Failed to delete key with status: %d", (int)status);
+            NSString *error = [NSString stringWithFormat:@"Failed to delete key with status: %d", (int)status];
+            SetThreadLocalError(error);
         }
 
         return false;
+    }
+}
+
+const char* GetLastErrorMacOS()
+{
+    @autoreleasepool {
+        NSString* error = GetThreadLocalError();
+        if (error) {
+            return [error UTF8String];
+        }
+
+        return NULL;
     }
 }

@@ -56,7 +56,7 @@ namespace mpss
 
         std::string get_error()
         {
-            return "Yikes!";
+            return std::string(GetLastErrorMacOS());
         }
     }
 }
