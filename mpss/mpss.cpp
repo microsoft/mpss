@@ -11,7 +11,7 @@
 
 
 namespace mpss {
-    std::unique_ptr<KeyPair> KeyPair::Create(std::string_view name, SignatureAlgorithm algorithm) {
+    std::unique_ptr<KeyPair> KeyPair::Create(std::string_view name, Algorithm algorithm) {
         return impl::create_key(name, algorithm);
     }
 
@@ -20,7 +20,7 @@ namespace mpss {
         return impl::open_key(name);
     }
 
-    bool is_safe_storage_supported(SignatureAlgorithm algorithm) {
+    bool is_safe_storage_supported(Algorithm algorithm) {
         return impl::is_safe_storage_supported(algorithm);
     }
 
@@ -28,16 +28,16 @@ namespace mpss {
         return impl::get_error();
     }
 
-    KeyPair::KeyPair(std::string_view name, SignatureAlgorithm algorithm)
-        : name_(std::move(name)), algorithm_(algorithm) {
+    KeyPair::KeyPair(std::string_view name, Algorithm algorithm)
+        : name_(name), algorithm_(algorithm) {
         switch (algorithm) {
-        case SignatureAlgorithm::ECDSA_P256_SHA256:
+        case Algorithm::ECDSA_P256_SHA256:
             hash_size_ = 32;
             break;
-        case SignatureAlgorithm::ECDSA_P384_SHA384:
+        case Algorithm::ECDSA_P384_SHA384:
             hash_size_ = 48;
             break;
-        case SignatureAlgorithm::ECDSA_P521_SHA512:
+        case Algorithm::ECDSA_P521_SHA512:
             hash_size_ = 64;
             break;
         default:

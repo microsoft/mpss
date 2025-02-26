@@ -4,14 +4,14 @@
 #pragma once
 
 #include "mpss/mpss.h"
-#include "crypto_params.h"
+#include "mpss/implementations/windows/crypto_params.h"
 
-namespace mpss {
-    namespace impl {
-        namespace utils {
-            const crypto_params& GetCryptoParams(SignatureAlgorithm algorithm);
+#include <string>
 
-            void set_error(SECURITY_STATUS status, std::string error);
-        }
-    }
+#include <Windows.h>
+
+namespace mpss::impl::utils {
+    const mpss::impl::crypto_params &get_crypto_params(Algorithm algorithm);
+
+    void set_error(SECURITY_STATUS status, std::string error);
 }

@@ -5,29 +5,26 @@
 
 #include <functional>
 
-namespace mpss
+namespace mpss::utils
 {
-    namespace utils
+    class ScopeGuard
     {
-        class ScopeGuard
+    private:
+        std::function<void()> on_exit_;
+
+    public:
+        ScopeGuard() = delete;
+
+        ScopeGuard(std::function<void()> on_exit)
         {
-        private:
-            std::function<void()> _on_exit;
+            on_exit_ = on_exit;
+        }
 
-        public:
-            ScopeGuard() = delete;
-
-            ScopeGuard(std::function<void()> on_exit)
-            {
-                _on_exit = on_exit;
-            }
-
-            ~ScopeGuard()
-            {
-                _on_exit();
-            }
-        };
-    }
+        ~ScopeGuard()
+        {
+            on_exit_();
+        }
+    };
 }
 
 // These are helpers for correct expansion of __LINE__ macro

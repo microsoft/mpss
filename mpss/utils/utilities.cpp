@@ -32,24 +32,24 @@ namespace mpss {
             _last_error = std::move(error);
         }
 
-        bool verify_hash_length(gsl::span<std::byte> hash, SignatureAlgorithm algorithm)
+        bool verify_hash_length(gsl::span<const std::byte> hash, Algorithm algorithm)
         {
             switch (algorithm) {
-            case SignatureAlgorithm::ECDSA_P256_SHA256:
+            case Algorithm::ECDSA_P256_SHA256:
                 return hash.size() == 32;
-            case SignatureAlgorithm::ECDSA_P384_SHA384:
+            case Algorithm::ECDSA_P384_SHA384:
                 return hash.size() == 48;
-            case SignatureAlgorithm::ECDSA_P521_SHA512:
+            case Algorithm::ECDSA_P521_SHA512:
                 return hash.size() == 64;
             default:
-                throw new std::invalid_argument("Unsupported algorithm");
+                throw std::invalid_argument("Unsupported algorithm");
             }
         }
 
-		void throw_if_null(const void* arg, std::string_view name)
+		void throw_if_null(const void *arg, std::string_view name)
 		{
-			if (arg == nullptr) {
-				throw new std::invalid_argument(std::string(name) + " cannot be null");
+			if (nullptr == arg) {
+				throw std::invalid_argument(std::string(name) + " cannot be null");
 			}
 		}
     }
