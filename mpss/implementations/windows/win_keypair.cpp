@@ -198,6 +198,9 @@ namespace mpss::impl {
         // Copy the public key data to the output buffer.
         std::transform(pk_data_start, pk_data_end, public_key.begin(), [](auto in) { return static_cast<std::byte>(in); });
 
+        // Securely clear the blob, just to be nice, neat, and tidy.
+        SecureZeroMemory(pk_blob.get(), pk_blob_size);
+
         return pk_size;
     }
 
