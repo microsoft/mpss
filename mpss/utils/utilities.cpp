@@ -9,48 +9,40 @@
 #include <utility>
 
 namespace {
-    thread_local std::string _last_error;
+    thread_local std::string last_error;
 }
 
-namespace mpss {
-    namespace utils {
-        // Convert a long to a hex string
-        std::string to_hex(long value)
-        {
-            std::stringstream ss;
-            ss << "0x" << std::hex << std::setw(8) << std::setfill('0') << value;
-            return ss.str();
-        }
+namespace mpss::utils {
+    // Convert a long to a hex string
+    std::string to_hex(long value)
+    {
+        std::stringstream ss;
+        ss << "0x" << std::hex << std::setw(8) << std::setfill('0') << value;
+        return ss.str();
+    }
 
-        std::string get_error()
-        {
-            return _last_error;
-        }
+    std::string get_error()
+    {
+        return last_error;
+    }
 
-        void set_error(std::string error)
-        {
-            _last_error = std::move(error);
-        }
+    void set_error(std::string error)
+    {
+        last_error = std::move(error);
+    }
 
-        bool verify_hash_length(gsl::span<const std::byte> hash, Algorithm algorithm)
-        {
-            switch (algorithm) {
-            case Algorithm::ECDSA_P256_SHA256:
-                return hash.size() == 32;
-            case Algorithm::ECDSA_P384_SHA384:
-                return hash.size() == 48;
-            case Algorithm::ECDSA_P521_SHA512:
-                return hash.size() == 64;
-            default:
-                throw std::invalid_argument("Unsupported algorithm");
-            }
+    std::string random_string(std::size_t length)
+    {
+        static const char chars[] =
+            "0123456789"
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+            "abcdefghijklmnopqrstuvwxyz";
+        std::random_device rd;
+        std::string result;
+        result.reserve(length);
+        for (std::size_t i = 0; i < length; i++) {
+            result += chars[chars[rd() % (sizeof(chars) - 1)]];
         }
-
-		void throw_if_null(const void *arg, std::string_view name)
-		{
-			if (nullptr == arg) {
-				throw std::invalid_argument(std::string(name) + " cannot be null");
-			}
-		}
+        return result;
     }
 }

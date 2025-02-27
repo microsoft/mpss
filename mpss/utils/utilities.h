@@ -3,10 +3,12 @@
 
 #pragma once
 
-#include <string>
-#include <gsl/gsl>
-
 #include "mpss/mpss.h"
+
+#include <string>
+#include <random>
+
+#include <gsl/gsl>
 
 namespace mpss::utils {
     // Convert a long to a hex string
@@ -18,9 +20,6 @@ namespace mpss::utils {
     // Set the last error string that occurred
     void set_error(std::string error);
 
-	// Verify the length of the hash based on the signature algorithm
-	bool verify_hash_length(gsl::span<const std::byte> hash, Algorithm algorithm);
-
-    // Throw an exception if the argument is null
-	void throw_if_null(const void* arg, std::string_view name);
+    // Create a random string of characters.
+    std::string random_string(std::size_t length);
 }

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 #include "mpss/mpss.h"
+
 #include <gtest/gtest.h>
 #include <utility>
 
@@ -70,15 +71,15 @@ namespace mpss::tests {
     }
 
     TEST_F(MPSS, SignAndVerify256) {
-        SignAndVerify(Algorithm::ECDSA_P256_SHA256, "256", 32);
+        SignAndVerify(Algorithm::ecdsa_secp256r1_sha256, "256", 32);
     }
 
     TEST_F(MPSS, SignAndVerify384) {
-        SignAndVerify(Algorithm::ECDSA_P384_SHA384, "384", 48);
+        SignAndVerify(Algorithm::ecdsa_secp384r1_sha384, "384", 48);
     }
 
     TEST_F(MPSS, SignAndVerify521) {
-        SignAndVerify(Algorithm::ECDSA_P521_SHA512, "521", 64);
+        SignAndVerify(Algorithm::ecdsa_secp521r1_sha512, "521", 64);
     }
 
     void GetKey(Algorithm algorithm, std::string_view suffix)
@@ -110,14 +111,29 @@ namespace mpss::tests {
     }
 
     TEST_F(MPSS, GetKey256) {
-        GetKey(Algorithm::ECDSA_P256_SHA256, "256");
+        GetKey(Algorithm::ecdsa_secp256r1_sha256, "256");
     }
 
     TEST_F(MPSS, GetKey384) {
-        GetKey(Algorithm::ECDSA_P384_SHA384, "384");
+        GetKey(Algorithm::ecdsa_secp384r1_sha384 , "384");
     }
 
     TEST_F(MPSS, GetKey521) {
-        GetKey(Algorithm::ECDSA_P521_SHA512, "521");
+        GetKey(Algorithm::ecdsa_secp521r1_sha512, "521");
+    }
+
+    TEST(MPSSTests, IsAlgorithmSupported) {
+        ASSERT_NO_THROW({
+            bool supported = mpss::is_algorithm_supported(Algorithm::ecdsa_secp256r1_sha256);
+            std::cout << "Algorithm ecdsa_secp256r1_sha256 supported: " << supported << std::endl;
+            });
+        ASSERT_NO_THROW({
+            bool supported = mpss::is_algorithm_supported(Algorithm::ecdsa_secp384r1_sha384);
+            std::cout << "Algorithm ecdsa_secp384r1_sha384 supported: " << supported << std::endl;
+            });
+        ASSERT_NO_THROW({
+            bool supported = mpss::is_algorithm_supported(Algorithm::ecdsa_secp521r1_sha512);
+            std::cout << "Algorithm ecdsa_secp521r1_sha512 supported: " << supported << std::endl;
+            });
     }
 }

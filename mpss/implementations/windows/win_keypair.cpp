@@ -43,9 +43,9 @@ namespace mpss::impl {
 
         const crypto_params &crypto = utils::get_crypto_params(algorithm());
 
-        if (!mpss::utils::verify_hash_length(hash, algorithm())) {
+        if (hash.size() != info_.hash_bits / 8) {
             std::stringstream ss;
-            ss << "Invalid hash length for algorithm. Length is: " << hash.size();
+            ss << "Invalid hash length " << hash.size() << " (expected " << info_.hash_bits << " bits)";
             utils::set_error(ERROR_INVALID_PARAMETER, ss.str());
             return 0;
         }
@@ -108,9 +108,9 @@ namespace mpss::impl {
             return false;
         }
 
-        if (!mpss::utils::verify_hash_length(hash, algorithm())) {
+        if (hash.size() != info_.hash_bits / 8) {
             std::stringstream ss;
-            ss << "Invalid hash length for algorithm. Length is: " << hash.size();
+            ss << "Invalid hash length " << hash.size() << " (expected " << info_.hash_bits << " bits)";
             utils::set_error(ERROR_INVALID_PARAMETER, ss.str());
             return false;
         }

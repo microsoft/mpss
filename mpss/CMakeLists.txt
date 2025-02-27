@@ -16,6 +16,7 @@ add_subdirectory(utils)
 install(
     FILES
         ${CMAKE_CURRENT_LIST_DIR}/mpss.h
+        ${CMAKE_CURRENT_LIST_DIR}/algorithm.h
     DESTINATION
         ${mpss_INCLUDES_INSTALL_DIR}/mpss
 )

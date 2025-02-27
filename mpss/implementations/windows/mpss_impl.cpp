@@ -122,7 +122,7 @@ namespace mpss::impl
 
     std::unique_ptr<KeyPair> open_key(std::string_view name)
     {
-        Algorithm algorithm = Algorithm::Undefined;
+        Algorithm algorithm;
 
         NCRYPT_KEY_HANDLE key_handle = GetKey(name);
         if (!key_handle) {
@@ -131,7 +131,7 @@ namespace mpss::impl
 
         SCOPE_GUARD({
             // Release if algorithm is not set, which means there was an error opening the key
-            if (algorithm == Algorithm::Undefined) {
+            if (algorithm == Algorithm::undefined) {
                 ::NCryptFreeObject(key_handle);
             }
         });
@@ -168,13 +168,13 @@ namespace mpss::impl
         }
 
         if (algorithm_name.compare(/* offset */ 0, std::wcslen(NCRYPT_ECDSA_P256_ALGORITHM), NCRYPT_ECDSA_P256_ALGORITHM) == 0) {
-            algorithm = Algorithm::ECDSA_P256_SHA256;
+            algorithm = Algorithm::ecdsa_secp256r1_sha256;
         }
         else if (algorithm_name.compare(/* offset */ 0, std::wcslen(NCRYPT_ECDSA_P384_ALGORITHM), NCRYPT_ECDSA_P384_ALGORITHM) == 0) {
-            algorithm = Algorithm::ECDSA_P384_SHA384;
+            algorithm = Algorithm::ecdsa_secp384r1_sha384;
         }
         else if (algorithm_name.compare(/* offset */ 0, std::wcslen(NCRYPT_ECDSA_P521_ALGORITHM), NCRYPT_ECDSA_P521_ALGORITHM) == 0) {
-            algorithm = Algorithm::ECDSA_P521_SHA512;
+            algorithm = Algorithm::ecdsa_secp521r1_sha512;
         }
         else {
             std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
@@ -186,12 +186,6 @@ namespace mpss::impl
         }
 
         return std::make_unique<WindowsKeyPair>(name, algorithm, key_handle);
-    }
-
-    bool is_safe_storage_supported(Algorithm algorithm)
-    {
-        // Check if the algorithm is supported.
-        return false;
     }
 
     std::string get_error()

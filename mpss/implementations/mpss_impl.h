@@ -13,8 +13,6 @@ namespace mpss
 {
     namespace impl
     {
-        bool is_safe_storage_supported(Algorithm algorithm);
-
         std::string get_error();
 
         std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm);

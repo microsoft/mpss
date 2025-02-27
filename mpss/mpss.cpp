@@ -7,8 +7,6 @@
 
 #include <iostream>
 #include <stdexcept>
-#include <utility>
-
 
 namespace mpss {
     std::unique_ptr<KeyPair> KeyPair::Create(std::string_view name, Algorithm algorithm) {
@@ -20,8 +18,47 @@ namespace mpss {
         return impl::open_key(name);
     }
 
-    bool is_safe_storage_supported(Algorithm algorithm) {
-        return impl::is_safe_storage_supported(algorithm);
+    bool is_algorithm_supported(Algorithm algorithm) {
+        AlgorithmInfo info = get_algorithm_info(algorithm);
+        if (0 == info.hash_bits) {
+            return false;
+        }
+
+        // Sample a random name for a key and try creating it.
+        std::string random_key = "MPSS_TEST_KEY_" + mpss::utils::random_string(16) + "_CAN_DELETE";
+        std::unique_ptr<KeyPair> key = KeyPair::Create(random_key, algorithm);
+
+        // Could we even create a key?
+        bool key_created = (nullptr != key);
+        if (!key_created) {
+            return false;
+        }
+
+        // Create some data and sign.
+        std::vector<std::byte> hash(info.hash_bits / 8, static_cast<std::byte>('a'));
+        std::size_t sig_size = key->sign_hash(hash, {});
+        if (0 == sig_size) {
+            bool key_deleted = key->delete_key();
+            if (!key_deleted) {
+                throw std::runtime_error("Test key deletion failed");
+            }
+            return false;
+        }
+
+        std::vector<std::byte> sig(sig_size);
+        std::size_t written = key->sign_hash(hash, sig);
+        if (written != sig_size) {
+            bool key_deleted = key->delete_key();
+            if (!key_deleted) {
+                throw std::runtime_error("Test key deletion failed");
+            }
+            return false;
+        }
+
+        bool key_deleted = key->delete_key();
+
+        // Did everything work out?
+        return key_deleted;
     }
 
     std::string get_error() {
@@ -30,17 +67,8 @@ namespace mpss {
 
     KeyPair::KeyPair(std::string_view name, Algorithm algorithm)
         : name_(name), algorithm_(algorithm) {
-        switch (algorithm) {
-        case Algorithm::ECDSA_P256_SHA256:
-            hash_size_ = 32;
-            break;
-        case Algorithm::ECDSA_P384_SHA384:
-            hash_size_ = 48;
-            break;
-        case Algorithm::ECDSA_P521_SHA512:
-            hash_size_ = 64;
-            break;
-        default:
+        info_ = get_algorithm_info(algorithm);
+        if (info_.security_level == 0) {
             throw std::invalid_argument("Unsupported algorithm");
         }
     }

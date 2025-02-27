@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include "mpss/algorithm.h"
+
 #include <cstdint>
 #include <cstddef>
 #include <string>
@@ -10,19 +12,15 @@
 #include <optional>
 #include <vector>
 #include <memory>
+#include <map>
+#include <utility>
+#include <array>
 
 #include <gsl/span>
 
 namespace mpss {
     /**
-    * @brief The supported signature algorithms.
-    */
-    enum class Algorithm {
-        Undefined,
-        ECDSA_P256_SHA256,
-        ECDSA_P384_SHA384,
-        ECDSA_P521_SHA512
-    };
+    * A map listing the the 
 
     /**
     * @brief Retrieves the last error that occurred.
@@ -35,32 +33,36 @@ namespace mpss {
     * @param algorithm The signature algorithm to verify
     * @return True if the signature algorithm is supported in safe storage, false otherwise.
     */
-    bool is_safe_storage_supported(Algorithm algorithm);
+    bool is_algorithm_supported(Algorithm algorithm);
 
     /**
     * @brief Represents a handle to a key pair in the safe storage system.
     */
     class KeyPair {
     public:
-        /**
-        * Constructor
-        */
         KeyPair() = delete;
 
-        /**
-        * Destructor
-        */
         virtual ~KeyPair() = default;
 
+        KeyPair(const KeyPair&) = delete;
+        KeyPair& operator=(const KeyPair&) = delete;
+        KeyPair(KeyPair&&) = delete;
+        KeyPair& operator=(KeyPair&&) = delete;
+
         /**
-        * Get the name of the key pair.
+        * @brief Get the name of the key pair.
         */
         std::string_view name() const { return name_; }
 
         /**
-        * Get the algorithm of the key pair.
+        * @brief Get the key pair @ref Algorithm.
         */
         Algorithm algorithm() const { return algorithm_; }
+
+        /**
+        * @brief Get the key pair @ref AlgorithmInfo.
+        */
+        AlgorithmInfo algorithm_info() const { return info_; }
 
         /**
         * @brief Creates a new key pair with the given name and algorithm.
@@ -122,7 +124,7 @@ namespace mpss {
     protected:
         std::string name_;
         Algorithm algorithm_;
-        std::size_t hash_size_;
+        AlgorithmInfo info_;
 
         KeyPair(std::string_view name, Algorithm algorithm);
     };
