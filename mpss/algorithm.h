@@ -5,6 +5,7 @@
 
 #include <array>
 #include <utility>
+#include <string_view>
 
 namespace mpss {
     /**
@@ -47,5 +48,17 @@ namespace mpss {
             }
         }
         return AlgorithmInfo{ 0, 0, 0 };
+    }
+
+    /**
+    * @brief Try to find an algorithm corresponding to a given string.
+    */
+    inline Algorithm algorithm_from_str(std::string_view name) {
+        for (const auto& [alg, info] : algorithm_info) {
+            if (info.name == name) {
+                return alg;
+            }
+        }
+        return Algorithm::undefined;
     }
 }
