@@ -131,7 +131,7 @@ namespace mpss::impl
 
         SCOPE_GUARD({
             // Release if algorithm is not set, which means there was an error opening the key
-            if (algorithm == Algorithm::undefined) {
+            if (algorithm == Algorithm::unsupported) {
                 ::NCryptFreeObject(key_handle);
             }
         });

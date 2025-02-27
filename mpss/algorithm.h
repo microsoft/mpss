@@ -12,7 +12,7 @@ namespace mpss {
     * @brief The supported signature algorithms.
     */
     enum class Algorithm {
-        undefined,
+        unsupported,
         ecdsa_secp256r1_sha256,
         ecdsa_secp384r1_sha384,
         ecdsa_secp521r1_sha512
@@ -32,7 +32,7 @@ namespace mpss {
     * @brief A map describing @ref AlgorithmInfo for each supported algorithm.
     */
     constexpr std::array<std::pair<Algorithm, AlgorithmInfo>, 4> algorithm_info = {
-        std::make_pair(Algorithm::undefined, AlgorithmInfo {0, 0, 0, "undefined" }),
+        std::make_pair(Algorithm::unsupported, AlgorithmInfo {0, 0, 0, "unsupported" }),
         std::make_pair(Algorithm::ecdsa_secp256r1_sha256, AlgorithmInfo { 128, 256, 32, "ecdsa_secp256r1_sha256" }),
         std::make_pair(Algorithm::ecdsa_secp384r1_sha384, AlgorithmInfo { 192, 384, 64, "ecdsa_secp384r1_sha384" }),
         std::make_pair(Algorithm::ecdsa_secp521r1_sha512, AlgorithmInfo { 256, 512, 64, "ecdsa_secp521r1_sha512" })
@@ -59,6 +59,6 @@ namespace mpss {
                 return alg;
             }
         }
-        return Algorithm::undefined;
+        return Algorithm::unsupported;
     }
 }
