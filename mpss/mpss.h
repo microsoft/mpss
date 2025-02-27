@@ -88,10 +88,10 @@ namespace mpss {
 
         /**
         * @brief Signs the given hash with the key pair with the given name.
-        * @param[in] hash_in The hash to sign.
-        * @param[in,out] sig_out A buffer where the signature is written.
-        * @return If sig_out is empty, returns the number of bytes required in sig_out to hold the signature.
-        *         Otherwise, returns the number of bytes written to sig_out. Returns 0 if the operation failed.
+        * @param[in] hash The hash to sign.
+        * @param[in,out] sig A buffer where the signature is written.
+        * @return If sig is empty, returns the number of bytes required in sig to hold the signature.
+        *         Otherwise, returns the number of bytes written to sig. Returns 0 if the operation failed.
         */
         virtual std::size_t sign_hash(gsl::span<const std::byte> hash, gsl::span<std::byte> sig) const = 0;
 
