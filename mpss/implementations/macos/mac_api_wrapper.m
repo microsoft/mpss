@@ -316,6 +316,7 @@ bool GetPublicKeyMacOS(const char *keyName, uint8_t **pk, size_t *pkSize)
             NSError *err = CFBridgingRelease(error);
             NSString *errStr = [NSString stringWithFormat:@"Failed to copy public key external representation: %@", err];
             SetThreadLocalError(errStr);
+            CFRelease(publicKeyRef);
             return false;
         }
 
@@ -326,6 +327,7 @@ bool GetPublicKeyMacOS(const char *keyName, uint8_t **pk, size_t *pkSize)
         *pk = malloc(length);
         if (! *pk) {
             CFRelease(pkData);
+            CFRelease(publicKeyRef);
             SetThreadLocalError(@"Could not allocate public key memory buffer");
             return false;
         }
@@ -335,6 +337,7 @@ bool GetPublicKeyMacOS(const char *keyName, uint8_t **pk, size_t *pkSize)
         NSLog(@"Successfully copied PK to memory buffer");
 
         CFRelease(pkData);
+        CFRelease(publicKeyRef);
 
         return true;
     }
