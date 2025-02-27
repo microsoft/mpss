@@ -227,6 +227,7 @@ bool SignHashMacOS(const char *keyName, int signatureType, const uint8_t *hash, 
         *signatureSize = CFDataGetLength(signatureData);
         *signature = (uint8_t*)malloc(*signatureSize);
         memcpy(*signature, CFDataGetBytePtr(signatureData), *signatureSize);
+        NSLog(@"Signature created successfully. Signature size: %lu", *signatureSize);
 
         CFRelease(signatureData);
 
@@ -245,7 +246,8 @@ bool VerifySignatureMacOS(const char *keyName, int signatureType, const uint8_t 
         SecKeyRef keyRef = GetKey(keyLabel);
 
         if (keyRef == NULL) {
-            NSLog(@"Key not found");
+            NSString* error = @"Key not found";
+            SetThreadLocalError(error);
             return false;
         }
 
@@ -259,8 +261,18 @@ bool VerifySignatureMacOS(const char *keyName, int signatureType, const uint8_t 
             return false;
         }
 
+        SecKeyRef publicKeyRef = SecKeyCopyPublicKey(keyRef);
+        if (!publicKeyRef) {
+            NSString* error = @"Could not copy public key";
+            SetThreadLocalError(error);
+            return false;
+        }
+
         CFErrorRef error = NULL;
-        bool result = SecKeyVerifySignature(keyRef, algorithm, (__bridge CFDataRef)hashData, (__bridge CFDataRef)signatureData, &error);
+        bool result = SecKeyVerifySignature(publicKeyRef, algorithm, (__bridge CFDataRef)hashData, (__bridge CFDataRef)signatureData, &error);
+
+        // Release public key
+        CFRelease(publicKeyRef);
 
         if (!result) {
             NSError *err = CFBridgingRelease(error);
@@ -268,6 +280,61 @@ bool VerifySignatureMacOS(const char *keyName, int signatureType, const uint8_t 
             SetThreadLocalError(error);
             return false;
         }
+
+        return true;
+    }
+}
+
+bool GetPublicKeyMacOS(const char *keyName, uint8_t **pk, size_t *pkSize)
+{
+    if (NULL == keyName || NULL == pk || NULL == pkSize) {
+        return false;
+    }
+
+    @autoreleasepool {
+        NSString *keyLabel = GetKeyLabel(keyName);
+        SecKeyRef keyRef = GetKey(keyLabel);
+
+        if (keyRef == NULL) {
+            NSString* error = @"Key not found";
+            SetThreadLocalError(error);
+            return false;
+        }
+
+        SecKeyRef publicKeyRef = SecKeyCopyPublicKey(keyRef);
+        if (publicKeyRef == NULL) {
+            NSString *error = @"Could not copy public key";
+            SetThreadLocalError(error);
+            return false;
+        }
+
+        // Get PK data
+        CFErrorRef error = NULL;
+        CFDataRef pkData = SecKeyCopyExternalRepresentation(publicKeyRef, &error);
+
+        if (!pkData) {
+            NSError *err = CFBridgingRelease(error);
+            NSString *errStr = [NSString stringWithFormat:@"Failed to copy public key external representation: %@", err];
+            SetThreadLocalError(errStr);
+            return false;
+        }
+
+        // Get raw bytes
+        CFIndex length = CFDataGetLength(pkData);
+        const UInt8 *pkBytes = CFDataGetBytePtr(pkData);
+
+        *pk = malloc(length);
+        if (! *pk) {
+            CFRelease(pkData);
+            SetThreadLocalError(@"Could not allocate public key memory buffer");
+            return false;
+        }
+
+        *pkSize = length;
+        memcpy(*pk, pkBytes, length);
+        NSLog(@"Successfully copied PK to memory buffer");
+
+        CFRelease(pkData);
 
         return true;
     }

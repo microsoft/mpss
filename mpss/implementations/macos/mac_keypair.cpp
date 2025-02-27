@@ -36,6 +36,9 @@ namespace mpss
                 reinterpret_cast<std::byte *>(signature),
                 reinterpret_cast<std::byte *>(signature + signature_size));
 
+            // Signature memory was created with malloc
+            free(signature);
+
             return std::make_optional(std::move(signature_vector));
         }
 
@@ -52,7 +55,21 @@ namespace mpss
 
         bool MacKeyPair::get_verification_key(std::vector<std::byte> &vk_out) const
         {
-            return false;
+            std::size_t pk_size = 0;
+            std::uint8_t *pkData = nullptr;
+
+            if (!GetPublicKeyMacOS(name().data(), &pkData, &pk_size)) {
+                return false;
+            }
+
+            // Copy PK data
+            vk_out.resize(pk_size);
+            memcpy(vk_out.data(), pkData, pk_size);
+
+            // PK data buffer was allocated with malloc
+            free(pkData);
+
+            return true;
         }
 
         void MacKeyPair::release_key()
