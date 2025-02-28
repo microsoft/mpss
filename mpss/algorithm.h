@@ -22,10 +22,10 @@ namespace mpss {
     * @brief Security info for an algorithm.
     */
     struct AlgorithmInfo {
-        std::size_t security_level;
-        std::size_t hash_bits;
-        std::size_t hash_block_bits;
-        char *name;
+        const std::size_t security_level;
+        const std::size_t hash_bits;
+        const std::size_t hash_block_bits;
+        char const *const type_str;
     };
 
     /**
@@ -53,9 +53,9 @@ namespace mpss {
     /**
     * @brief Try to find an algorithm corresponding to a given string.
     */
-    inline Algorithm algorithm_from_str(std::string_view name) {
+    inline Algorithm algorithm_from_str(std::string_view type_str) {
         for (const auto& [alg, info] : algorithm_info) {
-            if (info.name == name) {
+            if (info.type_str == type_str) {
                 return alg;
             }
         }

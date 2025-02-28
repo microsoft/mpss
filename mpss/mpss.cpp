@@ -66,8 +66,7 @@ namespace mpss {
     }
 
     KeyPair::KeyPair(std::string_view name, Algorithm algorithm)
-        : name_(name), algorithm_(algorithm) {
-        info_ = get_algorithm_info(algorithm);
+        : name_(name), algorithm_(algorithm), info_(get_algorithm_info(algorithm)) {
         if (info_.security_level == 0) {
             throw std::invalid_argument("Unsupported algorithm");
         }
