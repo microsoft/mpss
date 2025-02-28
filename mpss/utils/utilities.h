@@ -8,8 +8,6 @@
 #include <string>
 #include <random>
 
-#include <gsl/gsl>
-
 namespace mpss::utils {
     // Convert a long to a hex string
     std::string to_hex(long value);

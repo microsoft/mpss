@@ -18,7 +18,7 @@
 #include <ncrypt.h>
 
 #include <gsl/span>
-#include <gsl/algorithm>
+#include <gsl/narrow>
 
 namespace {
     // Legacy key spec. We only store signing keys.

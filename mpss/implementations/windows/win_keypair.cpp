@@ -14,7 +14,7 @@
 #include <Windows.h>
 #include <ncrypt.h>
 
-#include <gsl/algorithm>
+#include <gsl/narrow>
 
 namespace mpss::impl {
     bool WindowsKeyPair::delete_key()
