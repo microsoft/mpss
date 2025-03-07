@@ -164,12 +164,33 @@ bool CreateKeyMacOS(const char *keyName, int bitSize)
             return false;
         }
 
-        NSLog(@"Creating bit size: %d", bitSize);
+        // Access control for key
+        SecAccessControlRef access = SecAccessControlCreateWithFlags(
+            kCFAllocatorDefault,
+            kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+            kSecAccessControlPrivateKeyUsage,
+            NULL);
+
+
+        NSLog(@"Creating bit size: %d", keyBitSize);
+        // NSDictionary *keyAttributes = @{
+        //     (id)kSecAttrKeyType: (id)kSecAttrKeyTypeECSECPrimeRandom,
+        //     (id)kSecAttrKeySizeInBits: @(keyBitSize),
+        //     (id)kSecAttrIsPermanent: @YES,
+        //     (id)kSecAttrLabel: keyLabel,
+        //     (id)kSecAttrApplicationTag: [keyLabel dataUsingEncoding:NSUTF8StringEncoding]
+        // };
         NSDictionary *keyAttributes = @{
             (id)kSecAttrKeyType: (id)kSecAttrKeyTypeECSECPrimeRandom,
             (id)kSecAttrKeySizeInBits: @(keyBitSize),
-            (id)kSecAttrIsPermanent: @YES,
-            (id)kSecAttrApplicationTag: [keyLabel dataUsingEncoding:NSUTF8StringEncoding]
+            (id)kSecAttrTokenID: (id)kSecAttrTokenIDSecureEnclave,
+            (id)kSecPrivateKeyAttrs:
+            @{
+                (id)kSecAttrIsPermanent: @YES,
+                (id)kSecAttrApplicationTag: [keyLabel dataUsingEncoding:NSUTF8StringEncoding],
+                (id)kSecAttrLabel: keyLabel,
+                (id)kSecAttrAccessControl: (__bridge id)access
+            }
         };
 
         // Generate the key
