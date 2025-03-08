@@ -50,11 +50,6 @@ namespace mpss {
         KeyPair& operator=(KeyPair&&) = delete;
 
         /**
-        * @brief Get the name of the key pair.
-        */
-        [[nodiscard]] std::string_view name() const noexcept { return name_; }
-
-        /**
         * @brief Get the key pair @ref Algorithm.
         */
         [[nodiscard]] Algorithm algorithm() const noexcept { return algorithm_; }
@@ -122,7 +117,6 @@ namespace mpss {
         virtual void release_key() = 0;
 
     protected:
-        std::string name_;
         Algorithm algorithm_;
         AlgorithmInfo info_;
 
