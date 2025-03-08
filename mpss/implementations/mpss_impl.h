@@ -13,10 +13,10 @@ namespace mpss
 {
     namespace impl
     {
-        std::string get_error();
+        [[nodiscard]] std::string get_error() noexcept;
 
-        std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm);
+        [[nodiscard]] std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm);
 
-        std::unique_ptr<KeyPair> open_key(std::string_view name);
+        [[nodiscard]] std::unique_ptr<KeyPair> open_key(std::string_view name);
     }
 }

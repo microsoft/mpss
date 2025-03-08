@@ -84,7 +84,11 @@ namespace mpss::impl
 {
     std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm)
     {
-        const crypto_params &crypto = utils::get_crypto_params(algorithm);
+        crypto_params const *const crypto = utils::get_crypto_params(algorithm);
+        if (!crypto) {
+            utils::set_error(ERROR_INVALID_PARAMETER, "Unsupported algorithm.");
+            return nullptr;
+        }
 
         NCRYPT_PROV_HANDLE provider_handle = GetProvider();
         if (!provider_handle) {
@@ -98,7 +102,7 @@ namespace mpss::impl
         SECURITY_STATUS status = ::NCryptCreatePersistedKey(
             provider_handle,
             &key_handle,
-            crypto.key_type_name(),
+            crypto->key_type_name(),
             wname.c_str(),
             key_spec,
             key_open_mode | key_create_flags);
@@ -153,11 +157,16 @@ namespace mpss::impl
         }
 
         std::wstring algorithm_name(dwOutputSize, '\0');
+        DWORD algorithm_name_size = mpss::utils::narrow_or_error<DWORD>(algorithm_name.size());
+        if (!algorithm_name_size) {
+            return nullptr;
+        }
+
         status = ::NCryptGetProperty(
             key_handle,
             NCRYPT_ALGORITHM_PROPERTY,
             reinterpret_cast<PBYTE>(&algorithm_name[0]),
-            gsl::narrow<DWORD>(algorithm_name.size()),
+            algorithm_name_size,
             &dwOutputSize,
             /* dwFlags */ 0);
         if (ERROR_SUCCESS != status) {
@@ -188,7 +197,7 @@ namespace mpss::impl
         return std::make_unique<WindowsKeyPair>(name, algorithm, key_handle);
     }
 
-    std::string get_error()
+    std::string get_error() noexcept
     {
         return mpss::utils::get_error();
     }

@@ -61,7 +61,7 @@ namespace mpss {
         return key_deleted;
     }
 
-    std::string get_error() {
+    std::string get_error() noexcept {
         return impl::get_error();
     }
 

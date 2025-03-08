@@ -41,7 +41,11 @@ namespace mpss::impl {
             return 0;
         }
 
-        const crypto_params &crypto = utils::get_crypto_params(algorithm());
+        crypto_params const *const crypto = utils::get_crypto_params(algorithm());
+        if (!crypto) {
+            utils::set_error(ERROR_INTERNAL_ERROR, "Unsupported algorithm.");
+            return 0;
+        }
 
         if (hash.size() != info_.hash_bits / 8) {
             std::stringstream ss;
@@ -50,16 +54,22 @@ namespace mpss::impl {
             return 0;
         }
 
+        // Cast the hash size.
+        DWORD hash_size = mpss::utils::narrow_or_error<DWORD>(hash.size());
+        if (!hash_size) {
+            return 0;
+        }
+
         // Get the size of the signature.
-        DWORD sig_size = 0;
+        DWORD sig_size_dw = 0;
         SECURITY_STATUS status = ::NCryptSignHash(
             key_handle_,
             /* pPaddingInfo */ nullptr,
             reinterpret_cast<PBYTE>(const_cast<std::byte*>(hash.data())),
-            gsl::narrow<DWORD>(hash.size()),
+            hash_size,
             /* pbSignature */ nullptr,
             /* cbSignature */ 0,
-            &sig_size,
+            &sig_size_dw,
             /* dwFlags */ 0);
         if (ERROR_SUCCESS != status) {
             std::stringstream ss;
@@ -69,13 +79,22 @@ namespace mpss::impl {
         }
 
         // If the signature buffer is empty, return the size of the signature.
+        std::size_t sig_size_sz = mpss::utils::narrow_or_error<std::size_t>(sig_size_dw);
+        if (!sig_size_sz) {
+            return 0;
+        }
         if (sig.empty()) {
-            return gsl::narrow<std::size_t>(sig_size);
+            return sig_size_sz;
         }
 
         // If the signature buffer is too small, return 0.
-        if (sig.size() < sig_size) {
+        if (sig.size() < sig_size_sz) {
             utils::set_error(ERROR_INSUFFICIENT_BUFFER, "Signature buffer is too small.");
+            return 0;
+        }
+
+        DWORD sig_buf_size = mpss::utils::narrow_or_error<DWORD>(sig.size());
+        if (!sig_buf_size) {
             return 0;
         }
 
@@ -84,10 +103,10 @@ namespace mpss::impl {
             key_handle_,
             /* pPaddingInfo */ nullptr,
             reinterpret_cast<PBYTE>(const_cast<std::byte*>(hash.data())),
-            gsl::narrow<DWORD>(hash.size()),
+            hash_size,
             reinterpret_cast<PBYTE>(sig.data()),
-            gsl::narrow<DWORD>(sig.size()),
-            &sig_size,
+            sig_buf_size,
+            &sig_size_dw,
             /* dwFlags */ 0);
         if (ERROR_SUCCESS != status) {
             std::stringstream ss;
@@ -97,7 +116,7 @@ namespace mpss::impl {
         }
 
         // Return the number of bytes written to the signature buffer.
-        return gsl::narrow<std::size_t>(sig_size);
+        return mpss::utils::narrow_or_error<std::size_t>(sig_size_dw);
     }
 
     bool WindowsKeyPair::verify(gsl::span<const std::byte> hash, gsl::span<const std::byte> sig) const
@@ -115,13 +134,19 @@ namespace mpss::impl {
             return false;
         }
 
+        DWORD hash_size = mpss::utils::narrow_or_error<DWORD>(hash.size());
+        DWORD sig_size = mpss::utils::narrow_or_error<DWORD>(sig.size());
+        if (!(hash_size | sig_size)) {
+            return false;
+        }
+
         SECURITY_STATUS status = ::NCryptVerifySignature(
             key_handle_,
             /* pPaddingInfo */ nullptr,
             reinterpret_cast<PBYTE>(const_cast<std::byte*>(hash.data())),
-            gsl::narrow<DWORD>(hash.size()),
+            hash_size,
             reinterpret_cast<PBYTE>(const_cast<std::byte*>(sig.data())),
-            gsl::narrow<DWORD>(sig.size()),
+            sig_size,
             /* dwFlags */ 0);
         if (ERROR_SUCCESS != status) {
             std::stringstream ss;
@@ -135,14 +160,14 @@ namespace mpss::impl {
 
     std::size_t WindowsKeyPair::extract_key(gsl::span<std::byte> public_key) const
     {
-        const crypto_params &crypto = utils::get_crypto_params(algorithm());
+        crypto_params const *const crypto = utils::get_crypto_params(algorithm());
 
         // Get the public key size.
         DWORD pk_blob_size = 0;
         SECURITY_STATUS status = ::NCryptExportKey(
             key_handle_,
             /* hExportKey */ 0,
-            crypto.public_key_blob_name(),
+            crypto->public_key_blob_name(),
             /* pParameterList */ nullptr,
             /* pbOutput */ nullptr,
             /* cbOutput */ 0,
@@ -173,7 +198,7 @@ namespace mpss::impl {
         status = ::NCryptExportKey(
             key_handle_,
             /* hExportKey */ 0,
-            crypto.public_key_blob_name(),
+            crypto->public_key_blob_name(),
             /* pParameterList */ nullptr,
             pk_blob.get(),
             pk_blob_size,
@@ -187,7 +212,7 @@ namespace mpss::impl {
         }
 
         crypto_params::key_blob_t *pk_blob_ptr = reinterpret_cast<crypto_params::key_blob_t*>(pk_blob.get());
-        if (pk_blob_ptr->dwMagic != crypto.public_key_magic()) {
+        if (pk_blob_ptr->dwMagic != crypto->public_key_magic()) {
             utils::set_error(status, "Invalid public key magic.");
             return 0;
         }
@@ -204,12 +229,12 @@ namespace mpss::impl {
         return pk_size;
     }
 
-    void WindowsKeyPair::release_key()
+    void WindowsKeyPair::release_key() noexcept
     {
         win_release();
     }
 
-    void WindowsKeyPair::win_release()
+    void WindowsKeyPair::win_release() noexcept
     {
         if (key_handle_) {
             ::NCryptFreeObject(key_handle_);
@@ -218,7 +243,7 @@ namespace mpss::impl {
         clear_handle();
     }
 
-    void WindowsKeyPair::clear_handle()
+    void WindowsKeyPair::clear_handle() noexcept
     {
         key_handle_ = 0;
     }

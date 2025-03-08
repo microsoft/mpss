@@ -28,13 +28,13 @@ namespace mpss::impl {
 
         std::size_t extract_key(gsl::span<std::byte> public_key) const override;
 
-        void release_key() override;
+        void release_key() noexcept override;
 
     private:
         NCRYPT_KEY_HANDLE key_handle_ = 0;
 
-        void win_release();
+        void win_release() noexcept;
 
-        void clear_handle();
+        void clear_handle() noexcept;
     };
 }

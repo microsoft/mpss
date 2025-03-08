@@ -26,14 +26,14 @@ namespace mpss {
     * @brief Retrieves the last error that occurred.
     * @return The last error that occurred in the library.
     */
-    std::string get_error();
+    [[nodiscard]] std::string get_error() noexcept;
 
     /**
     * @brief Determines whether the given signature algorithm is supported in the safe storage system.
     * @param algorithm The signature algorithm to verify
     * @return True if the signature algorithm is supported in safe storage, false otherwise.
     */
-    bool is_algorithm_supported(Algorithm algorithm);
+    [[nodiscard]] bool is_algorithm_supported(Algorithm algorithm);
 
     /**
     * @brief Represents a handle to a key pair in the safe storage system.
@@ -52,17 +52,17 @@ namespace mpss {
         /**
         * @brief Get the name of the key pair.
         */
-        std::string_view name() const { return name_; }
+        [[nodiscard]] std::string_view name() const noexcept { return name_; }
 
         /**
         * @brief Get the key pair @ref Algorithm.
         */
-        Algorithm algorithm() const { return algorithm_; }
+        [[nodiscard]] Algorithm algorithm() const noexcept { return algorithm_; }
 
         /**
         * @brief Get the key pair @ref AlgorithmInfo.
         */
-        AlgorithmInfo algorithm_info() const { return info_; }
+        [[nodiscard]] AlgorithmInfo algorithm_info() const noexcept { return info_; }
 
         /**
         * @brief Creates a new key pair with the given name and algorithm.
@@ -70,14 +70,14 @@ namespace mpss {
         * @param[in] algorithm The signature algorithm to use.
         * @return Key pair if the key pair was created successfully, a null pointer otherwise.
         */
-        static std::unique_ptr<KeyPair> Create(std::string_view name, Algorithm algorithm);
+        [[nodiscard]] static std::unique_ptr<KeyPair> Create(std::string_view name, Algorithm algorithm);
 
         /**
         * @brief Opens the key pair with the given name.
         * @param[in] name The name of the key pair to open.
         * @return Key pair instance if the key pair was opened successfully, a null pointer otherwise.
         */
-        static std::unique_ptr<KeyPair> Open(std::string_view name);
+        [[nodiscard]] static std::unique_ptr<KeyPair> Open(std::string_view name);
 
         /**
         * @brief Deletes the key pair with the given name from the safe storage.
@@ -101,7 +101,7 @@ namespace mpss {
         * @param[in] signature The signature to verify.
         * @return True if the data was verified successfully, false otherwise.
         */
-        virtual bool verify(gsl::span<const std::byte> hash, gsl::span<const std::byte> sig) const = 0;
+        [[nodiscard]] virtual bool verify(gsl::span<const std::byte> hash, gsl::span<const std::byte> sig) const = 0;
 
         /**
         * @brief Retrieves the public (verification) key.

@@ -6,6 +6,7 @@
 #include "mpss/implementations/windows/win_utils.h"
 #include "mpss/implementations/windows/crypto_params.h"
 
+#include <memory>
 #include <stdexcept>
 
 namespace {
@@ -19,21 +20,21 @@ namespace {
 }
 
 namespace mpss::impl::utils {
-    const mpss::impl::crypto_params &get_crypto_params(Algorithm algorithm)
+    crypto_params const *const get_crypto_params(Algorithm algorithm) noexcept
     {
         switch (algorithm) {
         case mpss::Algorithm::ecdsa_secp256r1_sha256:
-            return ecdsa_p256;
+            return &ecdsa_p256;
         case mpss::Algorithm::ecdsa_secp384r1_sha384:
-            return ecdsa_p384;
+            return &ecdsa_p384;
         case mpss::Algorithm::ecdsa_secp521r1_sha512:
-            return ecdsa_p521;
+            return &ecdsa_p521;
         default:
-            throw std::invalid_argument("Unsupported algorithm");
+            return nullptr;
         }
     }
 
-    void set_error(SECURITY_STATUS status, std::string error)
+    void set_error(SECURITY_STATUS status, std::string error) noexcept
     {
         last_error = status;
         mpss::utils::set_error(std::move(error));

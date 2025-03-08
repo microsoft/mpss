@@ -11,7 +11,7 @@
 #include <Windows.h>
 
 namespace mpss::impl::utils {
-    const mpss::impl::crypto_params &get_crypto_params(Algorithm algorithm);
+    crypto_params const* const get_crypto_params(Algorithm algorithm) noexcept;
 
-    void set_error(SECURITY_STATUS status, std::string error);
+    void set_error(SECURITY_STATUS status, std::string error) noexcept;
 }

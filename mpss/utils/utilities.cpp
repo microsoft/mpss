@@ -21,12 +21,12 @@ namespace mpss::utils {
         return ss.str();
     }
 
-    std::string get_error()
+    std::string get_error() noexcept
     {
         return last_error;
     }
 
-    void set_error(std::string error)
+    void set_error(std::string error) noexcept
     {
         last_error = std::move(error);
     }
