@@ -49,7 +49,7 @@ namespace {
         if (ERROR_SUCCESS != status) {
             std::stringstream ss;
             ss << "NCryptOpenStorageProvider failed with error code " << mpss::utils::to_hex(status);
-            mpss::impl::utils::set_error(status, ss.str());
+            mpss::utils::set_error(ss.str());
             return 0;
         }
 
@@ -72,7 +72,7 @@ namespace {
         if (ERROR_SUCCESS != status) {
             std::stringstream ss;
             ss << "NCryptOpenKey failed with error code " << mpss::utils::to_hex(status);
-            mpss::impl::utils::set_error(status, ss.str());
+            mpss::utils::set_error(ss.str());
             return 0;
         }
 
@@ -86,7 +86,7 @@ namespace mpss::impl
     {
         crypto_params const *const crypto = utils::get_crypto_params(algorithm);
         if (!crypto) {
-            utils::set_error(ERROR_INVALID_PARAMETER, "Unsupported algorithm.");
+            mpss::utils::set_error("Unsupported algorithm.");
             return nullptr;
         }
 
@@ -109,7 +109,7 @@ namespace mpss::impl
         if (ERROR_SUCCESS != status) {
             std::stringstream ss;
             ss << "NCryptCreatePersistedKey failed with error code " << mpss::utils::to_hex(status);
-            utils::set_error(status, ss.str());
+            mpss::utils::set_error(ss.str());
             return nullptr;
         }
 
@@ -117,7 +117,7 @@ namespace mpss::impl
         if (ERROR_SUCCESS != status) {
             std::stringstream ss;
             ss << "NCryptFinalizeKey failed with error code " << mpss::utils::to_hex(status);
-            utils::set_error(status, ss.str());
+            mpss::utils::set_error(ss.str());
             return nullptr;
         }
 
@@ -152,7 +152,7 @@ namespace mpss::impl
         if (ERROR_SUCCESS != status) {
             std::stringstream ss;
             ss << "NCryptGetProperty failed with error code " << mpss::utils::to_hex(status);
-            utils::set_error(status, ss.str());
+            mpss::utils::set_error(ss.str());
             return nullptr;
         }
 
@@ -172,7 +172,7 @@ namespace mpss::impl
         if (ERROR_SUCCESS != status) {
             std::stringstream ss;
             ss << "NCryptGetProperty failed with error code " << mpss::utils::to_hex(status);
-            utils::set_error(status, ss.str());
+            mpss::utils::set_error(ss.str());
             return nullptr;
         }
 
@@ -190,15 +190,10 @@ namespace mpss::impl
             std::string alg_name = converter.to_bytes(algorithm_name);
             std::stringstream ss;
             ss << "Unsupported algorithm: " << alg_name;
-            utils::set_error(ERROR_INVALID_PARAMETER, ss.str());
+            mpss::utils::set_error(ss.str());
             return nullptr;
         }
 
         return std::make_unique<WindowsKeyPair>(name, algorithm, key_handle);
-    }
-
-    std::string get_error() noexcept
-    {
-        return mpss::utils::get_error();
     }
 }

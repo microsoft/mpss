@@ -62,7 +62,7 @@ namespace mpss {
     }
 
     std::string get_error() noexcept {
-        return impl::get_error();
+        return utils::get_error();
     }
 
     KeyPair::KeyPair(std::string_view name, Algorithm algorithm)

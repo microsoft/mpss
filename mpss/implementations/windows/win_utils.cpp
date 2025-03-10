@@ -1,18 +1,9 @@
 // Copyright(c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#include "mpss/mpss.h"
-#include "mpss/utils/utilities.h"
 #include "mpss/implementations/windows/win_utils.h"
-#include "mpss/implementations/windows/crypto_params.h"
-
-#include <memory>
-#include <stdexcept>
 
 namespace {
-    // Error code of the last error that occurred.
-    thread_local SECURITY_STATUS last_error = ERROR_SUCCESS;
-
     // Instantiating the crypto_params for each algorithm.
     constexpr mpss::impl::ECDSA_P256 ecdsa_p256;
     constexpr mpss::impl::ECDSA_P384 ecdsa_p384;
@@ -32,11 +23,5 @@ namespace mpss::impl::utils {
         default:
             return nullptr;
         }
-    }
-
-    void set_error(SECURITY_STATUS status, std::string error) noexcept
-    {
-        last_error = status;
-        mpss::utils::set_error(std::move(error));
     }
 }

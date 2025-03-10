@@ -17,13 +17,16 @@
 #include <gsl/narrow>
 
 namespace mpss::impl {
+    using mpss::utils::set_error;
+    using mpss::utils::to_hex;
+
     bool WindowsKeyPair::delete_key()
     {
         SECURITY_STATUS status = ::NCryptDeleteKey(key_handle_, /* dwFlags */ 0);
         if (ERROR_SUCCESS != status) {
             std::stringstream ss;
             ss << "NCryptDeleteKey failed with error code " << mpss::utils::to_hex(status);
-            utils::set_error(status, ss.str());
+            mpss::utils::set_error(ss.str());
             return false;
         }
 
@@ -37,20 +40,20 @@ namespace mpss::impl {
     {
         // If there is nothing to sign, return 0 no matter what.
         if (hash.empty()) {
-            utils::set_error(ERROR_INVALID_PARAMETER, "Nothing to sign.");
+            mpss::utils::set_error("Nothing to sign.");
             return 0;
         }
 
         crypto_params const *const crypto = utils::get_crypto_params(algorithm());
         if (!crypto) {
-            utils::set_error(ERROR_INTERNAL_ERROR, "Unsupported algorithm.");
+            mpss::utils::set_error("Unsupported algorithm.");
             return 0;
         }
 
         if (hash.size() != info_.hash_bits / 8) {
             std::stringstream ss;
             ss << "Invalid hash length " << hash.size() << " (expected " << info_.hash_bits << " bits)";
-            utils::set_error(ERROR_INVALID_PARAMETER, ss.str());
+            mpss::utils::set_error(ss.str());
             return 0;
         }
 
@@ -74,7 +77,7 @@ namespace mpss::impl {
         if (ERROR_SUCCESS != status) {
             std::stringstream ss;
             ss << "NCryptSignHash to get signature size failed with error code " << mpss::utils::to_hex(status);
-            utils::set_error(status, ss.str());
+            mpss::utils::set_error(ss.str());
             return 0;
         }
 
@@ -89,7 +92,7 @@ namespace mpss::impl {
 
         // If the signature buffer is too small, return 0.
         if (sig.size() < sig_size_sz) {
-            utils::set_error(ERROR_INSUFFICIENT_BUFFER, "Signature buffer is too small.");
+            mpss::utils::set_error("Signature buffer is too small.");
             return 0;
         }
 
@@ -111,7 +114,7 @@ namespace mpss::impl {
         if (ERROR_SUCCESS != status) {
             std::stringstream ss;
             ss << "NCryptSignHash failed with error code " << mpss::utils::to_hex(status);
-            utils::set_error(status, ss.str());
+            mpss::utils::set_error(ss.str());
             return 0;
         }
 
@@ -123,14 +126,14 @@ namespace mpss::impl {
     {
         // If either input is empty, return false and set an error.
         if (hash.empty() || sig.empty()) {
-            utils::set_error(ERROR_INVALID_PARAMETER, "Nothing to verify.");
+            mpss::utils::set_error("Nothing to verify.");
             return false;
         }
 
         if (hash.size() != info_.hash_bits / 8) {
             std::stringstream ss;
             ss << "Invalid hash length " << hash.size() << " (expected " << info_.hash_bits << " bits)";
-            utils::set_error(ERROR_INVALID_PARAMETER, ss.str());
+            mpss::utils::set_error(ss.str());
             return false;
         }
 
@@ -151,7 +154,7 @@ namespace mpss::impl {
         if (ERROR_SUCCESS != status) {
             std::stringstream ss;
             ss << "NCryptVerifySignature failed with error code " << mpss::utils::to_hex(status);
-            utils::set_error(status, ss.str());
+            mpss::utils::set_error(ss.str());
             return false;
         }
 
@@ -176,14 +179,14 @@ namespace mpss::impl {
         if (ERROR_SUCCESS != status) {
             std::stringstream ss;
             ss << "NCryptExportKey failed with error code " << mpss::utils::to_hex(status);
-            utils::set_error(status, ss.str());
+            mpss::utils::set_error(ss.str());
             return 0;
         }
 
         // This function returns the size of the key blob, which includes a header followed by the key.
         // First check that the returned size is at least the size of the blob header.
         if (pk_blob_size < sizeof(crypto_params::key_blob_t)) {
-            utils::set_error(ERROR_INTERNAL_ERROR, "NCryptExportKey returned an invalid key size.");
+            mpss::utils::set_error("NCryptExportKey returned an invalid key size.");
             return 0;
         }
         std::size_t pk_size = pk_blob_size - sizeof(crypto_params::key_blob_t);
@@ -207,13 +210,13 @@ namespace mpss::impl {
         if (ERROR_SUCCESS != status) {
             std::stringstream ss;
             ss << "NCryptExportKey failed with error code " << mpss::utils::to_hex(status);
-            utils::set_error(status, ss.str());
+            mpss::utils::set_error(ss.str());
             return 0;
         }
 
         crypto_params::key_blob_t *pk_blob_ptr = reinterpret_cast<crypto_params::key_blob_t*>(pk_blob.get());
         if (pk_blob_ptr->dwMagic != crypto->public_key_magic()) {
-            utils::set_error(status, "Invalid public key magic.");
+            mpss::utils::set_error("Invalid public key magic.");
             return 0;
         }
 
