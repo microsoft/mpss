@@ -159,9 +159,6 @@ namespace mpss::impl
         std::wstring algorithm_name(dwOutputSize, '\0');
         DWORD algorithm_name_size = mpss::utils::narrow_or_error<DWORD>(algorithm_name.size());
         if (!algorithm_name_size) {
-			std::stringstream ss;
-			ss << "Failed to narrow algorithm name size: " << mpss::utils::to_hex(algorithm_name.size());
-			mpss::utils::set_error(ss.str());
             return nullptr;
         }
 
