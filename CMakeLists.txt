@@ -98,7 +98,7 @@ target_compile_definitions(${mpss_TARGET} PRIVATE
 
 # Dependencies
 find_package(Microsoft.GSL CONFIG REQUIRED)
-target_link_libraries(${mpss_TARGET} PRIVATE Microsoft.GSL::GSL)
+target_link_libraries(${mpss_TARGET} PUBLIC Microsoft.GSL::GSL)
 
 # Platform-specific libraries.
 if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
