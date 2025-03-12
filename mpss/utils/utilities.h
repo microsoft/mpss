@@ -6,6 +6,7 @@
 #include "mpss/mpss.h"
 
 #include <string>
+#include <sstream>
 #include <random>
 
 #include <gsl/narrow>
@@ -32,7 +33,9 @@ namespace mpss::utils {
         }
         catch (const gsl::narrowing_error& e) {
             // Narrowing failed.
-            utils::set_error("Narrowing error.");
+			std::stringstream ss;
+			ss << "Narrowing error: " << e.what() << " (in value: " << in << ")";
+            utils::set_error(ss.str());
             out = Out{ 0 };
         }
         return out;
