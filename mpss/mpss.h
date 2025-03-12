@@ -91,6 +91,15 @@ namespace mpss {
         virtual std::size_t sign_hash(gsl::span<const std::byte> hash, gsl::span<std::byte> sig) const = 0;
 
         /**
+        * @brief A convenience method to return the required signature buffer size.
+        * @param[in] hash The hash to sign.
+        * @return Returns the number of bytes required to hold the signature when calling @ref sign_hash.
+        */
+        [[nodiscard]] std::size_t sign_hash_size(gsl::span<const std::byte> hash) const {
+            return sign_hash(hash, {});
+        }
+
+        /**
         * @brief Verifies the given signature against the given hash data with the key pair with the given name.
         * @param[in] hash The hash to verify.
         * @param[in] signature The signature to verify.
@@ -106,6 +115,14 @@ namespace mpss {
         * @note If the operation fails, public_key is not modified. There is no way to retrieve the secret (signing) key.
         */
         virtual std::size_t extract_key(gsl::span<std::byte> public_key) const = 0;
+
+        /**
+        * @brief A convenience method to return the required public (verification) key buffer size.
+        * @return Returns the number of bytes required to hold the public key when calling @ref extract_key.
+        */
+        [[nodiscard]] std::size_t extract_key_size() const {
+            return extract_key({});
+        }
 
         /**
         * @brief Releases the key pair handle.
