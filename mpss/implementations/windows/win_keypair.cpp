@@ -189,7 +189,11 @@ namespace mpss::impl {
             mpss::utils::set_error("NCryptExportKey returned an invalid key size.");
             return 0;
         }
-        std::size_t pk_size = pk_blob_size - sizeof(crypto_params::key_blob_t);
+
+        // We add 1 to this. The reason is that the Windows API returns just the X and Y
+        // coordinates of the point, whereas we prefer to return a standard format with
+        // the point compression indicator. All returned points are uncompressed (0x04).
+        std::size_t pk_size = pk_blob_size - sizeof(crypto_params::key_blob_t) + 1;
 
         // If the verification key buffer is empty, return the size of the key.
         if (public_key.empty()) {
@@ -221,10 +225,13 @@ namespace mpss::impl {
         }
 
         BYTE *pk_data_start = pk_blob.get() + sizeof(crypto_params::key_blob_t);
-        BYTE *pk_data_end = pk_data_start + pk_size;
+        BYTE* pk_data_end = pk_data_start + (pk_blob_size - sizeof(crypto_params::key_blob_t));
+
+        // Write the compression indicator to the output buffer.
+        public_key[0] = std::byte{ 0x04 }; // Uncompressed point indicator.
 
         // Copy the public key data to the output buffer.
-        std::transform(pk_data_start, pk_data_end, public_key.begin(), [](auto in) { return static_cast<std::byte>(in); });
+        std::transform(pk_data_start, pk_data_end, public_key.begin() + 1, [](auto in) { return static_cast<std::byte>(in); });
 
         // Securely clear the blob, just to be nice, neat, and tidy.
         SecureZeroMemory(pk_blob.get(), pk_blob_size);

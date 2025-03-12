@@ -24,9 +24,6 @@ namespace mpss::impl {
 
 		// Public key magic value
 		virtual DWORD public_key_magic() const = 0;
-
-		// Private key magic value
-		virtual DWORD private_key_magic() const = 0;
 	};
 
 #define MPSS_IMPL_WINDOWS_CRYPTO_PARAMS(curve) \
@@ -36,7 +33,6 @@ namespace mpss::impl {
         LPCWSTR public_key_blob_name() const override { return BCRYPT_ECCPUBLIC_BLOB; } \
         LPCWSTR private_key_blob_name() const override { return BCRYPT_ECCPRIVATE_BLOB; } \
         DWORD public_key_magic() const override { return BCRYPT_ECDSA_PUBLIC_##curve##_MAGIC; } \
-        DWORD private_key_magic() const override { return BCRYPT_ECDSA_PRIVATE_##curve##_MAGIC; } \
     };
 
 	// For now, provide three concrete implementations.
