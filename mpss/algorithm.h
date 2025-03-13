@@ -25,7 +25,6 @@ namespace mpss {
         const std::size_t key_bits;
         const std::size_t security_bits;
         const std::size_t hash_bits;
-        const std::size_t hash_block_bits;
         char const *const type_str;
     };
 
@@ -33,10 +32,10 @@ namespace mpss {
     * @brief A map describing @ref AlgorithmInfo for each supported algorithm.
     */
     constexpr std::array<std::pair<Algorithm, AlgorithmInfo>, 4> algorithm_info = {
-        std::make_pair(Algorithm::unsupported, AlgorithmInfo {0, 0, 0, 0, "unsupported" }),
-        std::make_pair(Algorithm::ecdsa_secp256r1_sha256, AlgorithmInfo { 256, 128, 256, 32, "ecdsa_secp256r1_sha256" }),
-        std::make_pair(Algorithm::ecdsa_secp384r1_sha384, AlgorithmInfo { 384, 192, 384, 64, "ecdsa_secp384r1_sha384" }),
-        std::make_pair(Algorithm::ecdsa_secp521r1_sha512, AlgorithmInfo { 512, 256, 512, 64, "ecdsa_secp521r1_sha512" })
+        std::make_pair(Algorithm::unsupported, AlgorithmInfo {0, 0, 0, "unsupported" }),
+        std::make_pair(Algorithm::ecdsa_secp256r1_sha256, AlgorithmInfo { 256, 128, 256, "ecdsa_secp256r1_sha256" }),
+        std::make_pair(Algorithm::ecdsa_secp384r1_sha384, AlgorithmInfo { 384, 192, 384, "ecdsa_secp384r1_sha384" }),
+        std::make_pair(Algorithm::ecdsa_secp521r1_sha512, AlgorithmInfo { 512, 256, 512, "ecdsa_secp521r1_sha512" })
     };
 
     /**
