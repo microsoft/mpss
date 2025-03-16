@@ -3,10 +3,16 @@
 
 #include "mpss/mpss.h"
 
-#include <gtest/gtest.h>
+#include <iostream>
+#include <memory>
+#include <string>
 #include <utility>
+#include <vector>
+
+#include <gtest/gtest.h>
 
 namespace mpss::tests {
+    using namespace mpss;
     using std::operator""s;
     using std::operator""sv;
 

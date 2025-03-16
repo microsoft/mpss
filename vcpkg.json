@@ -5,6 +5,10 @@
   "license": "MIT",
   "dependencies": [ "ms-gsl" ],
   "features": {
+    "openssl": {
+      "description": "Build the OpenSSL provider.",
+      "dependencies": [ "openssl" ]
+    },
     "tests": {
       "description": "Build the test suite.",
       "dependencies": [ "gtest" ]
