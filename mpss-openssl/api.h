@@ -4,7 +4,6 @@
 #pragma once
 
 #include <openssl/core.h>
-#include <openssl/types.h>
 
 extern "C" bool mpss_delete_key(const char* key_name);
 

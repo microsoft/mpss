@@ -13,8 +13,8 @@
 #include <openssl/core_dispatch.h>
 
 namespace {
-    using namespace ::mpss_openssl::provider;
-    using namespace ::mpss_openssl::util;
+    using namespace mpss_openssl::provider;
+    using namespace mpss_openssl::utils;
 
     extern "C" void mpss_provider_teardown(void* provctx) {
         mpss_provider_ctx* ctx = static_cast<mpss_provider_ctx*>(provctx);
@@ -44,7 +44,7 @@ namespace {
         }
     }
 
-    constexpr OSSL_DISPATCH mpss_provider_functions[] = {
+    const OSSL_DISPATCH mpss_provider_functions[] = {
         { OSSL_FUNC_PROVIDER_TEARDOWN, reinterpret_cast<void(*)(void)>(mpss_provider_teardown) },
         { OSSL_FUNC_PROVIDER_QUERY_OPERATION, reinterpret_cast<void(*)(void)>(mpss_provider_query_operation) },
         OSSL_DISPATCH_END
