@@ -173,24 +173,12 @@ bool CreateKeyMacOS(const char *keyName, int bitSize)
 
 
         NSLog(@"Creating bit size: %d", keyBitSize);
-        // NSDictionary *keyAttributes = @{
-        //     (id)kSecAttrKeyType: (id)kSecAttrKeyTypeECSECPrimeRandom,
-        //     (id)kSecAttrKeySizeInBits: @(keyBitSize),
-        //     (id)kSecAttrIsPermanent: @YES,
-        //     (id)kSecAttrLabel: keyLabel,
-        //     (id)kSecAttrApplicationTag: [keyLabel dataUsingEncoding:NSUTF8StringEncoding]
-        // };
         NSDictionary *keyAttributes = @{
             (id)kSecAttrKeyType: (id)kSecAttrKeyTypeECSECPrimeRandom,
             (id)kSecAttrKeySizeInBits: @(keyBitSize),
-            (id)kSecAttrTokenID: (id)kSecAttrTokenIDSecureEnclave,
-            (id)kSecPrivateKeyAttrs:
-            @{
-                (id)kSecAttrIsPermanent: @YES,
-                (id)kSecAttrApplicationTag: [keyLabel dataUsingEncoding:NSUTF8StringEncoding],
-                (id)kSecAttrLabel: keyLabel,
-                (id)kSecAttrAccessControl: (__bridge id)access
-            }
+            (id)kSecAttrIsPermanent: @YES,
+            (id)kSecAttrLabel: keyLabel,
+            (id)kSecAttrApplicationTag: [keyLabel dataUsingEncoding:NSUTF8StringEncoding]
         };
 
         // Generate the key
