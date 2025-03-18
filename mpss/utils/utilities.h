@@ -3,26 +3,41 @@
 
 #pragma once
 
-#include <string>
-#include <gsl/gsl>
-
 #include "mpss/mpss.h"
 
-namespace mpss {
-    namespace utils {
-        // Convert a long to a hex string
-        std::string to_hex(long value);
+#include <string>
+#include <sstream>
+#include <random>
 
-        // Get the last error string that occurred
-        std::string get_error();
+#include <gsl/narrow>
 
-        // Set the last error string that occurred
-        void set_error(std::string error);
+namespace mpss::utils {
+    // Convert a long to a hex string
+    std::string to_hex(long value);
 
-		// Verify the length of the hash based on the signature algorithm
-		bool verify_hash_length(gsl::span<std::byte> hash, SignatureAlgorithm algorithm);
+    // Get the last error string that occurred
+    std::string get_error() noexcept;
 
-        // Throw an exception if the argument is null
-		void throw_if_null(const void* arg, std::string_view name);
+    // Set the last error string that occurred
+    void set_error(std::string error) noexcept;
+
+    // Create a random string of characters.
+    std::string random_string(std::size_t length);
+
+    // Try to narrow input. On failure, set an error and return zero.
+    template<typename Out, typename In>
+    Out narrow_or_error(In in) {
+        Out out;
+        try {
+            out = gsl::narrow<Out>(in);
+        }
+        catch (const gsl::narrowing_error& e) {
+            // Narrowing failed.
+			std::stringstream ss;
+			ss << "Narrowing error: " << e.what() << " (in value: " << in << ")";
+            utils::set_error(ss.str());
+            out = Out{ 0 };
+        }
+        return out;
     }
 }

@@ -12,9 +12,13 @@
             "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
             "cacheVariables": {
                 "CMAKE_EXPORT_COMPILE_COMMANDS": "YES",
+                "MPSS_BUILD_MPSS_CORE_STATIC": "YES",
+                "MPSS_BUILD_MPSS_CORE_SHARED": "NO",
+                "MPSS_BUILD_MPSS_OPENSSL_STATIC": "YES",
+                "MPSS_BUILD_MPSS_OPENSSL_SHARED": "NO",
                 "MPSS_BUILD_TESTS": "YES",
-                "MPSS_BUILD_SHARED": "NO",
-                "CMAKE_CXX_STANDARD": "17"
+                "CMAKE_CXX_STANDARD": "17",
+                "CMAKE_C_STANDARD": "11"
             }
         },
         {

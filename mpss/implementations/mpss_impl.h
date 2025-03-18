@@ -3,22 +3,18 @@
 
 #pragma once
 
+#include "mpss/mpss.h"
+
 #include <memory>
 #include <string>
 #include <string_view>
-
-#include "mpss/mpss.h"
 
 namespace mpss
 {
     namespace impl
     {
-        std::unique_ptr<KeyPair> create_key(std::string_view name, SignatureAlgorithm algorithm);
+        [[nodiscard]] std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm);
 
-        std::unique_ptr<KeyPair> open_key(std::string_view name);
-
-        bool is_safe_storage_supported(SignatureAlgorithm algorithm);
-
-        std::string get_error();
+        [[nodiscard]] std::unique_ptr<KeyPair> open_key(std::string_view name);
     }
 }

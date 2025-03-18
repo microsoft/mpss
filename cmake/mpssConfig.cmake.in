@@ -3,6 +3,7 @@
 
 # Created variables:
 #   - MPSS_FOUND : YES if mpss is found and target mpss::mpss is available.
+#   - MPSS_OPENSSL_FOUND : YES if mpss-openssl is found and target mpss::mpss is available.
 #   - MPSS_INCLUDES_DIR : Directory where the mpss include files are.
 #   - MPSS_CONFIG_DIR : Directory where the mpss config files are.
 
@@ -10,6 +11,7 @@
 
 # Set our variables.
 set(MPSS_FOUND NO)
+set(MPSS_OPENSSL_FOUND NO)
 set_and_check(MPSS_INCLUDES_DIR "@PACKAGE_mpss_INCLUDES_INSTALL_DIR@")
 set_and_check(MPSS_CONFIG_DIR "@PACKAGE_mpss_CONFIG_INSTALL_DIR@")
 
@@ -20,7 +22,10 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}")
 # Create the targets.
 include(${CMAKE_CURRENT_LIST_DIR}/mpssTargets.cmake)
 
-# If the target was created, then set MPSS_FOUND to TRUE.
-if(TARGET mpss::mpss)
+# Check which targets were created.
+if(TARGET mpss::mpss_static OR TARGET mpss::mpss_shared)
     set(MPSS_FOUND YES)
+endif()
+if(TARGET mpss::mpss_openssl_static OR TARGET mpss::mpss_openssl_shared)
+    set(MPSS_OPENSSL_FOUND YES)
 endif()

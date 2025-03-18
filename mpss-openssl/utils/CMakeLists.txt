@@ -7,11 +7,10 @@ if(${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_CURRENT_SOURCE_DIR})
 endif()
 
 # Add the source files from this directory.
-set(mpss_SOURCE_FILES ${mpss_SOURCE_FILES}
-    ${CMAKE_CURRENT_LIST_DIR}/mpss_impl.cpp
-    ${CMAKE_CURRENT_LIST_DIR}/win_keypair.cpp
-    ${CMAKE_CURRENT_LIST_DIR}/win_utils.cpp
+set(mpss_openssl_SOURCE_FILES ${mpss_openssl_SOURCE_FILES}
+    ${CMAKE_CURRENT_LIST_DIR}/names.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/ossl_helpers.cpp
 )
 
-# Update mpss_SOURCE_FILES variable in the parent scope.
-set(mpss_SOURCE_FILES ${mpss_SOURCE_FILES} PARENT_SCOPE)
+# Update mpss_openssl_SOURCE_FILES variable in the parent scope.
+set(mpss_openssl_SOURCE_FILES ${mpss_openssl_SOURCE_FILES} PARENT_SCOPE)

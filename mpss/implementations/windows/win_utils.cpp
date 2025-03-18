@@ -1,47 +1,27 @@
 // Copyright(c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#include "mpss/mpss.h"
-#include "mpss/utils/utilities.h"
-#include "win_utils.h"
-#include "ecdsa_p256.h"
-#include "ecdsa_p384.h"
-#include "ecdsa_p521.h"
-
-
+#include "mpss/implementations/windows/win_utils.h"
 
 namespace {
-    // Error code of the last error that occurred.
-    thread_local SECURITY_STATUS last_error = ERROR_SUCCESS;
-
-    // Different implementations of crypto parameters
-    mpss::impl::ecdsa_p256 p256_crypto_params;
-    mpss::impl::ecdsa_p384 p384_crypto_params;
-    mpss::impl::ecdsa_p521 p521_crypto_params;
+    // Instantiating the crypto_params for each algorithm.
+    constexpr mpss::impl::ECDSA_P256 ecdsa_p256;
+    constexpr mpss::impl::ECDSA_P384 ecdsa_p384;
+    constexpr mpss::impl::ECDSA_P521 ecdsa_p521;
 }
 
-namespace mpss {
-    namespace impl {
-        namespace utils {
-            const crypto_params& GetCryptoParams(SignatureAlgorithm algorithm)
-            {
-                switch (algorithm) {
-                case mpss::SignatureAlgorithm::ECDSA_P256_SHA256:
-                    return p256_crypto_params;
-                case mpss::SignatureAlgorithm::ECDSA_P384_SHA384:
-                    return p384_crypto_params;
-                case mpss::SignatureAlgorithm::ECDSA_P521_SHA512:
-                    return p521_crypto_params;
-                default:
-                    throw std::invalid_argument("Unsupported algorithm");
-                }
-            }
-
-            void set_error(SECURITY_STATUS status, std::string error)
-            {
-                last_error = status;
-                mpss::utils::set_error(std::move(error));
-            }
+namespace mpss::impl::utils {
+    crypto_params const *const get_crypto_params(Algorithm algorithm) noexcept
+    {
+        switch (algorithm) {
+        case mpss::Algorithm::ecdsa_secp256r1_sha256:
+            return &ecdsa_p256;
+        case mpss::Algorithm::ecdsa_secp384r1_sha384:
+            return &ecdsa_p384;
+        case mpss::Algorithm::ecdsa_secp521r1_sha512:
+            return &ecdsa_p521;
+        default:
+            return nullptr;
         }
     }
 }

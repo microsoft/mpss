@@ -3,80 +3,76 @@
 
 #pragma once
 
+#include "mpss/algorithm.h"
+
 #include <cstdint>
+#include <cstddef>
 #include <string>
 #include <string_view>
 #include <optional>
 #include <vector>
 #include <memory>
+#include <map>
+#include <utility>
+#include <array>
 
-#include <gsl/gsl>
+#include <gsl/span>
 
 namespace mpss {
     /**
-    * @brief The supported signature algorithms.
-    */
-    enum class SignatureAlgorithm {
-        Undefined,
-        ECDSA_P256_SHA256,
-        ECDSA_P384_SHA384,
-        ECDSA_P521_SHA512
-    };
-
+    * A map listing the the 
 
     /**
     * @brief Retrieves the last error that occurred.
     * @return The last error that occurred in the library.
     */
-    std::string get_error();
+    [[nodiscard]] std::string get_error() noexcept;
 
     /**
     * @brief Determines whether the given signature algorithm is supported in the safe storage system.
     * @param algorithm The signature algorithm to verify
     * @return True if the signature algorithm is supported in safe storage, false otherwise.
     */
-    bool is_safe_storage_supported(SignatureAlgorithm algorithm);
-
+    [[nodiscard]] bool is_algorithm_supported(Algorithm algorithm);
 
     /**
-    * @brief Represents a key pair in the safe storage system.
+    * @brief Represents a handle to a key pair in the safe storage system.
     */
     class KeyPair {
     public:
-        /**
-        * Constructor
-        */
         KeyPair() = delete;
 
-        /**
-        * Destructor
-        */
         virtual ~KeyPair() = default;
 
-        /**
-        * Get the name of the key pair.
-        */
-        std::string_view name() const { return name_; }
+        KeyPair(const KeyPair&) = delete;
+        KeyPair& operator=(const KeyPair&) = delete;
+        KeyPair(KeyPair&&) = delete;
+        KeyPair& operator=(KeyPair&&) = delete;
 
         /**
-        * Get the algorithm of the key pair.
+        * @brief Get the key pair @ref Algorithm.
         */
-        SignatureAlgorithm algorithm() const { return algorithm_; }
+        [[nodiscard]] Algorithm algorithm() const noexcept { return algorithm_; }
+
+        /**
+        * @brief Get the key pair @ref AlgorithmInfo.
+        */
+        [[nodiscard]] AlgorithmInfo algorithm_info() const noexcept { return info_; }
 
         /**
         * @brief Creates a new key pair with the given name and algorithm.
-        * @param name The name of the key pair.
-        * @param algorithm The signature algorithm to use.
+        * @param[in] name The name of the key pair.
+        * @param[in] algorithm The signature algorithm to use.
         * @return Key pair if the key pair was created successfully, a null pointer otherwise.
         */
-        static std::unique_ptr<KeyPair> create(std::string_view name, SignatureAlgorithm algorithm);
+        [[nodiscard]] static std::unique_ptr<KeyPair> Create(std::string_view name, Algorithm algorithm);
 
         /**
         * @brief Opens the key pair with the given name.
-        * @param name The name of the key pair to open.
+        * @param[in] name The name of the key pair to open.
         * @return Key pair instance if the key pair was opened successfully, a null pointer otherwise.
         */
-        static std::unique_ptr<KeyPair> open(std::string_view name);
+        [[nodiscard]] static std::unique_ptr<KeyPair> Open(std::string_view name);
 
         /**
         * @brief Deletes the key pair with the given name from the safe storage.
@@ -86,27 +82,47 @@ namespace mpss {
         virtual bool delete_key() = 0;
 
         /**
-        * @brief Signs the given data with the key pair with the given name.
-        * @param data The hash to sign.
-        * @return The signature if the data was signed successfully, an empty optional otherwise.
-        * @note The data needs to be hashed before signing. The hash algorithm should match the given signature algorithm.
+        * @brief Signs the given hash with the key pair with the given name.
+        * @param[in] hash The hash to sign.
+        * @param[in,out] sig A buffer where the signature is written.
+        * @return If sig is empty, returns the number of bytes required in sig to hold the signature.
+        *         Otherwise, returns the number of bytes written to sig. Returns 0 if the operation failed.
         */
-        virtual std::optional<std::vector<std::byte>> sign(gsl::span<std::byte> hash) const = 0;
+        virtual std::size_t sign_hash(gsl::span<const std::byte> hash, gsl::span<std::byte> sig) const = 0;
 
         /**
-        * @brief Verifies the given data with the key pair with the given name.
-        * @param hash The hash to verify.
-        * @param signature The signature to verify.
+        * @brief A convenience method to return the required signature buffer size.
+        * @param[in] hash The hash to sign.
+        * @return Returns the number of bytes required to hold the signature when calling @ref sign_hash.
+        */
+        [[nodiscard]] std::size_t sign_hash_size(gsl::span<const std::byte> hash) const {
+            return sign_hash(hash, {});
+        }
+
+        /**
+        * @brief Verifies the given signature against the given hash data with the key pair with the given name.
+        * @param[in] hash The hash to verify.
+        * @param[in] signature The signature to verify.
         * @return True if the data was verified successfully, false otherwise.
         */
-        virtual bool verify(gsl::span<std::byte> hash, gsl::span<std::byte> signature) const = 0;
+        [[nodiscard]] virtual bool verify(gsl::span<const std::byte> hash, gsl::span<const std::byte> sig) const = 0;
 
         /**
-        * @brief Retrieves a verification (public) key with the given name.
-        * @param vk_out The verification key.
-        * @return True if the verification key retrieved successfully, false otherwise.
+        * @brief Retrieves the public (verification) key.
+        * @param[in,out] public_key An output parameter for the extracted public key.
+        * @return If public_key is empty, returns the number of bytes required in public_key to hold the key.
+        *         Otherwise, returns the number of bytes written to public_key. Returns 0 if the operation failed.
+        * @note If the operation fails, public_key is not modified. There is no way to retrieve the secret (signing) key.
         */
-        virtual bool get_verification_key(std::vector<std::byte>& vk_out) const = 0;
+        virtual std::size_t extract_key(gsl::span<std::byte> public_key) const = 0;
+
+        /**
+        * @brief A convenience method to return the required public (verification) key buffer size.
+        * @return Returns the number of bytes required to hold the public key when calling @ref extract_key.
+        */
+        [[nodiscard]] std::size_t extract_key_size() const {
+            return extract_key({});
+        }
 
         /**
         * @brief Releases the key pair handle.
@@ -118,10 +134,9 @@ namespace mpss {
         virtual void release_key() = 0;
 
     protected:
-        std::string name_;
-        SignatureAlgorithm algorithm_;
-        std::size_t hash_size_;
+        Algorithm algorithm_;
+        AlgorithmInfo info_;
 
-        KeyPair(std::string_view name, SignatureAlgorithm algorithm);
+        KeyPair(std::string_view name, Algorithm algorithm);
     };
 }

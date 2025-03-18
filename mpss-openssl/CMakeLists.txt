@@ -7,20 +7,19 @@ if(${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_CURRENT_SOURCE_DIR})
 endif()
 
 # Add the source files from this directory.
-set(mpss_SOURCE_FILES ${mpss_SOURCE_FILES}
-    ${CMAKE_CURRENT_LIST_DIR}/mpss.cpp
+set(mpss_openssl_SOURCE_FILES ${mpss_openssl_SOURCE_FILES}
+    ${CMAKE_CURRENT_LIST_DIR}/api.cpp
 )
 
-add_subdirectory(implementations)
 add_subdirectory(utils)
+add_subdirectory(provider)
 
 install(
     FILES
-        ${CMAKE_CURRENT_LIST_DIR}/mpss.h
-        ${CMAKE_CURRENT_LIST_DIR}/algorithm.h
+        ${CMAKE_CURRENT_LIST_DIR}/api.h
     DESTINATION
-        ${mpss_INCLUDES_INSTALL_DIR}/mpss
+        ${mpss_INCLUDES_INSTALL_DIR}/mpss-openssl
 )
 
-# Update mpss_SOURCE_FILES variable in the parent scope.
-set(mpss_SOURCE_FILES ${mpss_SOURCE_FILES} PARENT_SCOPE)
+# Update mpss_openssl_SOURCE_FILES variable in the parent scope.
+set(mpss_openssl_SOURCE_FILES ${mpss_openssl_SOURCE_FILES} PARENT_SCOPE)
