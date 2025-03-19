@@ -3,13 +3,14 @@
 
 #include "mac_keypair.h"
 #include "mac_api_wrapper.h"
+#include "mpss/utils/utilities.h"
 
 namespace mpss
 {
     namespace impl
     {
-        MacKeyPair::MacKeyPair(std::string_view name, SignatureAlgorithm algorithm)
-            : KeyPair(name, algorithm)
+        MacKeyPair::MacKeyPair(std::string_view name, Algorithm algorithm)
+            : KeyPair(algorithm), name_(name)
         {
         }
 
@@ -20,11 +21,26 @@ namespace mpss
 
         bool MacKeyPair::delete_key()
         {
-            return DeleteKeyMacOS(name().data());
+            return DeleteKeyMacOS(name_.c_str());
         }
 
-        std::optional<std::vector<std::byte>> MacKeyPair::sign(gsl::span<std::byte> hash) const
+        std::size_t MacKeyPair::sign_hash(gsl::span<const std::byte> hash, gsl::span<std::byte> sig) const
         {
+            // If there is nothing to sign, return 0
+            if (hash.empty()) {
+                mpss::utils::set_error("Nothing to sign.");
+                return 0;
+            }
+
+            if (hash.size() != info_.hash_bits / 8) {
+                std::stringstream ss;
+                ss << "Invalid hash length " << hash.size() << " (expected " << info_.hash_bits << " bits)";
+                mpss::utils::set_error(ss.str());
+                return 0;
+            }
+
+            // Cast the hash size
+            
             std::size_t signature_size = 0;
             std::uint8_t *signature = nullptr;
             if (!SignHashMacOS(name().data(), static_cast<int>(algorithm()), reinterpret_cast<std::uint8_t *>(hash.data()), hash.size(), &signature, &signature_size))

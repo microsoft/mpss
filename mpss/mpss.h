@@ -137,6 +137,6 @@ namespace mpss {
         Algorithm algorithm_;
         AlgorithmInfo info_;
 
-        KeyPair(std::string_view name, Algorithm algorithm);
+        KeyPair(Algorithm algorithm);
     };
 }

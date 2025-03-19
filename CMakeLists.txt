@@ -159,8 +159,6 @@ if (TARGET ${mpss_TARGET})
     if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
         # mpss on Windows requires ncrypt.lib.
         target_link_libraries(${mpss_TARGET} PRIVATE ncrypt)
-    else()
-        message(FATAL_ERROR "Unsupported platform: ${CMAKE_SYSTEM_NAME}")
     endif()
 
     # For debug builds, append "_debug" to the library names.

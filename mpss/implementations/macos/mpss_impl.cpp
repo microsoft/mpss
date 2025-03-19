@@ -1,6 +1,7 @@
 // Copyright(c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+#include "mpss/algorithm.h"
 #include "mpss/implementations/mpss_impl.h"
 #include "mpss/utils/scope_guard.h"
 #include "mpss/utils/utilities.h"
@@ -11,7 +12,7 @@ namespace mpss
 {
     namespace impl
     {
-        std::unique_ptr<KeyPair> create_key(std::string_view name, SignatureAlgorithm algorithm)
+        [[nodiscard]] std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm)
         {
             if (CreateKeyMacOS(name.data(), static_cast<int>(algorithm)))
             {
@@ -21,22 +22,22 @@ namespace mpss
             return {};
         }
 
-        std::unique_ptr<KeyPair> open_key(std::string_view name)
+        [[nodiscard]] std::unique_ptr<KeyPair> open_key(std::string_view name)
         {
             int bitSize = 0;
             if (OpenExistingKeyMacOS(name.data(), &bitSize))
             {
-                SignatureAlgorithm algorithm = SignatureAlgorithm::Undefined;
+                Algorithm algorithm = Algorithm::unsupported;
                 switch (bitSize)
                 {
                 case 256:
-                    algorithm = SignatureAlgorithm::ECDSA_P256_SHA256;
+                    algorithm = Algorithm::ecdsa_secp256r1_sha256;
                     break;
                 case 384:
-                    algorithm = SignatureAlgorithm::ECDSA_P384_SHA384;
+                    algorithm = Algorithm::ecdsa_secp384r1_sha384;
                     break;
                 case 521:
-                    algorithm = SignatureAlgorithm::ECDSA_P521_SHA512;
+                    algorithm = Algorithm::ecdsa_secp521r1_sha512;
                     break;
                 default:
                     std::string msg = "Unsupported key size: " + std::to_string(bitSize);
@@ -47,16 +48,6 @@ namespace mpss
             }
 
             return {};
-        }
-
-        bool is_safe_storage_supported(SignatureAlgorithm algorithm)
-        {
-            return false;
-        }
-
-        std::string get_error()
-        {
-            return std::string(GetLastErrorMacOS());
         }
     }
 }

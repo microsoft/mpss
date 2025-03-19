@@ -11,8 +11,8 @@
 namespace mpss::impl {
     class WindowsKeyPair : public mpss::KeyPair {
     public:
-        WindowsKeyPair(std::string_view name, mpss::Algorithm algorithm, NCRYPT_KEY_HANDLE handle)
-            : mpss::KeyPair(name, algorithm), key_handle_(handle)
+        WindowsKeyPair(mpss::Algorithm algorithm, NCRYPT_KEY_HANDLE handle)
+            : mpss::KeyPair(algorithm), key_handle_(handle)
         {}
 
         ~WindowsKeyPair() override
