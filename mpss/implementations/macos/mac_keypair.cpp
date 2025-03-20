@@ -43,11 +43,11 @@ namespace mpss
             if (sig.empty()) {
                 switch(info_.key_bits) {
                     case 256:
-                        return 71;
+                        return 72;
                     case 384:
-                        return 103;
+                        return 104;
                     case 512:
-                        return 139;
+                        return 140;
                     default:
                         {
                             std::stringstream ss;
@@ -110,10 +110,10 @@ namespace mpss
                 name_.c_str(),
                 reinterpret_cast<std::uint8_t*>(public_key.data()),
                 &pk_size)) {
-                return false;
+                return 0;
             }
 
-            return true;
+            return pk_size;
         }
 
         void MacKeyPair::release_key()

@@ -57,14 +57,14 @@ namespace mpss::tests {
         // Sign the data
         std::vector<std::byte> hash(hash_size, static_cast<std::byte>('a'));
         
-        // First extract the size of the 
+        // First extract the size of the signature
         std::size_t sig_size = handle->sign_hash(hash, {});
         std::vector<std::byte> signature(sig_size);
         std::size_t written = handle->sign_hash(hash, signature);
         if (0 == written) {
             std::cout << "Data could not be signed: " << mpss::get_error() << std::endl;
         }
-        ASSERT_EQ(written, sig_size);
+        ASSERT_GE(sig_size, written);
 
         // Verify the data
         ASSERT_TRUE(handle->verify(hash, signature));
@@ -106,8 +106,8 @@ namespace mpss::tests {
         if (0 == read) {
             std::cout << "Key could not be retrieved: " << mpss::get_error() << std::endl;
         }
+        std::cout << "VK size: " << vk_size << " read: " << read << std::endl;
         ASSERT_TRUE(vk_size == read);
-        std::cout << "VK size: " << vk_size << std::endl;
 
         // Release the key pair handle
         handle->release_key();
