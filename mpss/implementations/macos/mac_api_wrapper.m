@@ -199,7 +199,7 @@ bool CreateKeyMacOS(const char *keyName, int bitSize)
     }
 }
 
-bool SignHashMacOS(const char *keyName, int signatureType, const uint8_t *hash, size_t hashSize, uint8_t** signature, size_t* signatureSize)
+bool SignHashMacOS(const char *keyName, int signatureType, const uint8_t *hash, size_t hashSize, uint8_t* signature, size_t* signatureSize)
 {
     if (keyName == NULL || hash == NULL || signature == NULL || signatureSize == NULL) {
         return false;
@@ -233,10 +233,19 @@ bool SignHashMacOS(const char *keyName, int signatureType, const uint8_t *hash, 
             return false;
         }
 
-        *signatureSize = CFDataGetLength(signatureData);
-        *signature = (uint8_t*)malloc(*signatureSize);
-        memcpy(*signature, CFDataGetBytePtr(signatureData), *signatureSize);
-        NSLog(@"Signature created successfully. Signature size: %lu", *signatureSize);
+        size_t signatureDataSize = CFDataGetLength(signatureData);
+        if (*signatureSize < signatureDataSize) {
+            NSString* error = [NSString stringWithFormat:@"Insufficient buffer provided. Buffer size: %lu, signature size: %lu", *signatureSize, signatureDataSize];
+            SetThreadLocalError(error);
+            return false;
+        }
+
+        // Actual signature size
+        *signatureSize = signatureDataSize;
+
+        // Copy signature
+        memcpy(signature, CFDataGetBytePtr(signatureData), signatureDataSize);
+        NSLog(@"Signature created successfully. Signature size: %lu", signatureDataSize);
 
         CFRelease(signatureData);
 
@@ -294,7 +303,7 @@ bool VerifySignatureMacOS(const char *keyName, int signatureType, const uint8_t 
     }
 }
 
-bool GetPublicKeyMacOS(const char *keyName, uint8_t **pk, size_t *pkSize)
+bool GetPublicKeyMacOS(const char *keyName, uint8_t *pk, size_t *pkSize)
 {
     if (NULL == keyName || NULL == pk || NULL == pkSize) {
         return false;
@@ -333,17 +342,17 @@ bool GetPublicKeyMacOS(const char *keyName, uint8_t **pk, size_t *pkSize)
         CFIndex length = CFDataGetLength(pkData);
         const UInt8 *pkBytes = CFDataGetBytePtr(pkData);
 
-        *pk = malloc(length);
-        if (! *pk) {
+        if (*pkSize < length) {
+            NSString *errStr = [NSString stringWithFormat:@"Insufficient buffer. Provided: %lu, needed: %lu", *pkSize, length];
+            SetThreadLocalError(errStr);
             CFRelease(pkData);
             CFRelease(publicKeyRef);
-            SetThreadLocalError(@"Could not allocate public key memory buffer");
             return false;
         }
 
+        memcpy(pk, pkBytes, length);
+        // Actual size
         *pkSize = length;
-        memcpy(*pk, pkBytes, length);
-        NSLog(@"Successfully copied PK to memory buffer");
 
         CFRelease(pkData);
         CFRelease(publicKeyRef);

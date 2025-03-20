@@ -39,58 +39,86 @@ namespace mpss
                 return 0;
             }
 
-            // Cast the hash size
-            
-            std::size_t signature_size = 0;
-            std::uint8_t *signature = nullptr;
-            if (!SignHashMacOS(name().data(), static_cast<int>(algorithm()), reinterpret_cast<std::uint8_t *>(hash.data()), hash.size(), &signature, &signature_size))
-            {
-                return std::nullopt;
+            // If the signature buffer is empty, return the size of the signature
+            if (sig.empty()) {
+                switch(info_.key_bits) {
+                    case 256:
+                        return 71;
+                    case 384:
+                        return 103;
+                    case 512:
+                        return 139;
+                    default:
+                        {
+                            std::stringstream ss;
+                            ss << "Unknown key bit size: " << info_.key_bits;
+                            mpss::utils::set_error(ss.str());
+                            return 0;
+                        }
+                }
             }
 
-            std::vector<std::byte> signature_vector(
-                reinterpret_cast<std::byte *>(signature),
-                reinterpret_cast<std::byte *>(signature + signature_size));
+            std::size_t signature_size = sig.size();
+            if (!SignHashMacOS(
+                name_.c_str(),
+                static_cast<int>(algorithm()),
+                reinterpret_cast<const std::uint8_t *>(hash.data()),
+                hash.size(),
+                reinterpret_cast<std::uint8_t*>(sig.data()),
+                &signature_size))
+            {
+                return 0;
+            }
 
-            // Signature memory was created with malloc
-            free(signature);
-
-            return std::make_optional(std::move(signature_vector));
+            return signature_size;
         }
 
-        bool MacKeyPair::verify(gsl::span<std::byte> hash, gsl::span<std::byte> signature) const
+        bool MacKeyPair::verify(gsl::span<const std::byte> hash, gsl::span<const std::byte> sig) const
         {
             return VerifySignatureMacOS(
-                name().data(),
+                name_.c_str(),
                 static_cast<int>(algorithm()),
-                reinterpret_cast<std::uint8_t *>(hash.data()),
+                reinterpret_cast<const std::uint8_t *>(hash.data()),
                 hash.size(),
-                reinterpret_cast<std::uint8_t *>(signature.data()),
-                signature.size());
+                reinterpret_cast<const std::uint8_t *>(sig.data()),
+                sig.size());
         }
 
-        bool MacKeyPair::get_verification_key(std::vector<std::byte> &vk_out) const
+        std::size_t MacKeyPair::extract_key(gsl::span<std::byte> public_key) const
         {
-            std::size_t pk_size = 0;
-            std::uint8_t *pkData = nullptr;
-
-            if (!GetPublicKeyMacOS(name().data(), &pkData, &pk_size)) {
-                return false;
+            if (public_key.empty()) {
+                // return pk size
+                switch(info_.key_bits) {
+                    case 256:
+                        return 65;
+                    case 384:
+                        return 97;
+                    case 512:
+                        return 133;
+                    default: {
+                        std::stringstream ss;
+                        ss << "Unknown key bit size: " << info_.key_bits;
+                        mpss::utils::set_error(ss.str());
+                        return 0;
+                    }
+                }
             }
 
-            // Copy PK data
-            vk_out.resize(pk_size);
-            memcpy(vk_out.data(), pkData, pk_size);
+            std::size_t pk_size = public_key.size();
 
-            // PK data buffer was allocated with malloc
-            free(pkData);
+            if (!GetPublicKeyMacOS(
+                name_.c_str(),
+                reinterpret_cast<std::uint8_t*>(public_key.data()),
+                &pk_size)) {
+                return false;
+            }
 
             return true;
         }
 
         void MacKeyPair::release_key()
         {
-            RemoveKeyMacOS(name().data());
+            RemoveKeyMacOS(name_.c_str());
         }
     }
 }
