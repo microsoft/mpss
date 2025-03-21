@@ -65,6 +65,10 @@ namespace mpss {
         return utils::get_error();
     }
 
+    [[nodiscard]] std::size_t KeyPair::sign_hash_size() const {
+        return utils::get_max_signature_length(algorithm());
+    }
+
     KeyPair::KeyPair(std::string_view name, Algorithm algorithm)
         : algorithm_(algorithm), info_(get_algorithm_info(algorithm)) {
         if (0 == info_.key_bits) {

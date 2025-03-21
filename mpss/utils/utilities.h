@@ -24,6 +24,10 @@ namespace mpss::utils {
     // Create a random string of characters.
     std::string random_string(std::size_t length);
 
+    // Get maximum signature length for a given algorithm.
+    // We assume that the signature is ASN.1 DER encoded.
+    std::size_t get_max_signature_length(Algorithm algorithm);
+
     // Try to narrow input. On failure, set an error and return zero.
     template<typename Out, typename In>
     Out narrow_or_error(In in) {

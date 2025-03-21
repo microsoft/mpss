@@ -64,7 +64,7 @@ namespace mpss::tests {
         if (0 == written) {
             std::cout << "Data could not be signed: " << mpss::get_error() << std::endl;
         }
-        ASSERT_EQ(written, sig_size);
+        ASSERT_GT(sig_size, written);
 
         // Verify the data
         ASSERT_TRUE(handle->verify(hash, signature));

@@ -35,7 +35,7 @@ namespace mpss {
         std::make_pair(Algorithm::unsupported, AlgorithmInfo {0, 0, 0, "unsupported" }),
         std::make_pair(Algorithm::ecdsa_secp256r1_sha256, AlgorithmInfo { 256, 128, 256, "ecdsa_secp256r1_sha256" }),
         std::make_pair(Algorithm::ecdsa_secp384r1_sha384, AlgorithmInfo { 384, 192, 384, "ecdsa_secp384r1_sha384" }),
-        std::make_pair(Algorithm::ecdsa_secp521r1_sha512, AlgorithmInfo { 512, 256, 512, "ecdsa_secp521r1_sha512" })
+        std::make_pair(Algorithm::ecdsa_secp521r1_sha512, AlgorithmInfo { 521, 256, 512, "ecdsa_secp521r1_sha512" })
     };
 
     /**

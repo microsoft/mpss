@@ -44,6 +44,11 @@ namespace mpss::impl {
             return 0;
         }
 
+        if (sig.empty()) {
+            // If the signature buffer is empty, we want to return the size of the signature.
+            return mpss::utils::get_max_signature_length(algorithm());
+        }
+
         crypto_params const *const crypto = utils::get_crypto_params(algorithm());
         if (!crypto) {
             mpss::utils::set_error("Unsupported algorithm.");
@@ -81,35 +86,28 @@ namespace mpss::impl {
             return 0;
         }
 
-        // If the signature buffer is empty, return the size of the signature.
-        std::size_t sig_size_sz = mpss::utils::narrow_or_error<std::size_t>(sig_size_dw);
-        if (!sig_size_sz) {
-            return 0;
-        }
-        if (sig.empty()) {
-            return sig_size_sz;
-        }
-
-        // If the signature buffer is too small, return 0.
-        if (sig.size() < sig_size_sz) {
-            mpss::utils::set_error("Signature buffer is too small.");
+        // Get the buffer for the signature
+        std::unique_ptr<BYTE[]> signature_buffer = std::make_unique<BYTE[]>(sig_size_dw);
+        if (!signature_buffer) {
+            mpss::utils::set_error("Failed to allocate signature buffer.");
             return 0;
         }
 
-        DWORD sig_buf_size = mpss::utils::narrow_or_error<DWORD>(sig.size());
-        if (!sig_buf_size) {
-            return 0;
-        }
+        SCOPE_GUARD({
+            // Zero out the signature buffer.
+            ::SecureZeroMemory(signature_buffer.get(), sig_size_dw);
+            });
 
         // Get the actual signature.
+        DWORD signed_size = 0;
         status = ::NCryptSignHash(
             key_handle_,
             /* pPaddingInfo */ nullptr,
             reinterpret_cast<PBYTE>(const_cast<std::byte*>(hash.data())),
             hash_size,
-            reinterpret_cast<PBYTE>(sig.data()),
-            sig_buf_size,
-            &sig_size_dw,
+            signature_buffer.get(),
+            sig_size_dw,
+            &signed_size,
             /* dwFlags */ 0);
         if (ERROR_SUCCESS != status) {
             std::stringstream ss;
@@ -118,8 +116,59 @@ namespace mpss::impl {
             return 0;
         }
 
+        CERT_ECC_SIGNATURE eccSig;
+        DWORD field_size = signed_size / 2;
+        eccSig.r.cbData = field_size;
+        eccSig.r.pbData = signature_buffer.get();
+        eccSig.s.cbData = field_size;
+        eccSig.s.pbData = (signature_buffer.get() + field_size);
+
+        DWORD encoded_size = 0;
+
+        // Get the size of the encoding
+        if (!::CryptEncodeObjectEx(
+            X509_ASN_ENCODING,
+            X509_ECC_SIGNATURE,
+            &eccSig,
+            /* dwFlags */ 0,
+            /* PCRYPT_ENCODE_PARA */ nullptr,
+            /* pvEncoded */ nullptr,
+            &encoded_size)) {
+            std::stringstream ss;
+            ss << "CryptEncodeObjectEx failed with error code " << mpss::utils::to_hex(::GetLastError());
+            mpss::utils::set_error(ss.str());
+            return 0;
+        }
+
+        std::size_t encoded_size_sz = mpss::utils::narrow_or_error<std::size_t>(encoded_size);
+        if (!encoded_size_sz) {
+            mpss::utils::set_error("Failed to narrow encoded size.");
+            return 0;
+        }
+
+        // If the signature buffer is too small, return 0.
+        if (sig.size() < encoded_size_sz) {
+            mpss::utils::set_error("Signature buffer is too small.");
+            return 0;
+        }
+
+        // Encode the signature.
+        if (!::CryptEncodeObjectEx(
+            X509_ASN_ENCODING,
+            X509_ECC_SIGNATURE,
+            &eccSig,
+            /* dwFlags */ 0,
+            /* PCRYPT_ENCODE_PARA */ nullptr,
+            sig.data(),
+            &encoded_size)) {
+            std::stringstream ss;
+            ss << "CryptEncodeObjectEx failed with error code " << mpss::utils::to_hex(::GetLastError());
+            mpss::utils::set_error(ss.str());
+            return 0;
+        }
+
         // Return the number of bytes written to the signature buffer.
-        return mpss::utils::narrow_or_error<std::size_t>(sig_size_dw);
+        return mpss::utils::narrow_or_error<std::size_t>(encoded_size);
     }
 
     bool WindowsKeyPair::verify(gsl::span<const std::byte> hash, gsl::span<const std::byte> sig) const

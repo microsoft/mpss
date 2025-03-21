@@ -119,7 +119,7 @@ namespace mpss_openssl::utils {
         }
 
         // First try to get signature size.
-        std::size_t sig_size = key_pair->sign_hash_size(hash_tbs);
+        std::size_t sig_size = key_pair->sign_hash_size();
         if (0 == sig_size) {
             return 0;
         }
