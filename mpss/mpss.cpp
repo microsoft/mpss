@@ -63,7 +63,7 @@ namespace mpss {
 
     bool verify(gsl::span<const std::byte> hash, gsl::span<const std::byte> public_key, Algorithm algorithm, gsl::span<const std::byte> sig)
     {
-		return impl::verify(hash, public_key, algorithm, sig);
+        return impl::verify(hash, public_key, algorithm, sig);
     }
 
 
@@ -75,9 +75,9 @@ namespace mpss {
         return utils::get_max_signature_length(algorithm());
     }
 
-	std::size_t KeyPair::extract_key_size() const {
-		return utils::get_public_key_size(algorithm());
-	}
+    std::size_t KeyPair::extract_key_size() const {
+        return utils::get_public_key_size(algorithm());
+    }
 
     KeyPair::KeyPair(std::string_view name, Algorithm algorithm)
         : algorithm_(algorithm), info_(get_algorithm_info(algorithm)) {

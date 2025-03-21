@@ -39,7 +39,7 @@ namespace mpss {
     * @brief Verifies the given signature against the given hash data and public key.
     * @param[in] hash The hash to verify.
     * @param[in] public_key The public key used for verification.
-	* @param[in] algorithm The signature algorithm used to create the signature.
+    * @param[in] algorithm The signature algorithm used to create the signature.
     * @param[in] signature The signature to verify.
     * @return True if the data was verified successfully, false otherwise.
     */

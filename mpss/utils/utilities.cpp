@@ -43,7 +43,7 @@ namespace mpss::utils {
         // 
         // ASN.1 DER encoded signatures contain:
         // 1 byte to declare a sequence
-		// 2 bytes for the length of the sequence (can be 1 or 2 bytes, depending on the length)
+        // 2 bytes for the length of the sequence (can be 1 or 2 bytes, depending on the length)
         // 1 byte to declare the first integer
         // 1 byte for the length of the first integer
         // 1 byte to declare the second integer
@@ -56,18 +56,18 @@ namespace mpss::utils {
         return max_sig_size;
     }
 
-	std::size_t get_public_key_size(Algorithm algorithm)
-	{
-		AlgorithmInfo info = get_algorithm_info(algorithm);
-		if (0 == info.key_bits) {
-			return 0;
-		}
+    std::size_t get_public_key_size(Algorithm algorithm)
+    {
+        AlgorithmInfo info = get_algorithm_info(algorithm);
+        if (0 == info.key_bits) {
+            return 0;
+        }
 
-		// The public key size is the size of the X and Y coordinates
-		// plus the compression indicator.
-		std::size_t pk_size = ((info.key_bits + 7) / 8) * 2 + 1;
-		return pk_size;
-	}
+        // The public key size is the size of the X and Y coordinates
+        // plus the compression indicator.
+        std::size_t pk_size = ((info.key_bits + 7) / 8) * 2 + 1;
+        return pk_size;
+    }
 
     std::string random_string(std::size_t length)
     {

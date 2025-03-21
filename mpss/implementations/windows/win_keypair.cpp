@@ -147,8 +147,8 @@ namespace mpss::impl {
 
         // If the signature buffer is too small, return 0.
         if (sig.size() < encoded_size_sz) {
-			std::stringstream ss;
-			ss << "Signature buffer is too small. Expected " << encoded_size_sz << " bytes, got " << sig.size() << " bytes.";
+            std::stringstream ss;
+            ss << "Signature buffer is too small. Expected " << encoded_size_sz << " bytes, got " << sig.size() << " bytes.";
             mpss::utils::set_error(ss.str());
             return 0;
         }
@@ -180,76 +180,28 @@ namespace mpss::impl {
             return false;
         }
 
-		DWORD field_size = mpss::utils::narrow_or_error<DWORD>((info_.key_bits + 7) / 8);
-		if (field_size == 0) {
-			return false;
-		}
-
         // Decode signature
-		DWORD encoded_size = mpss::utils::narrow_or_error<DWORD>(sig.size());
-		if (encoded_size == 0) {
-			return false;
-		}
-
-        // Get required decoded size
-        DWORD ecc_sig_buffer_size = 0;
-        if (!::CryptDecodeObjectEx(
-			X509_ASN_ENCODING,
-			X509_ECC_SIGNATURE,
-            reinterpret_cast<LPCBYTE>(sig.data()),
-            encoded_size,
-			/* dwFlags */ 0,
-			/* PCRYPT_DECODE_PARA */ nullptr,
-			/* pvStructInfo */ nullptr,
-			&ecc_sig_buffer_size)) {
-			std::stringstream ss;
-			ss << "CryptDecodeObjectEx failed with error code " << mpss::utils::to_hex(::GetLastError());
-			mpss::utils::set_error(ss.str());
-			return false;
-		}
-
-		std::unique_ptr<BYTE[]> ecc_sig_buffer = std::make_unique<BYTE[]>(ecc_sig_buffer_size);
-		if (!ecc_sig_buffer) {
-			mpss::utils::set_error("Failed to allocate signature buffer.");
-			return false;
-		}
-		SCOPE_GUARD({
-			// Zero out the signature buffer.
-			::SecureZeroMemory(ecc_sig_buffer.get(), ecc_sig_buffer_size);
-			});
-
-		// Decode the signature
-        if (!::CryptDecodeObjectEx(
-            X509_ASN_ENCODING,
-            X509_ECC_SIGNATURE,
-            reinterpret_cast<LPCBYTE>(sig.data()),
-            encoded_size,
-            /* dwFlags */ 0,
-            /* PCRYPT_DECODE_PARA */ nullptr,
-            ecc_sig_buffer.get(),
-            &ecc_sig_buffer_size)) {
+        std::size_t raw_sig_size = mpss::impl::utils::decode_raw_signature(sig, algorithm(), {});
+        if (0 == raw_sig_size) {
             std::stringstream ss;
-            ss << "CryptDecodeObjectEx failed with error code " << mpss::utils::to_hex(::GetLastError());
+            ss << "Failed to get raw signature size: " << mpss::utils::get_error();
             mpss::utils::set_error(ss.str());
             return false;
         }
 
-		CERT_ECC_SIGNATURE* ecc_sig = reinterpret_cast<CERT_ECC_SIGNATURE*>(ecc_sig_buffer.get());
+        std::vector<std::byte> raw_sig(raw_sig_size);
+        SCOPE_GUARD({
+            // Zero out the signature buffer.
+            ::SecureZeroMemory(raw_sig.data(), raw_sig.size());
+            });
 
-		// Get raw signature data
-        DWORD raw_sig_size = ecc_sig->r.cbData + ecc_sig->s.cbData;
-		std::unique_ptr<BYTE[]> raw_signature = std::make_unique<BYTE[]>(raw_sig_size);
-        if (!raw_signature) {
-            mpss::utils::set_error("Failed to allocate signature buffer.");
+        std::size_t written = mpss::impl::utils::decode_raw_signature(sig, algorithm(), raw_sig);
+        if (written == 0) {
+            std::stringstream ss;
+            ss << "Failed to decode signature: " << mpss::utils::get_error();
+            mpss::utils::set_error(ss.str());
             return false;
         }
-
-		SCOPE_GUARD({
-			// Zero out the raw signature buffer.
-			::SecureZeroMemory(raw_signature.get(), raw_sig_size);
-			});
-		std::copy_n(ecc_sig->r.pbData, ecc_sig->r.cbData, raw_signature.get());
-		std::copy_n(ecc_sig->s.pbData, ecc_sig->s.cbData, raw_signature.get() + ecc_sig->r.cbData);
 
         if (hash.size() != info_.hash_bits / 8) {
             std::stringstream ss;
@@ -268,7 +220,7 @@ namespace mpss::impl {
             /* pPaddingInfo */ nullptr,
             reinterpret_cast<PBYTE>(const_cast<std::byte*>(hash.data())),
             hash_size,
-            raw_signature.get(),
+            reinterpret_cast<PBYTE>(raw_sig.data()),
             raw_sig_size,
             /* dwFlags */ 0);
         if (ERROR_SUCCESS != status) {
@@ -283,7 +235,7 @@ namespace mpss::impl {
 
     std::size_t WindowsKeyPair::extract_key(gsl::span<std::byte> public_key) const
     {
-		// If the public key buffer is empty, return the size of the key.
+        // If the public key buffer is empty, return the size of the key.
         if (public_key.empty()) {
             return mpss::utils::get_public_key_size(algorithm());
         }
@@ -322,6 +274,11 @@ namespace mpss::impl {
 
         // Actually get the key.
         auto pk_blob = std::make_unique<BYTE[]>(pk_blob_size);
+        SCOPE_GUARD({
+            // Securely clear the blob, just to be nice, neat, and tidy.
+            ::SecureZeroMemory(pk_blob.get(), pk_blob_size);
+            });
+
         status = ::NCryptExportKey(
             key_handle_,
             /* hExportKey */ 0,
@@ -349,10 +306,10 @@ namespace mpss::impl {
 
         // Check the input buffer is big enough
         if (public_key.size() < (pk_data_end - pk_data_start + 1)) {
-			std::stringstream ss;
-			ss << "Public key buffer is too small. Expected " << (pk_data_end - pk_data_start + 1) << " bytes, got " << public_key.size() << " bytes.";
-			mpss::utils::set_error(ss.str());
-			return 0;
+            std::stringstream ss;
+            ss << "Public key buffer is too small. Expected " << (pk_data_end - pk_data_start + 1) << " bytes, got " << public_key.size() << " bytes.";
+            mpss::utils::set_error(ss.str());
+            return 0;
         }
 
         // Write the compression indicator to the output buffer.
@@ -360,9 +317,6 @@ namespace mpss::impl {
 
         // Copy the public key data to the output buffer.
         std::transform(pk_data_start, pk_data_end, public_key.begin() + 1, [](auto in) { return static_cast<std::byte>(in); });
-
-        // Securely clear the blob, just to be nice, neat, and tidy.
-        ::SecureZeroMemory(pk_blob.get(), pk_blob_size);
 
         return pk_size;
     }

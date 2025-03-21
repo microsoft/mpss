@@ -199,39 +199,116 @@ namespace mpss::impl
 
     bool verify(gsl::span<const std::byte> hash, gsl::span<const std::byte> public_key, Algorithm algorithm, gsl::span<const std::byte> sig)
     {
-		// Check for obvious problems.
+        // Check for obvious problems.
         if (hash.empty() || public_key.empty() || sig.empty()) {
             mpss::utils::set_error("Nothing to verify.");
             return false;
         }
 
-		// Get the algorithm info.
-		AlgorithmInfo info = get_algorithm_info(algorithm);
+        // Check compression indicator
+        if (public_key[0] != std::byte{ 0x04 }) {
+            mpss::utils::set_error("Invalid public key format.");
+            return false;
+        }
+
+        // Get the algorithm info.
+        AlgorithmInfo info = get_algorithm_info(algorithm);
         
         // Get crypto parameters
-		crypto_params const* const crypto = utils::get_crypto_params(algorithm);
-		if (!crypto) {
-			mpss::utils::set_error("Unsupported algorithm.");
-			return false;
-		}
+        crypto_params const* const crypto = utils::get_crypto_params(algorithm);
+        if (!crypto) {
+            mpss::utils::set_error("Unsupported algorithm.");
+            return false;
+        }
 
-  //      // Import the public key
-		//NCRYPT_KEY_HANDLE key_handle = 0;
-		//SECURITY_STATUS status = ::NCryptImportKey(
-		//	/* hProvider */ 0,
-		//	/* hImportKey */ 0,
-		//	crypto->public_key_blob_name(),
-		//	/* pParameterList */ nullptr,
-		//	reinterpret_cast<PBYTE>(const_cast<std::byte*>(public_key.data())),
-		//	public_key.size(),
-		//	&key_handle,
-		//	/* dwFlags */ 0);
-  //      if (ERROR_SUCCESS != status) {
-  //          std::stringstream ss;
-  //          ss << "NCryptImportKey failed with error code " << mpss::utils::to_hex(status);
-  //          mpss::utils::set_error(ss.str());
-  //          return false;
-  //      }
-        return false;
+        // Build the key blob
+        DWORD pk_blob_size = sizeof(crypto_params::key_blob_t) + public_key.size() - 1;
+        std::unique_ptr<BYTE[]> key_blob_buffer = std::make_unique<BYTE[]>(pk_blob_size);
+        if (!key_blob_buffer) {
+            mpss::utils::set_error("Failed to allocate key blob buffer.");
+            return false;
+        }
+        SCOPE_GUARD({
+            // Zero out the key blob buffer.
+            ::SecureZeroMemory(key_blob_buffer.get(), pk_blob_size);
+            });
+
+        crypto_params::key_blob_t* key_blob = reinterpret_cast<crypto_params::key_blob_t*>(key_blob_buffer.get());
+        key_blob->dwMagic = crypto->public_key_magic();
+        // Field size, apparently
+        key_blob->cbKey = mpss::utils::narrow_or_error<ULONG>((info.key_bits + 7) / 8);
+        if (!key_blob->cbKey) {
+            return false;
+        }
+
+        // Copy public key data to the blob
+        std::transform(public_key.begin() + 1, public_key.end(), key_blob_buffer.get() + sizeof(crypto_params::key_blob_t), [](auto in) { return static_cast<BYTE>(in); });
+
+        NCRYPT_PROV_HANDLE provider = GetProvider();
+        if (!provider) {
+            return false;
+        }
+        SCOPE_GUARD(::NCryptFreeObject(provider));
+
+        // Import the public key
+        NCRYPT_KEY_HANDLE key_handle = 0;
+        SECURITY_STATUS status = ::NCryptImportKey(
+            provider,
+            /* hImportKey */ 0,
+            crypto->public_key_blob_name(),
+            /* pParameterList */ nullptr,
+            &key_handle,
+            key_blob_buffer.get(),
+            pk_blob_size,
+            /* dwFlags */ 0);
+        if (ERROR_SUCCESS != status) {
+            std::stringstream ss;
+            ss << "NCryptImportKey failed with error code " << mpss::utils::to_hex(status);
+            mpss::utils::set_error(ss.str());
+            return false;
+        }
+        if (!key_handle) {
+            mpss::utils::set_error("Failed to import key.");
+            return false;
+        }
+        SCOPE_GUARD(::NCryptFreeObject(key_handle));
+
+        // Extract raw signature
+        std::size_t raw_sig_size = mpss::impl::utils::decode_raw_signature(sig, algorithm, {});
+        if (raw_sig_size == 0) {
+            std::stringstream ss;
+            ss << "Failed to get raw signature size: " << mpss::utils::get_error();
+            mpss::utils::set_error(ss.str());
+            return false;
+        }
+
+        std::vector<std::byte> raw_sig(raw_sig_size);
+        SCOPE_GUARD({
+            // Zero out the signature buffer.
+            ::SecureZeroMemory(raw_sig.data(), raw_sig.size());
+            });
+        std::size_t written = mpss::impl::utils::decode_raw_signature(sig, algorithm, raw_sig);
+
+        DWORD hash_size = mpss::utils::narrow_or_error<DWORD>(hash.size());
+        if (!hash_size) {
+            return false;
+        }
+
+        status = ::NCryptVerifySignature(
+            key_handle,
+            /* pPaddingInfo */ nullptr,
+            reinterpret_cast<PBYTE>(const_cast<std::byte*>(hash.data())),
+            hash_size,
+            reinterpret_cast<PBYTE>(raw_sig.data()),
+            raw_sig.size(),
+            /* dwFlags */ 0);
+        if (ERROR_SUCCESS != status) {
+            std::stringstream ss;
+            ss << "NCryptVerifySignature failed with error code " << mpss::utils::to_hex(status);
+            mpss::utils::set_error(ss.str());
+            return false;
+        }
+
+        return true;
     }
 }
