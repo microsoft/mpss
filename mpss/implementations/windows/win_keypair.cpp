@@ -142,7 +142,6 @@ namespace mpss::impl {
 
         std::size_t encoded_size_sz = mpss::utils::narrow_or_error<std::size_t>(encoded_size);
         if (!encoded_size_sz) {
-            mpss::utils::set_error("Failed to narrow encoded size.");
             return 0;
         }
 
@@ -181,6 +180,77 @@ namespace mpss::impl {
             return false;
         }
 
+		DWORD field_size = mpss::utils::narrow_or_error<DWORD>((info_.key_bits + 7) / 8);
+		if (field_size == 0) {
+			return false;
+		}
+
+        // Decode signature
+		DWORD encoded_size = mpss::utils::narrow_or_error<DWORD>(sig.size());
+		if (encoded_size == 0) {
+			return false;
+		}
+
+        // Get required decoded size
+        DWORD ecc_sig_buffer_size = 0;
+        if (!::CryptDecodeObjectEx(
+			X509_ASN_ENCODING,
+			X509_ECC_SIGNATURE,
+            reinterpret_cast<LPCBYTE>(sig.data()),
+            encoded_size,
+			/* dwFlags */ 0,
+			/* PCRYPT_DECODE_PARA */ nullptr,
+			/* pvStructInfo */ nullptr,
+			&ecc_sig_buffer_size)) {
+			std::stringstream ss;
+			ss << "CryptDecodeObjectEx failed with error code " << mpss::utils::to_hex(::GetLastError());
+			mpss::utils::set_error(ss.str());
+			return false;
+		}
+
+		std::unique_ptr<BYTE[]> ecc_sig_buffer = std::make_unique<BYTE[]>(ecc_sig_buffer_size);
+		if (!ecc_sig_buffer) {
+			mpss::utils::set_error("Failed to allocate signature buffer.");
+			return false;
+		}
+		SCOPE_GUARD({
+			// Zero out the signature buffer.
+			::SecureZeroMemory(ecc_sig_buffer.get(), ecc_sig_buffer_size);
+			});
+
+		// Decode the signature
+        if (!::CryptDecodeObjectEx(
+            X509_ASN_ENCODING,
+            X509_ECC_SIGNATURE,
+            reinterpret_cast<LPCBYTE>(sig.data()),
+            encoded_size,
+            /* dwFlags */ 0,
+            /* PCRYPT_DECODE_PARA */ nullptr,
+            ecc_sig_buffer.get(),
+            &ecc_sig_buffer_size)) {
+            std::stringstream ss;
+            ss << "CryptDecodeObjectEx failed with error code " << mpss::utils::to_hex(::GetLastError());
+            mpss::utils::set_error(ss.str());
+            return false;
+        }
+
+		CERT_ECC_SIGNATURE* ecc_sig = reinterpret_cast<CERT_ECC_SIGNATURE*>(ecc_sig_buffer.get());
+
+		// Get raw signature data
+        DWORD raw_sig_size = ecc_sig->r.cbData + ecc_sig->s.cbData;
+		std::unique_ptr<BYTE[]> raw_signature = std::make_unique<BYTE[]>(raw_sig_size);
+        if (!raw_signature) {
+            mpss::utils::set_error("Failed to allocate signature buffer.");
+            return false;
+        }
+
+		SCOPE_GUARD({
+			// Zero out the raw signature buffer.
+			::SecureZeroMemory(raw_signature.get(), raw_sig_size);
+			});
+		std::copy_n(ecc_sig->r.pbData, ecc_sig->r.cbData, raw_signature.get());
+		std::copy_n(ecc_sig->s.pbData, ecc_sig->s.cbData, raw_signature.get() + ecc_sig->r.cbData);
+
         if (hash.size() != info_.hash_bits / 8) {
             std::stringstream ss;
             ss << "Invalid hash length " << hash.size() << " (expected " << info_.hash_bits << " bits)";
@@ -189,8 +259,7 @@ namespace mpss::impl {
         }
 
         DWORD hash_size = mpss::utils::narrow_or_error<DWORD>(hash.size());
-        DWORD sig_size = mpss::utils::narrow_or_error<DWORD>(sig.size());
-        if (!(hash_size | sig_size)) {
+        if (!hash_size) {
             return false;
         }
 
@@ -199,8 +268,8 @@ namespace mpss::impl {
             /* pPaddingInfo */ nullptr,
             reinterpret_cast<PBYTE>(const_cast<std::byte*>(hash.data())),
             hash_size,
-            reinterpret_cast<PBYTE>(const_cast<std::byte*>(sig.data())),
-            sig_size,
+            raw_signature.get(),
+            raw_sig_size,
             /* dwFlags */ 0);
         if (ERROR_SUCCESS != status) {
             std::stringstream ss;

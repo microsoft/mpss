@@ -43,7 +43,7 @@ namespace mpss::utils {
         // 
         // ASN.1 DER encoded signatures contain:
         // 1 byte to declare a sequence
-        // 1 byte for the length of the sequence
+		// 2 bytes for the length of the sequence (can be 1 or 2 bytes, depending on the length)
         // 1 byte to declare the first integer
         // 1 byte for the length of the first integer
         // 1 byte to declare the second integer
@@ -51,8 +51,8 @@ namespace mpss::utils {
         // 1 additional byte if the highest order bit of the first byte of 'r' is 1
         // 1 additional byte if the highest order bit of the first byte of 's' is 1
         // 
-        // So in total, we have maximum 8 bytes of overhead.
-        std::size_t max_sig_size = ((info.key_bits + 7) / 8) * 2 + 8;
+        // So in total, we have a maximum overhead of 9 bytes.
+        std::size_t max_sig_size = ((info.key_bits + 7) / 8) * 2 + 9;
         return max_sig_size;
     }
 
