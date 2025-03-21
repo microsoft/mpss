@@ -36,6 +36,17 @@ namespace mpss {
     [[nodiscard]] bool is_algorithm_supported(Algorithm algorithm);
 
     /**
+    * @brief Verifies the given signature against the given hash data and public key.
+    * @param[in] hash The hash to verify.
+    * @param[in] public_key The public key used for verification.
+    * @param[in] algorithm The signature algorithm used to create the signature.
+    * @param[in] signature The signature to verify.
+    * @return True if the data was verified successfully, false otherwise.
+    */
+    [[nodiscard]] bool verify(gsl::span<const std::byte> hash, gsl::span<const std::byte> public_key, Algorithm algorithm, gsl::span<const std::byte> sig);
+
+
+    /**
     * @brief Represents a handle to a key pair in the safe storage system.
     */
     class KeyPair {
@@ -91,13 +102,10 @@ namespace mpss {
         virtual std::size_t sign_hash(gsl::span<const std::byte> hash, gsl::span<std::byte> sig) const = 0;
 
         /**
-        * @brief A convenience method to return the required signature buffer size.
-        * @param[in] hash The hash to sign.
-        * @return Returns the number of bytes required to hold the signature when calling @ref sign_hash.
+        * @brief A convenience method to return the maximum signature buffer size.
+        * @return Returns the maximum number of bytes required to hold the signature when calling @ref sign_hash.
         */
-        [[nodiscard]] std::size_t sign_hash_size(gsl::span<const std::byte> hash) const {
-            return sign_hash(hash, {});
-        }
+        [[nodiscard]] std::size_t sign_hash_size() const;
 
         /**
         * @brief Verifies the given signature against the given hash data with the key pair with the given name.
@@ -120,9 +128,7 @@ namespace mpss {
         * @brief A convenience method to return the required public (verification) key buffer size.
         * @return Returns the number of bytes required to hold the public key when calling @ref extract_key.
         */
-        [[nodiscard]] std::size_t extract_key_size() const {
-            return extract_key({});
-        }
+        [[nodiscard]] std::size_t extract_key_size() const;
 
         /**
         * @brief Releases the key pair handle.

@@ -8,8 +8,10 @@
 #include <iostream>
 #include <stdexcept>
 
-namespace mpss {
-    std::unique_ptr<KeyPair> KeyPair::Create(std::string_view name, Algorithm algorithm) {
+namespace mpss
+{
+    std::unique_ptr<KeyPair> KeyPair::Create(std::string_view name, Algorithm algorithm)
+    {
         return impl::create_key(name, algorithm);
     }
 
@@ -18,9 +20,11 @@ namespace mpss {
         return impl::open_key(name);
     }
 
-    bool is_algorithm_supported(Algorithm algorithm) {
+    bool is_algorithm_supported(Algorithm algorithm)
+    {
         AlgorithmInfo info = get_algorithm_info(algorithm);
-        if (0 == info.key_bits) {
+        if (0 == info.key_bits)
+        {
             return false;
         }
 
@@ -30,16 +34,19 @@ namespace mpss {
 
         // Could we even create a key?
         bool key_created = (nullptr != key);
-        if (!key_created) {
+        if (!key_created)
+        {
             return false;
         }
 
         // Create some data and sign.
         std::vector<std::byte> hash(info.hash_bits / 8, static_cast<std::byte>('a'));
         std::size_t sig_size = key->sign_hash(hash, {});
-        if (0 == sig_size) {
+        if (0 == sig_size)
+        {
             bool key_deleted = key->delete_key();
-            if (!key_deleted) {
+            if (!key_deleted)
+            {
                 throw std::runtime_error("Test key deletion failed");
             }
             return false;
@@ -47,9 +54,11 @@ namespace mpss {
 
         std::vector<std::byte> sig(sig_size);
         std::size_t written = key->sign_hash(hash, sig);
-        if (written != sig_size) {
+        if (written != sig_size)
+        {
             bool key_deleted = key->delete_key();
-            if (!key_deleted) {
+            if (!key_deleted)
+            {
                 throw std::runtime_error("Test key deletion failed");
             }
             return false;
@@ -61,13 +70,31 @@ namespace mpss {
         return key_deleted;
     }
 
-    std::string get_error() noexcept {
+    bool verify(gsl::span<const std::byte> hash, gsl::span<const std::byte> public_key, Algorithm algorithm, gsl::span<const std::byte> sig)
+    {
+        return impl::verify(hash, public_key, algorithm, sig);
+    }
+
+    std::string get_error() noexcept
+    {
         return utils::get_error();
     }
 
+    std::size_t KeyPair::sign_hash_size() const
+    {
+        return utils::get_max_signature_length(algorithm());
+    }
+
+    std::size_t KeyPair::extract_key_size() const
+    {
+        return utils::get_public_key_size(algorithm());
+    }
+
     KeyPair::KeyPair(Algorithm algorithm)
-        : algorithm_(algorithm), info_(get_algorithm_info(algorithm)) {
-        if (0 == info_.key_bits) {
+        : algorithm_(algorithm), info_(get_algorithm_info(algorithm))
+    {
+        if (0 == info_.key_bits)
+        {
             throw std::invalid_argument("Unsupported algorithm");
         }
     }

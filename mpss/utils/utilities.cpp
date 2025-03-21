@@ -31,6 +31,44 @@ namespace mpss::utils {
         last_error = std::move(error);
     }
 
+    std::size_t get_max_signature_length(Algorithm algorithm)
+    {
+        AlgorithmInfo info = get_algorithm_info(algorithm);
+        if (0 == info.key_bits) {
+            return 0;
+        }
+
+        // The maximum signature length is the size of the signature
+        // plus the maximum size of the ASN.1 DER encoding.
+        // 
+        // ASN.1 DER encoded signatures contain:
+        // 1 byte to declare a sequence
+        // 2 bytes for the length of the sequence (can be 1 or 2 bytes, depending on the length)
+        // 1 byte to declare the first integer
+        // 1 byte for the length of the first integer
+        // 1 byte to declare the second integer
+        // 1 byte for the length of the second integer
+        // 1 additional byte if the highest order bit of the first byte of 'r' is 1
+        // 1 additional byte if the highest order bit of the first byte of 's' is 1
+        // 
+        // So in total, we have a maximum overhead of 9 bytes.
+        std::size_t max_sig_size = ((info.key_bits + 7) / 8) * 2 + 9;
+        return max_sig_size;
+    }
+
+    std::size_t get_public_key_size(Algorithm algorithm)
+    {
+        AlgorithmInfo info = get_algorithm_info(algorithm);
+        if (0 == info.key_bits) {
+            return 0;
+        }
+
+        // The public key size is the size of the X and Y coordinates
+        // plus the compression indicator.
+        std::size_t pk_size = ((info.key_bits + 7) / 8) * 2 + 1;
+        return pk_size;
+    }
+
     std::string random_string(std::size_t length)
     {
         static const char chars[] =

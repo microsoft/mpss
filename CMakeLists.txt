@@ -18,15 +18,16 @@ option(MPSS_BUILD_MPSS_OPENSSL_SHARED "Build the mpss OpenSSL provider shared li
 option(MPSS_BUILD_TESTS "Build the test suite." NO)
 
 # Check that we are not configuring for both a static or a shared library.
-if (MPSS_BUILD_MPSS_CORE_STATIC AND MPSS_BUILD_MPSS_CORE_SHARED)
+if(MPSS_BUILD_MPSS_CORE_STATIC AND MPSS_BUILD_MPSS_CORE_SHARED)
     message(FATAL_ERROR "Cannot build both static and shared mpss core libraries.")
 endif()
-if (MPSS_BUILD_MPSS_OPENSSL_STATIC AND MPSS_BUILD_MPSS_OPENSSL_SHARED)
+
+if(MPSS_BUILD_MPSS_OPENSSL_STATIC AND MPSS_BUILD_MPSS_OPENSSL_SHARED)
     message(FATAL_ERROR "Cannot build both static and shared mpss OpenSSL provider libraries.")
 endif()
 
 # Check that we have at least one library to build.
-if (NOT MPSS_BUILD_MPSS_CORE_STATIC
+if(NOT MPSS_BUILD_MPSS_CORE_STATIC
     AND NOT MPSS_BUILD_MPSS_CORE_SHARED
     AND NOT MPSS_BUILD_MPSS_OPENSSL_STATIC
     AND NOT MPSS_BUILD_MPSS_OPENSSL_SHARED)
@@ -39,7 +40,7 @@ if(MPSS_BUILD_TESTS)
 endif()
 
 # Enable openssl feature in vcpkg if we are building mpss-openssl.
-if (MPSS_BUILD_MPSS_OPENSSL_STATIC OR MPSS_BUILD_OPENSSL_SHARED)
+if(MPSS_BUILD_MPSS_OPENSSL_STATIC OR MPSS_BUILD_OPENSSL_SHARED)
     list(APPEND VCPKG_MANIFEST_FEATURES "openssl")
 endif()
 
@@ -81,12 +82,14 @@ endif()
 
 # List of all source files.
 set(mpss_SOURCE_FILES "")
-if (MPSS_BUILD_MPSS_CORE_STATIC OR MPSS_BUILD_MPSS_CORE_SHARED)
+
+if(MPSS_BUILD_MPSS_CORE_STATIC OR MPSS_BUILD_MPSS_CORE_SHARED)
     add_subdirectory(mpss)
 endif()
 
 set(mpss_openssl_SOURCE_FILES "")
-if (MPSS_BUILD_MPSS_OPENSSL_STATIC OR MPSS_BUILD_MPSS_OPENSSL_SHARED)
+
+if(MPSS_BUILD_MPSS_OPENSSL_STATIC OR MPSS_BUILD_MPSS_OPENSSL_SHARED)
     add_subdirectory(mpss-openssl)
 endif()
 
@@ -96,7 +99,7 @@ configure_file(${mpss_CONFIG_H_IN_FILENAME} ${mpss_CONFIG_H_FILENAME})
 # Set up either static or shared libraries, depending primarily on the variables
 # MPSS_BUILD_MPSS_CORE_SHARED and MPSS_BUILD_MPSS_OPENSSL_SHARED. Secondarily,
 # the library type is set based on BUILD_SHARED_LIBS.
-if (MPSS_BUILD_MPSS_CORE_SHARED)
+if(MPSS_BUILD_MPSS_CORE_SHARED)
     set(mpss_LIBRARY_TYPE SHARED)
 elseif(BUILD_SHARED_LIBS)
     set(mpss_LIBRARY_TYPE SHARED)
@@ -104,20 +107,20 @@ else()
     set(mpss_LIBRARY_TYPE STATIC)
 endif()
 
-if (MPSS_BUILD_MPSS_OPENSSL_SHARED)
+if(MPSS_BUILD_MPSS_OPENSSL_SHARED)
     set(mpss_openssl_LIBRARY_TYPE SHARED)
-elseif (BUILD_SHARED_LIBS)
+elseif(BUILD_SHARED_LIBS)
     set(mpss_openssl_LIBRARY_TYPE SHARED)
 else()
     set(mpss_openssl_LIBRARY_TYPE STATIC)
 endif()
 
-if (MPSS_BUILD_MPSS_CORE_STATIC OR MPSS_BUILD_MPSS_CORE_SHARED)
-    if (mpss_LIBRARY_TYPE STREQUAL "STATIC")
+if(MPSS_BUILD_MPSS_CORE_STATIC OR MPSS_BUILD_MPSS_CORE_SHARED)
+    if(mpss_LIBRARY_TYPE STREQUAL "STATIC")
         message(STATUS "[mpss] Building static library")
         set(mpss_TARGET mpss_static)
         add_library(${mpss_TARGET} ${mpss_LIBRARY_TYPE} ${mpss_SOURCE_FILES})
-    elseif (mpss_LIBRARY_TYPE STREQUAL "SHARED")
+    elseif(mpss_LIBRARY_TYPE STREQUAL "SHARED")
         message(STATUS "[mpss] Building shared library")
         set(mpss_TARGET mpss_dynamic)
         message(FATAL_ERROR "NOT IMPLEMENTED")
@@ -126,12 +129,12 @@ if (MPSS_BUILD_MPSS_CORE_STATIC OR MPSS_BUILD_MPSS_CORE_SHARED)
     endif()
 endif()
 
-if (MPSS_BUILD_MPSS_OPENSSL_STATIC OR MPSS_BUILD_MPSS_OPENSSL_SHARED)
-    if (mpss_openssl_LIBRARY_TYPE STREQUAL "STATIC")
+if(MPSS_BUILD_MPSS_OPENSSL_STATIC OR MPSS_BUILD_MPSS_OPENSSL_SHARED)
+    if(mpss_openssl_LIBRARY_TYPE STREQUAL "STATIC")
         message(STATUS "[mpss-openssl] Building static library")
         set(mpss_openssl_TARGET mpss_openssl_static)
         add_library(${mpss_openssl_TARGET} ${mpss_openssl_LIBRARY_TYPE} ${mpss_openssl_SOURCE_FILES})
-    elseif (mpss_openssl_LIBRARY_TYPE STREQUAL "SHARED")
+    elseif(mpss_openssl_LIBRARY_TYPE STREQUAL "SHARED")
         message(STATUS "[mpss-openssl] Building shared library")
         set(mpss_openssl_TARGET mpss_openssl_dynamic)
         message(FATAL_ERROR "NOT IMPLEMENTED")
@@ -140,7 +143,7 @@ if (MPSS_BUILD_MPSS_OPENSSL_STATIC OR MPSS_BUILD_MPSS_OPENSSL_SHARED)
     endif()
 endif()
 
-if (TARGET ${mpss_TARGET})
+if(TARGET ${mpss_TARGET})
     # Require C++17 for mpss and downstream.
     target_compile_features(${mpss_TARGET} PUBLIC cxx_std_17)
 
@@ -156,11 +159,14 @@ if (TARGET ${mpss_TARGET})
     target_link_libraries(${mpss_TARGET} PUBLIC Microsoft.GSL::GSL)
 
     # Platform-specific dependencies.
-    if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
+    if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
         # mpss on Windows requires ncrypt.lib.
         target_link_libraries(${mpss_TARGET} PRIVATE ncrypt)
+        target_link_libraries(${mpss_TARGET} PRIVATE crypt32)
     elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
         target_link_libraries(${mpss_TARGET} PRIVATE "-framework Foundation -framework Security -framework CryptoKit")
+    else()
+        message(FATAL_ERROR "Unsupported platform: ${CMAKE_SYSTEM_NAME}")
     endif()
 
     # For debug builds, append "_debug" to the library names.
@@ -180,13 +186,13 @@ if (TARGET ${mpss_TARGET})
     )
 
     # Add our targets to an export mpssTargets.
-    if (MPSS_BUILD_MPSS_CORE_STATIC)
+    if(MPSS_BUILD_MPSS_CORE_STATIC)
         # This allows multiple versions for static libraries since the directories
         # are named according to the version. Works both on Windows and Linux.
         install(TARGETS ${mpss_TARGET} EXPORT mpssTargets
             ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}/mpss-${mpss_VERSION_MAJOR}.${mpss_VERSION_MINOR}
         )
-    elseif (MPSS_BUILD_MPSS_CORE_SHARED)
+    elseif(MPSS_BUILD_MPSS_CORE_SHARED)
         # This allows multiple versions for shared libraries on Linux since the
         # filenames are disambiguated by the version. On Windows, only a single
         # version can be installed at a time. On Windows, import libraries go to
@@ -204,7 +210,7 @@ if (TARGET ${mpss_TARGET})
     endif()
 endif()
 
-if (TARGET ${mpss_openssl_TARGET})
+if(TARGET ${mpss_openssl_TARGET})
     # Require C++17 and C11 for mpss-openssl. These are only internal requirements.
     target_compile_features(${mpss_openssl_TARGET} PRIVATE cxx_std_17)
     target_compile_features(${mpss_openssl_TARGET} PRIVATE c_std_11)
@@ -237,11 +243,11 @@ if (TARGET ${mpss_openssl_TARGET})
         $<INSTALL_INTERFACE:${mpss_INCLUDES_INSTALL_DIR}>
     )
 
-    if (MPSS_BUILD_MPSS_OPENSSL_STATIC)
+    if(MPSS_BUILD_MPSS_OPENSSL_STATIC)
         install(TARGETS ${mpss_openssl_TARGET} EXPORT mpssTargets
             ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}/mpss-${mpss_VERSION_MAJOR}.${mpss_VERSION_MINOR}
         )
-    elseif (MPSS_BUILD_MPSS_OPENSSL_SHARED)
+    elseif(MPSS_BUILD_MPSS_OPENSSL_SHARED)
         install(TARGETS ${mpss_openssl_TARGET} EXPORT mpssTargets
             ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
             LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
@@ -310,7 +316,7 @@ if(MPSS_BUILD_TESTS)
         GTest::gtest
     )
 
-    if (TARGET ${mpss_openssl_TARGET})
+    if(TARGET ${mpss_openssl_TARGET})
         target_link_libraries(mpss_tests PRIVATE ${mpss_openssl_TARGET})
     endif()
 endif()
