@@ -148,7 +148,9 @@ namespace mpss::impl {
 
         // If the signature buffer is too small, return 0.
         if (sig.size() < encoded_size_sz) {
-            mpss::utils::set_error("Signature buffer is too small.");
+			std::stringstream ss;
+			ss << "Signature buffer is too small. Expected " << encoded_size_sz << " bytes, got " << sig.size() << " bytes.";
+            mpss::utils::set_error(ss.str());
             return 0;
         }
 
@@ -212,6 +214,11 @@ namespace mpss::impl {
 
     std::size_t WindowsKeyPair::extract_key(gsl::span<std::byte> public_key) const
     {
+		// If the public key buffer is empty, return the size of the key.
+        if (public_key.empty()) {
+            return mpss::utils::get_public_key_size(algorithm());
+        }
+
         crypto_params const *const crypto = utils::get_crypto_params(algorithm());
 
         // Get the public key size.
@@ -244,11 +251,6 @@ namespace mpss::impl {
         // the point compression indicator. All returned points are uncompressed (0x04).
         std::size_t pk_size = pk_blob_size - sizeof(crypto_params::key_blob_t) + 1;
 
-        // If the verification key buffer is empty, return the size of the key.
-        if (public_key.empty()) {
-            return pk_size;
-        }
-
         // Actually get the key.
         auto pk_blob = std::make_unique<BYTE[]>(pk_blob_size);
         status = ::NCryptExportKey(
@@ -274,7 +276,15 @@ namespace mpss::impl {
         }
 
         BYTE *pk_data_start = pk_blob.get() + sizeof(crypto_params::key_blob_t);
-        BYTE* pk_data_end = pk_data_start + (pk_blob_size - sizeof(crypto_params::key_blob_t));
+        BYTE *pk_data_end = pk_data_start + (pk_blob_size - sizeof(crypto_params::key_blob_t));
+
+        // Check the input buffer is big enough
+        if (public_key.size() < (pk_data_end - pk_data_start + 1)) {
+			std::stringstream ss;
+			ss << "Public key buffer is too small. Expected " << (pk_data_end - pk_data_start + 1) << " bytes, got " << public_key.size() << " bytes.";
+			mpss::utils::set_error(ss.str());
+			return 0;
+        }
 
         // Write the compression indicator to the output buffer.
         public_key[0] = std::byte{ 0x04 }; // Uncompressed point indicator.
@@ -283,7 +293,7 @@ namespace mpss::impl {
         std::transform(pk_data_start, pk_data_end, public_key.begin() + 1, [](auto in) { return static_cast<std::byte>(in); });
 
         // Securely clear the blob, just to be nice, neat, and tidy.
-        SecureZeroMemory(pk_blob.get(), pk_blob_size);
+        ::SecureZeroMemory(pk_blob.get(), pk_blob_size);
 
         return pk_size;
     }

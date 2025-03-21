@@ -106,8 +106,8 @@ namespace mpss::tests {
         if (0 == read) {
             std::cout << "Key could not be retrieved: " << mpss::get_error() << std::endl;
         }
-        ASSERT_TRUE(vk_size == read);
         std::cout << "VK size: " << vk_size << std::endl;
+        ASSERT_EQ(vk_size, read);
 
         // Release the key pair handle
         handle->release_key();
@@ -116,16 +116,55 @@ namespace mpss::tests {
         MPSS::DeleteKey(key_name);
     }
 
+	void GetKeySmallBuffer(Algorithm algorithm, std::string_view suffix)
+	{
+		std::string key_name = "test_key_3_"s + suffix.data();
+
+		// Delete key if it exists
+		MPSS::DeleteKey(key_name);
+
+		// Create a key pair for testing
+		std::unique_ptr<mpss::KeyPair> handle = MPSS::CreateKey(key_name, algorithm);
+		ASSERT_TRUE(handle != nullptr);
+
+		// Get the key pair
+		std::size_t vk_size = handle->extract_key({});
+		std::vector<std::byte> vk(vk_size - 1);
+		std::size_t read = handle->extract_key(vk);
+		if (0 == read) {
+			std::cout << "Key could not be retrieved: " << mpss::get_error() << std::endl;
+		}
+		ASSERT_EQ(0, read);
+
+		// Release the key pair handle
+		handle->release_key();
+
+		// Delete the key pair
+		MPSS::DeleteKey(key_name);
+	}
+
     TEST_F(MPSS, GetKey256) {
         GetKey(Algorithm::ecdsa_secp256r1_sha256, "256");
     }
 
     TEST_F(MPSS, GetKey384) {
-        GetKey(Algorithm::ecdsa_secp384r1_sha384 , "384");
+        GetKey(Algorithm::ecdsa_secp384r1_sha384, "384");
     }
 
     TEST_F(MPSS, GetKey521) {
         GetKey(Algorithm::ecdsa_secp521r1_sha512, "521");
+    }
+
+    TEST_F(MPSS, GetKeySmallBuffer256) {
+        GetKeySmallBuffer(Algorithm::ecdsa_secp256r1_sha256, "256");
+    }
+
+    TEST_F(MPSS, GetKeySmallBuffer384) {
+        GetKeySmallBuffer(Algorithm::ecdsa_secp384r1_sha384, "384");
+    }
+
+    TEST_F(MPSS, GetKeySmallBuffer521) {
+        GetKeySmallBuffer(Algorithm::ecdsa_secp521r1_sha512, "521");
     }
 
     TEST(MPSSTests, IsAlgorithmSupported) {

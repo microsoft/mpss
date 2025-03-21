@@ -56,6 +56,19 @@ namespace mpss::utils {
         return max_sig_size;
     }
 
+	std::size_t get_public_key_size(Algorithm algorithm)
+	{
+		AlgorithmInfo info = get_algorithm_info(algorithm);
+		if (0 == info.key_bits) {
+			return 0;
+		}
+
+		// The public key size is the size of the X and Y coordinates
+		// plus the compression indicator.
+		std::size_t pk_size = ((info.key_bits + 7) / 8) * 2 + 1;
+		return pk_size;
+	}
+
     std::string random_string(std::size_t length)
     {
         static const char chars[] =

@@ -117,9 +117,7 @@ namespace mpss {
         * @brief A convenience method to return the required public (verification) key buffer size.
         * @return Returns the number of bytes required to hold the public key when calling @ref extract_key.
         */
-        [[nodiscard]] std::size_t extract_key_size() const {
-            return extract_key({});
-        }
+        [[nodiscard]] std::size_t extract_key_size() const;
 
         /**
         * @brief Releases the key pair handle.

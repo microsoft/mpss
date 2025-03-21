@@ -28,6 +28,10 @@ namespace mpss::utils {
     // We assume that the signature is ASN.1 DER encoded.
     std::size_t get_max_signature_length(Algorithm algorithm);
 
+	// Get public key size for a given algorithm.
+	// We assume that the public key is ANSI X9.63 encoded.
+	std::size_t get_public_key_size(Algorithm algorithm);
+
     // Try to narrow input. On failure, set an error and return zero.
     template<typename Out, typename In>
     Out narrow_or_error(In in) {
