@@ -196,4 +196,42 @@ namespace mpss::impl
 
         return std::make_unique<WindowsKeyPair>(name, algorithm, key_handle);
     }
+
+    bool verify(gsl::span<const std::byte> hash, gsl::span<const std::byte> public_key, Algorithm algorithm, gsl::span<const std::byte> sig)
+    {
+		// Check for obvious problems.
+        if (hash.empty() || public_key.empty() || sig.empty()) {
+            mpss::utils::set_error("Nothing to verify.");
+            return false;
+        }
+
+		// Get the algorithm info.
+		AlgorithmInfo info = get_algorithm_info(algorithm);
+        
+        // Get crypto parameters
+		crypto_params const* const crypto = utils::get_crypto_params(algorithm);
+		if (!crypto) {
+			mpss::utils::set_error("Unsupported algorithm.");
+			return false;
+		}
+
+  //      // Import the public key
+		//NCRYPT_KEY_HANDLE key_handle = 0;
+		//SECURITY_STATUS status = ::NCryptImportKey(
+		//	/* hProvider */ 0,
+		//	/* hImportKey */ 0,
+		//	crypto->public_key_blob_name(),
+		//	/* pParameterList */ nullptr,
+		//	reinterpret_cast<PBYTE>(const_cast<std::byte*>(public_key.data())),
+		//	public_key.size(),
+		//	&key_handle,
+		//	/* dwFlags */ 0);
+  //      if (ERROR_SUCCESS != status) {
+  //          std::stringstream ss;
+  //          ss << "NCryptImportKey failed with error code " << mpss::utils::to_hex(status);
+  //          mpss::utils::set_error(ss.str());
+  //          return false;
+  //      }
+        return false;
+    }
 }

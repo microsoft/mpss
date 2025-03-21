@@ -61,6 +61,12 @@ namespace mpss {
         return key_deleted;
     }
 
+    bool verify(gsl::span<const std::byte> hash, gsl::span<const std::byte> public_key, Algorithm algorithm, gsl::span<const std::byte> sig)
+    {
+		return impl::verify(hash, public_key, algorithm, sig);
+    }
+
+
     std::string get_error() noexcept {
         return utils::get_error();
     }

@@ -36,6 +36,17 @@ namespace mpss {
     [[nodiscard]] bool is_algorithm_supported(Algorithm algorithm);
 
     /**
+    * @brief Verifies the given signature against the given hash data and public key.
+    * @param[in] hash The hash to verify.
+    * @param[in] public_key The public key used for verification.
+	* @param[in] algorithm The signature algorithm used to create the signature.
+    * @param[in] signature The signature to verify.
+    * @return True if the data was verified successfully, false otherwise.
+    */
+    [[nodiscard]] bool verify(gsl::span<const std::byte> hash, gsl::span<const std::byte> public_key, Algorithm algorithm, gsl::span<const std::byte> sig);
+
+
+    /**
     * @brief Represents a handle to a key pair in the safe storage system.
     */
     class KeyPair {
