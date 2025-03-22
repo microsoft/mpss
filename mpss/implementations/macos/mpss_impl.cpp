@@ -12,7 +12,7 @@ namespace mpss
 {
     namespace impl
     {
-        [[nodiscard]] std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm)
+        std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm)
         {
             if (CreateKeyMacOS(name.data(), static_cast<int>(algorithm)))
             {
@@ -22,7 +22,7 @@ namespace mpss
             return {};
         }
 
-        [[nodiscard]] std::unique_ptr<KeyPair> open_key(std::string_view name)
+        std::unique_ptr<KeyPair> open_key(std::string_view name)
         {
             int bitSize = 0;
             if (OpenExistingKeyMacOS(name.data(), &bitSize))
@@ -48,6 +48,11 @@ namespace mpss
             }
 
             return {};
+        }
+
+        bool verify(gsl::span<const std::byte> hash, gsl::span<const std::byte> public_key, Algorithm algorithm, gsl::span<const std::byte> sig)
+        {
+            return false;
         }
     }
 }
