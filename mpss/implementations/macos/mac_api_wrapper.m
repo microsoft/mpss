@@ -88,6 +88,21 @@ SecKeyAlgorithm GetAlgorithm(int signatureType)
     }
 }
 
+int GetKeyBitSize(int signatureType)
+{
+    switch(signatureType) {
+        case 1: // ECDSA SHA 256
+            return 256;
+        case 2: // ECDSA SHA 384
+            return 384;
+        case 3: // ECDSA SHA 512
+            return 521;
+        default:
+            NSLog(@"Unsupported signature type");
+            return -1;
+    }
+}
+
 ////////////////////////////////////////////////////////
 // From here on below, the public functions
 ////////////////////////////////////////////////////////
@@ -148,19 +163,11 @@ bool CreateKeyMacOS(const char *keyName, int bitSize)
     @autoreleasepool {
         NSString *keyLabel = GetKeyLabel(keyName);
 
-        int keyBitSize = 0;
-        switch (bitSize) {
-        case 1:
-            keyBitSize = 256;
-            break;
-        case 2:
-            keyBitSize = 384;
-            break;
-        case 3:
-            keyBitSize = 521;
-            break;
-        default:
-            NSLog(@"Invalid bitSize for key creation: %d", bitSize);
+        int keyBitSize = GetKeyBitSize(bitSize);
+        NSLog(@"Key bit size: %d", keyBitSize);
+        if (keyBitSize == -1) {
+            NSString* error = [NSString stringWithFormat:@"Unsupported bit size: %d", bitSize];
+            SetThreadLocalError(error);
             return false;
         }
 
@@ -287,7 +294,12 @@ bool VerifySignatureMacOS(const char *keyName, int signatureType, const uint8_t 
         }
 
         CFErrorRef error = NULL;
-        bool result = SecKeyVerifySignature(publicKeyRef, algorithm, (__bridge CFDataRef)hashData, (__bridge CFDataRef)signatureData, &error);
+        bool result = SecKeyVerifySignature(
+            publicKeyRef,
+            algorithm,
+            (__bridge CFDataRef)hashData,
+            (__bridge CFDataRef)signatureData,
+            &error);
 
         // Release public key
         CFRelease(publicKeyRef);
@@ -295,6 +307,79 @@ bool VerifySignatureMacOS(const char *keyName, int signatureType, const uint8_t 
         if (!result) {
             NSError *err = CFBridgingRelease(error);
             NSString* error = [NSString stringWithFormat:@"Failed to verify signature: %@", err];
+            SetThreadLocalError(error);
+            return false;
+        }
+
+        return true;
+    }
+}
+
+bool VerifyStandaloneSignatureMacOS(int signatureType, const uint8_t *hash, size_t hashSize, const uint8_t *publicKey, size_t publicKeySize, const uint8_t *signature, size_t signatureSize)
+{
+    if (hash == NULL || publicKey == NULL || signature == NULL) {
+        SetThreadLocalError(@"Invalid parameters (hash, publicKey, or signature is NULL)");
+        return false;
+    }
+
+    @autoreleasepool {
+        NSData *hashData = [NSData dataWithBytes:hash length:hashSize];
+        NSData *signatureData = [NSData dataWithBytes:signature length:signatureSize];
+        NSData *publicKeyData = [NSData dataWithBytes:publicKey length:publicKeySize];
+
+        SecKeyAlgorithm algorithm = GetAlgorithm(signatureType);
+        NSLog(@"Algorithm: %@", algorithm);
+        if (algorithm == NULL) {
+            NSString* error = [NSString stringWithFormat:@"Unsupported signature type: %d", signatureType];
+            SetThreadLocalError(error);
+            return false;
+        }
+
+        int keyBitSize = GetKeyBitSize(signatureType);
+        NSLog(@"Key bit size: %d", keyBitSize);
+
+        if (keyBitSize == -1) {
+            NSString* error = [NSString stringWithFormat:@"Unsupported signature type: %d", signatureType];
+            SetThreadLocalError(error);
+            return false;
+        }
+
+        // Create public key attributes
+        NSDictionary *keyAttributes = @{
+            (id)kSecAttrKeyType: (id)kSecAttrKeyTypeECSECPrimeRandom,
+            (id)kSecAttrKeyClass: (id)kSecAttrKeyClassPublic,
+            (id)kSecAttrKeySizeInBits: @(keyBitSize),
+            (id)kSecAttrIsPermanent: @NO
+        };
+
+        // Create public key from raw bytes
+        CFErrorRef error = NULL;
+        SecKeyRef publicKeyRef = SecKeyCreateWithData(
+            (__bridge CFDataRef)publicKeyData,
+            (__bridge CFDictionaryRef)keyAttributes,
+            &error);
+
+        if (!publicKeyRef) {
+            NSError *err = CFBridgingRelease(error);
+            NSString* error = [NSString stringWithFormat:@"Failed to create public key from data: %@", err];
+            SetThreadLocalError(error);
+            return false;
+        }
+
+        // Verify the signature
+        bool result = SecKeyVerifySignature(
+            publicKeyRef,
+            algorithm,
+            (__bridge CFDataRef)hashData,
+            (__bridge CFDataRef)signatureData,
+            &error);
+
+        // Release public key
+        CFRelease(publicKeyRef);
+
+        if (!result) {
+            NSError *err = CFBridgingRelease(error);
+            NSString* error = [NSString stringWithFormat:@"Failed to verify standalone signature: %@", err];
             SetThreadLocalError(error);
             return false;
         }

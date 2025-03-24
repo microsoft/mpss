@@ -207,6 +207,7 @@ namespace mpss::tests
             std::cout << "Data could not be signed: " << mpss::get_error() << std::endl;
         }
         ASSERT_GE(sig_size, written);
+        signature.resize(written);
 
         // Get the public key
         std::size_t vk_size = handle->extract_key({});
@@ -234,7 +235,7 @@ namespace mpss::tests
         VerifyStandaloneSignature(Algorithm::ecdsa_secp256r1_sha256, "256", 32);
     }
 
-    TEST_F(MPSS, VerifyStandalineSignature384)
+    TEST_F(MPSS, VerifyStandaloneSignature384)
     {
         VerifyStandaloneSignature(Algorithm::ecdsa_secp384r1_sha384, "384", 48);
     }

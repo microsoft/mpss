@@ -52,7 +52,13 @@ namespace mpss
 
         bool verify(gsl::span<const std::byte> hash, gsl::span<const std::byte> public_key, Algorithm algorithm, gsl::span<const std::byte> sig)
         {
-            return false;
+            return VerifyStandaloneSignatureMacOS(static_cast<int>(algorithm),
+                                                  reinterpret_cast<const std::uint8_t *>(hash.data()),
+                                                  hash.size(),
+                                                  reinterpret_cast<const std::uint8_t *>(public_key.data()),
+                                                  public_key.size(),
+                                                  reinterpret_cast<const std::uint8_t *>(sig.data()),
+                                                  sig.size());
         }
     }
 }
