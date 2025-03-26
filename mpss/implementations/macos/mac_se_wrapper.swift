@@ -1,41 +1,71 @@
-//
-//  secure_enclave_keys.swift
-//  KeyCreatorSW
-//
-//  Created by Radames Cruz Moreno on 3/17/25.
-//
+// Copyright(c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
 
 import Foundation
 import CryptoKit
 import Security
 
+// The dispatch queue is used to serialize access to the key store, in order to make it thread-safe.
 private let _keyStoreQueue = DispatchQueue(label: "com.microsoft.mpss.KeyStore")
+
+// In-memory dictionary that will contain currently open keys
 nonisolated(unsafe) private let _keyStore = NSMutableDictionary()
 
-let KeyChainAccountName = "P256Key"
 
+let KeyChainAccountName = "P256Key"
+let ErrorKey = "com.microsoft.mpss.ErrorKey";
+
+/// Get the current last error
+/// - Returns: The current last error
+private func getError() -> String {
+    Thread.current.threadDictionary[ErrorKey] as? String ?? "[No error]";
+}
+
+/// Set the current last error
+/// - Parameters:
+///     - error: The new last error
+private func setError(_ error: String) {
+    Thread.current.threadDictionary[ErrorKey] = error;
+}
+
+/// Store a private key in the in-memory dictionary.
+/// - Parameters:
+///     - keyName: Name of the key to store
+///     - key: The private key to store
 private func storeKeyInDict(keyName: String, key: SecureEnclave.P256.Signing.PrivateKey) {
     _keyStoreQueue.sync {
         _keyStore[keyName] = key
     }
 }
 
+/// Get a private ke3y from the in-memory dictionary.
+/// - Parameters:
+///      - keyName: Name of the key to retrieve
+/// - Returns: Private key if found, nil otherwise
 private func getKeyFromDict(keyName: String) -> SecureEnclave.P256.Signing.PrivateKey? {
     return _keyStoreQueue.sync(execute: {
         guard let result = _keyStore.value(forKey: keyName) as? SecureEnclave.P256.Signing.PrivateKey? else {
-            print("Did not find key with name", keyName)
+            setError("Did not find key with name \(keyName)")
             return nil
         }
         return result
     })
 }
 
+/// Remove private key from in-memory dictionary
+/// - Parameters:
+///     - keyName: Name of the key to remove
 private func removeKeyFromDict(_ keyName: String) {
     _keyStoreQueue.sync {
         _keyStore.removeObject(forKey: keyName)
     }
 }
 
+/// Get a private key.
+/// Will try to get from in-memory dictionary, if not found will try to recreate from data in Keychain.
+///  - Parameters:
+///      - keyName: Name of the key to retrieve
+/// - Returns: Private key, or nil if not found
 private func getKey(_ keyName: String) -> SecureEnclave.P256.Signing.PrivateKey? {
     do {
         // Try first from dictionary
@@ -58,11 +88,17 @@ private func getKey(_ keyName: String) -> SecureEnclave.P256.Signing.PrivateKey?
         
         return result
     } catch {
-        print("Error trying to get key: \(error)")
+        setError("Error trying to get key: \(error)")
         return nil
     }
 }
 
+/// Store data in the keychain
+/// - Parameters:
+///     - data: The data to store
+///     - account: The account name under which the data will be stored
+///     - service: The service name under which the data will be stored
+/// - Returns: OSStatus that indicates the result of the operation
 private func storeDataInKeychain(data: Data, account: String, service: String) -> OSStatus {
     // Define the Keychain query dictionary
     let query: [String: Any] = [
@@ -80,6 +116,11 @@ private func storeDataInKeychain(data: Data, account: String, service: String) -
     return status
 }
 
+/// Retrieve data from the keychain
+/// - Parameters:
+///     - account: The account name under which the data can be found
+///     - service: The service name under which the data can be found
+/// - Returns: The data retrieved from the keychain or nil if not found
 private func retrieveDataFromKeychain(account: String, service: String) -> Data? {
     let query: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
@@ -103,6 +144,10 @@ private func retrieveDataFromKeychain(account: String, service: String) -> Data?
     return retrievedData
 }
 
+/// Remove data from the keychain
+/// - Parameters:
+///     - account: The account name under which the data can be found
+///     - service: The service name under which the data can be found
 private func removeDataFromKeyChain(account: String, service: String) {
     let query: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
@@ -119,11 +164,20 @@ private func removeDataFromKeyChain(account: String, service: String) {
     let _ = SecItemDelete(query as CFDictionary)
 }
 
+/// Get a full key name from a user key name.
+/// The full key name includes a prefix for MPSS.
+/// - Parameters:
+///     - keyName: The user provided key name
+/// - Returns: The key name including the MPSS prefix
 private func getKeyName(_ keyName: String) -> String {
     let result = "com.microsoft.mpss.\(keyName)"
     return result
 }
 
+/// Create a random P256 private key in the Secure Enclave
+/// - Parameters:
+///     - keyName: Name that identifies the private key
+/// - Returns: Random private key, or nil if it could not be created
 private func createKeyPriv(_ keyName: String) -> SecureEnclave.P256.Signing.PrivateKey? {
     do {
         // Configure Keychain access requirements
@@ -133,7 +187,7 @@ private func createKeyPriv(_ keyName: String) -> SecureEnclave.P256.Signing.Priv
             [],
             nil
         ) else {
-            print("Unable to create SecAccessControl")
+            setError("Unable to create SecAccessControl")
             return nil
         }
         
@@ -142,56 +196,101 @@ private func createKeyPriv(_ keyName: String) -> SecureEnclave.P256.Signing.Priv
         
         // Save it now
         _ = storeDataInKeychain(data: privateKey.dataRepresentation, account: KeyChainAccountName, service: keyName)
+        storeKeyInDict(keyName: keyName, key: privateKey)
         
         return privateKey
     } catch {
-        print("Error creating key: '\(error)'")
+        setError("Error creating key: '\(error)'")
         return nil
     }
 }
 
-@_cdecl("MPSS_SecureEnclaveIsSupported")
+/// Whether a secure enclave is available
+/// - Returns: true if the secure enclave is available, false otherwise
+@_cdecl("MPSS_SE_SecureEnclaveIsSupported")
 func isSupported() -> Bool {
     return SecureEnclave.isAvailable
 }
 
-@_cdecl("MPSS_OpenExistingKey")
+/// Open an existing private key.
+/// - Parameters:
+///     - keyName: Name of the private key to open
+/// - Returns: True if key was opened successfully, False otherwise
+@_cdecl("MPSS_SE_OpenExistingKey")
 func openExistingKey(_ keyName: UnsafePointer<CChar>) -> Bool {
     let keyNameString = String(cString: keyName)
     return openExistingKey(keyNameString)
 }
 
+/// Open an existing private key.
+/// - Parameters:
+///     - keyName: Name of the private key to open
+/// - Returns: True if key was opened successfully, False otherwise
 private func openExistingKey(_ keyName: String) -> Bool {
     let fullKeyName = getKeyName(keyName)
     let existing = getKey(fullKeyName)
     return (existing != nil)
 }
 
-@_cdecl("MPSS_RemoveExistingKey")
+/// Remove existing key
+/// Will remove existing key from the in-memory dictionary and its representation from Keychain
+/// - Parameters:
+///     - keyName: Name of the key to remove
+@_cdecl("MPSS_SE_RemoveExistingKey")
 func removeExistingKey(_ keyName: UnsafePointer<CChar>) {
     let keyNameString = String(cString: keyName)
     removeExistingKey(keyNameString)
 }
 
+/// Remove existing key
+/// Will remove existing key from the in-memory dictionary and its representation from Keychain
+/// - Parameters:
+///     - keyName: Name of the key to remove
 private func removeExistingKey(_ keyName: String) {
     let fullKeyName = getKeyName(keyName)
-    removeKeyFromDict(keyName)
+    removeKeyFromDict(fullKeyName)
     removeDataFromKeyChain(account: KeyChainAccountName, service: fullKeyName)
 }
 
-@_cdecl("MPSS_CreateKey")
-func createKey(_ keyName: UnsafePointer<CChar>) {
+/// Close existing key
+/// Will remove existing key from the in-memory dictionary.
+@_cdecl("MPSS_SE_CloseKey")
+func closeKey(_ keyName: UnsafePointer<CChar>) {
     let keyNameString = String(cString: keyName)
-    createKey(keyNameString)
+    let fullKeyName = getKeyName(keyNameString)
+    removeKeyFromDict(fullKeyName)
 }
 
-private func createKey(_ keyName: String) {
+/// Create a random P256 private key in the Secure Enclave
+/// - Parameters:
+///     - keyName: Name that identifies the created key
+/// - Returns: True if key was created successfully, False otherwise
+@_cdecl("MPSS_SE_CreateKey")
+func createKey(_ keyName: UnsafePointer<CChar>) -> Bool {
+    let keyNameString = String(cString: keyName)
+    return createKey(keyNameString)
+}
+
+/// Create a random P256 private key in the Secure Enclave
+/// - Parameters:
+///     - keyName: Name that identifies the created key
+/// - Returns: True if key was created successfully, False otherwise
+private func createKey(_ keyName: String) -> Bool {
     let fullKeyName = getKeyName(keyName)
-    let _ = createKeyPriv(fullKeyName)
+    let privateKey = createKeyPriv(fullKeyName)
+    return (privateKey != nil)
 }
 
-@_cdecl("MPSS_Sign")
-func sign(_ keyName: UnsafePointer<CChar>, hash: UnsafePointer<UInt8>, hashLength: UInt, sig: UnsafeMutablePointer<UInt8>, signatureLength: UnsafeMutablePointer<UInt>) -> Bool {
+/// Sign a hash with the given private key
+/// - Parameters:
+///     - keyName: Name that identifies the private key to use
+///     - hash: Buffer that contains the hash to sign
+///     - hashLength: Size of the hash buffer
+///     - sig: Buffer that will receive the signature
+///     - sigLength: Size of the signature buffer. Will be updated with the number of bytes written to the signature buffer.
+/// - Returns: True if the signature was created successfully, False otherwise
+@_cdecl("MPSS_SE_Sign")
+func sign(_ keyName: UnsafePointer<CChar>, hash: UnsafePointer<UInt8>, hashLength: UInt, sig: UnsafeMutablePointer<UInt8>, sigLength: UnsafeMutablePointer<UInt>) -> Bool {
     let keyNameString = String(cString: keyName)
     let hashData = Data(bytes: hash, count: Int(hashLength))
     
@@ -199,17 +298,23 @@ func sign(_ keyName: UnsafePointer<CChar>, hash: UnsafePointer<UInt8>, hashLengt
         return false
     }
 
-    if signature.count > Int(signatureLength.pointee) {
+    if signature.count > Int(sigLength.pointee) {
         // Not enough space in buffer
+        setError("Not enough space in signature buffer. Got: \(sigLength.pointee), need: \(signature.count)")
         return false
     }
 
-    signatureLength.pointee = UInt(signature.count)
+    sigLength.pointee = UInt(signature.count)
     signature.copyBytes(to: sig, count: signature.count)
     
     return true
 }
 
+/// Sign a hash with the given private key
+/// - Parameters:
+///     - keyName: Name that identifies the private key to use
+///     - hash: The hash to sign
+/// - Returns: Data that contains the signature, or nil if failed to sign
 private func sign(keyName: String, hash: Data) -> Data? {
     do {
         let fullKeyName = getKeyName(keyName)
@@ -217,7 +322,7 @@ private func sign(keyName: String, hash: Data) -> Data? {
         // Try to get existing key
         guard let privateKey = getKey(fullKeyName) else {
             // Key should exist
-            print("Could not get key: \(keyName)")
+            setError("Could not get key: \(keyName)")
             return nil
         }
         
@@ -225,12 +330,20 @@ private func sign(keyName: String, hash: Data) -> Data? {
         
         return signature.derRepresentation
     } catch {
-        print("Error trying to sign hash: \(error)")
+        setError("Error trying to sign hash: \(error)")
         return nil
     }
 }
 
-@_cdecl("MPSS_VerifySignature")
+/// Verify the given signature of the given hash using the given private key
+/// - Parameters:
+///     - keyName: Name of the key to use for verification
+///     - hash: Buffer with the hash to verify
+///     - hashLength: Size of the hash buffer
+///     - signature: Buffer with the signature to verify
+///     - signatureLength: Size of the signature buffer
+/// - Returns: True if the signature was verified correctly, False otherwise
+@_cdecl("MPSS_SE_VerifySignature")
 func verifySignature(keyName: UnsafePointer<CChar>, hash: UnsafePointer<UInt8>, hashLength: UInt, signature: UnsafePointer<UInt8>, signatureLength: UInt) -> Bool {
     let keyNameString = String(cString: keyName)
     let hashData = Data(bytes: hash, count: Int(hashLength))
@@ -239,11 +352,17 @@ func verifySignature(keyName: UnsafePointer<CChar>, hash: UnsafePointer<UInt8>, 
     return verifySignature(keyName: keyNameString, hash: hashData, signature: signatureData)
 }
 
+/// Verify the given signature of the given hash using the given private key
+/// - Parameters:
+///     - keyName: Name of the key to use for verification
+///     - hash: Hash to verify
+///     - signature: Signature to verify
+/// - Returns: True if the signature was verified correctly, False otherwise
 private func verifySignature(keyName: String, hash: Data, signature: Data) -> Bool {
     do {
         let fullKeyName = getKeyName(keyName)
         guard let privateKey = getKey(fullKeyName) else {
-            print("Could not get key: \(keyName)")
+            setError("Could not get key: \(keyName)")
             return false
         }
         
@@ -251,12 +370,21 @@ private func verifySignature(keyName: String, hash: Data, signature: Data) -> Bo
         return privateKey.publicKey.isValidSignature(ecdsaSignature, for: hash)
     }
     catch {
-        print("Error verifying signature: \(error)")
+        setError("Error verifying signature: \(error)")
         return false
     }
 }
 
-@_cdecl("MPSS_VerifyStandaloneSignature")
+/// Verify the given signature of the given hash using the given public key
+/// - Parameters:
+///     - pk: Buffer with the public key to use for verification
+///     - pkLength: Size of the public key buffer
+///     - hash: Buffer with the hash to verify
+///     - hashLength: Size of the hash buffer
+///     - signature: Buffer with the signature to verify
+///     - signatureLength: Size of the signature buffer
+/// - Returns: True if the signature was verified successfully, False otherwise
+@_cdecl("MPSS_SE_VerifyStandaloneSignature")
 func verifyStandaloneSignature(pk: UnsafePointer<UInt8>, pkLength: UInt, hash: UnsafePointer<UInt8>, hashLength: UInt, signature: UnsafePointer<UInt8>, signatureLength: UInt) -> Bool {
     let pkData = Data(bytes: pk, count: Int(pkLength))
     let hashData = Data(bytes: hash, count: Int(hashLength))
@@ -265,6 +393,12 @@ func verifyStandaloneSignature(pk: UnsafePointer<UInt8>, pkLength: UInt, hash: U
     return verifyStandaloneSignature(pk: pkData, hash: hashData, signature: signatureData)
 }
 
+/// Verify the given signature of the given hash using the given public key
+/// - Parameters:
+///     - pk: Data representation of the public key
+///     - hash: Data of the hash to verify
+///     - signature: Data of the signature to verify
+/// - Returns: True if the signature was verified successfully, False otherwise
 private func verifyStandaloneSignature(pk: Data, hash: Data, signature: Data) -> Bool {
     do {
         // Recreate public key
@@ -273,12 +407,18 @@ private func verifyStandaloneSignature(pk: Data, hash: Data, signature: Data) ->
         
         return publicKey.isValidSignature(ecdsaSignature, for: hash)
     } catch {
-        print("Error verifying signature: \(error)")
+        setError("Error verifying signature: \(error)")
         return false
     }
 }
 
-@_cdecl("MPSS_GetPublicKey")
+/// Get x9.63 representation of the public key of the given private key
+/// - Parameters:
+///     - keyName: Name of the private key
+///     - pk: Buffer that will receive the public key representation
+///     - pkLength: Size of the public key buffer. Will be updated with the bytes written to the buffer.
+/// - Returns: True if the public key representation was obtained successfully, False otherwise
+@_cdecl("MPSS_SE_GetPublicKey")
 func getPublicKey(keyName: UnsafePointer<CChar>, pk: UnsafeMutablePointer<UInt8>, pkLength: UnsafeMutablePointer<UInt>) -> Bool {
     let keyNameString = String(cString: keyName)
     
@@ -288,6 +428,7 @@ func getPublicKey(keyName: UnsafePointer<CChar>, pk: UnsafeMutablePointer<UInt8>
     
     if publicKey.count > pkLength.pointee {
         // Not enough space
+        setError("Not enough space to store public key. Got: \(pkLength.pointee), needed: \(publicKey.count)")
         return false
     }
     
@@ -297,10 +438,14 @@ func getPublicKey(keyName: UnsafePointer<CChar>, pk: UnsafeMutablePointer<UInt8>
     return true
 }
 
+/// Get x9.63 representation of the public key of the given private key
+/// - Parameters:
+///     - keyName: Name of the private key
+/// - Returns: x9.63 representation of the public key, nil if not able to get representation
 private func getPublicKey(keyName: String) -> Data? {
     let fullKeyName = getKeyName(keyName)
     guard let privateKey = getKey(fullKeyName) else {
-        print("Could not get private key: \(keyName)")
+        setError("Could not get private key: \(keyName)")
         return nil
     }
     
@@ -308,3 +453,29 @@ private func getPublicKey(keyName: String) -> Data? {
     return publicKey.x963Representation
 }
 
+/// Get last error
+/// - Parameters:
+///     - error: Buffer where last error will be written
+///     - errorLength: Size of the error buffer
+/// - Returns: If error is nil: Size of the buffer needed to write the last error. If error is not nil, bytes written to error buffer. If not enough space to write error, will return 0
+@_cdecl("MPSS_SE_GetLastError")
+func getLastError(error: UnsafeMutablePointer<CChar>?, errorLength: UInt) -> UInt
+{
+    let lastError = getError()
+    
+    // Return string size if error is nil
+    if error == nil {
+        return UInt(lastError.count)
+    }
+    
+    if lastError.count > Int(errorLength) {
+        // Not enough space
+        return 0
+    }
+    
+    _ = lastError.withCString { cString in
+        strncpy(error!, cString, lastError.count)
+    }
+    
+    return UInt(lastError.count)
+}

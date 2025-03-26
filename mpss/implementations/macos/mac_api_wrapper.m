@@ -107,7 +107,7 @@ int GetKeyBitSize(int signatureType)
 // From here on below, the public functions
 ////////////////////////////////////////////////////////
 
-void RemoveKeyMacOS(const char *keyName)
+void MPSS_RemoveKey(const char *keyName)
 {
     @autoreleasepool {
         NSString *keyLabel = GetKeyLabel(keyName);
@@ -115,7 +115,7 @@ void RemoveKeyMacOS(const char *keyName)
     }
 }
 
-bool OpenExistingKeyMacOS(const char* keyName, int* bitSize)
+bool MPSS_OpenExistingKey(const char* keyName, int* bitSize)
 {
     if (keyName == NULL || bitSize == NULL) {
         return false;
@@ -157,7 +157,7 @@ bool OpenExistingKeyMacOS(const char* keyName, int* bitSize)
     }
 }
 
-bool CreateKeyMacOS(const char *keyName, int bitSize)
+bool MPSS_CreateKey(const char *keyName, int bitSize)
 {
     // Define key attributes
     @autoreleasepool {
@@ -206,7 +206,7 @@ bool CreateKeyMacOS(const char *keyName, int bitSize)
     }
 }
 
-bool SignHashMacOS(const char *keyName, int signatureType, const uint8_t *hash, size_t hashSize, uint8_t* signature, size_t* signatureSize)
+bool MPSS_SignHash(const char *keyName, int signatureType, const uint8_t *hash, size_t hashSize, uint8_t* signature, size_t* signatureSize)
 {
     if (keyName == NULL || hash == NULL || signature == NULL || signatureSize == NULL) {
         return false;
@@ -260,7 +260,7 @@ bool SignHashMacOS(const char *keyName, int signatureType, const uint8_t *hash, 
     }
 }
 
-bool VerifySignatureMacOS(const char *keyName, int signatureType, const uint8_t *hash, size_t hashSize, const uint8_t *signature, size_t signatureSize)
+bool MPSS_VerifySignature(const char *keyName, int signatureType, const uint8_t *hash, size_t hashSize, const uint8_t *signature, size_t signatureSize)
 {
     if (keyName == NULL || hash == NULL || signature == NULL) {
         return false;
@@ -315,7 +315,7 @@ bool VerifySignatureMacOS(const char *keyName, int signatureType, const uint8_t 
     }
 }
 
-bool VerifyStandaloneSignatureMacOS(int signatureType, const uint8_t *hash, size_t hashSize, const uint8_t *publicKey, size_t publicKeySize, const uint8_t *signature, size_t signatureSize)
+bool MPSS_VerifyStandaloneSignature(int signatureType, const uint8_t *hash, size_t hashSize, const uint8_t *publicKey, size_t publicKeySize, const uint8_t *signature, size_t signatureSize)
 {
     if (hash == NULL || publicKey == NULL || signature == NULL) {
         SetThreadLocalError(@"Invalid parameters (hash, publicKey, or signature is NULL)");
@@ -388,7 +388,7 @@ bool VerifyStandaloneSignatureMacOS(int signatureType, const uint8_t *hash, size
     }
 }
 
-bool GetPublicKeyMacOS(const char *keyName, uint8_t *pk, size_t *pkSize)
+bool MPSS_GetPublicKey(const char *keyName, uint8_t *pk, size_t *pkSize)
 {
     if (NULL == keyName || NULL == pk || NULL == pkSize) {
         return false;
@@ -446,7 +446,7 @@ bool GetPublicKeyMacOS(const char *keyName, uint8_t *pk, size_t *pkSize)
     }
 }
 
-bool DeleteKeyMacOS(const char *keyName)
+bool MPSS_DeleteKey(const char *keyName)
 {
     @autoreleasepool {
         NSString *keyLabel = GetKeyLabel(keyName);
@@ -475,7 +475,7 @@ bool DeleteKeyMacOS(const char *keyName)
     }
 }
 
-const char* GetLastErrorMacOS()
+const char* MPSS_GetLastError()
 {
     @autoreleasepool {
         NSString* error = GetThreadLocalError();

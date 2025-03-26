@@ -12,7 +12,7 @@ namespace mpss
         class MacKeyPair : public mpss::KeyPair
         {
         public:
-            MacKeyPair(std::string_view name, Algorithm algorithm);
+            MacKeyPair(std::string_view name, Algorithm algorithm, bool secure_enclave = false);
             virtual ~MacKeyPair();
 
             bool delete_key() override;
@@ -27,6 +27,7 @@ namespace mpss
 
         private:
             std::string name_;
+            bool secure_enclave_ = false;
         };
     }
 }

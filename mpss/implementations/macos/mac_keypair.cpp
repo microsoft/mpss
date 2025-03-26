@@ -3,14 +3,16 @@
 
 #include "mac_keypair.h"
 #include "mac_api_wrapper.h"
+#include "mac_se_wrapper.h"
+#include "mac_utils.h"
 #include "mpss/utils/utilities.h"
 
 namespace mpss
 {
     namespace impl
     {
-        MacKeyPair::MacKeyPair(std::string_view name, Algorithm algorithm)
-            : KeyPair(algorithm), name_(name)
+        MacKeyPair::MacKeyPair(std::string_view name, Algorithm algorithm, bool secure_enclave)
+            : KeyPair(algorithm), name_(name), secure_enclave_(secure_enclave)
         {
         }
 
@@ -21,7 +23,18 @@ namespace mpss
 
         bool MacKeyPair::delete_key()
         {
-            return DeleteKeyMacOS(name_.c_str());
+            bool result = false;
+            if (secure_enclave_)
+            {
+                MPSS_SE_RemoveExistingKey(name_.c_str());
+                result = true;
+            }
+            else
+            {
+                result = MPSS_DeleteKey(name_.c_str());
+            }
+
+            return result;
         }
 
         std::size_t MacKeyPair::sign_hash(gsl::span<const std::byte> hash, gsl::span<std::byte> sig) const
@@ -48,15 +61,31 @@ namespace mpss
             }
 
             std::size_t signature_size = sig.size();
-            if (!SignHashMacOS(
-                    name_.c_str(),
-                    static_cast<int>(algorithm()),
-                    reinterpret_cast<const std::uint8_t *>(hash.data()),
-                    hash.size(),
-                    reinterpret_cast<std::uint8_t *>(sig.data()),
-                    &signature_size))
+
+            if (secure_enclave_)
             {
-                return 0;
+                if (!MPSS_SE_Sign(name_.c_str(),
+                                  reinterpret_cast<const std::uint8_t *>(hash.data()),
+                                  hash.size(),
+                                  reinterpret_cast<std::uint8_t *>(sig.data()),
+                                  &signature_size))
+                {
+
+                    return 0;
+                }
+            }
+            else
+            {
+                if (!MPSS_SignHash(
+                        name_.c_str(),
+                        static_cast<int>(algorithm()),
+                        reinterpret_cast<const std::uint8_t *>(hash.data()),
+                        hash.size(),
+                        reinterpret_cast<std::uint8_t *>(sig.data()),
+                        &signature_size))
+                {
+                    return 0;
+                }
             }
 
             return signature_size;
@@ -64,13 +93,54 @@ namespace mpss
 
         bool MacKeyPair::verify(gsl::span<const std::byte> hash, gsl::span<const std::byte> sig) const
         {
-            return VerifySignatureMacOS(
+            // If there is nothing to verify, return false
+            if (hash.empty() || sig.empty())
+            {
+                mpss::utils::set_error("Nothing to verify.");
+                return false;
+            }
+
+            if (hash.size() != info_.hash_bits / 8)
+            {
+                std::stringstream ss;
+                ss << "Invalid hash length " << hash.size() << " (expected " << info_.hash_bits << " bits)";
+                mpss::utils::set_error(ss.str());
+                return false;
+            }
+
+            if (secure_enclave_)
+            {
+                bool result = MPSS_SE_VerifySignature(
+                    name_.c_str(),
+                    reinterpret_cast<const std::uint8_t *>(hash.data()),
+                    hash.size(),
+                    reinterpret_cast<const std::uint8_t *>(sig.data()),
+                    sig.size());
+                if (!result)
+                {
+                    std::stringstream ss;
+                    ss << "Failed to verify signature: " << mpss::impl::utils::MPSS_SE_GetLastError();
+                    mpss::utils::set_error(ss.str());
+                }
+
+                return result;
+            }
+
+            bool result = MPSS_VerifySignature(
                 name_.c_str(),
                 static_cast<int>(algorithm()),
                 reinterpret_cast<const std::uint8_t *>(hash.data()),
                 hash.size(),
                 reinterpret_cast<const std::uint8_t *>(sig.data()),
                 sig.size());
+            if (!result)
+            {
+                std::stringstream ss;
+                ss << "Failed to verify signature: " << MPSS_GetLastError();
+                mpss::utils::set_error(ss.str());
+            }
+
+            return result;
         }
 
         std::size_t MacKeyPair::extract_key(gsl::span<std::byte> public_key) const
@@ -83,11 +153,31 @@ namespace mpss
 
             std::size_t pk_size = public_key.size();
 
-            if (!GetPublicKeyMacOS(
+            if (secure_enclave_)
+            {
+                bool result = MPSS_SE_GetPublicKey(
+                        name_.c_str(),
+                        reinterpret_cast<std::uint8_t *>(public_key.data()),
+                        &pk_size);
+                if (!result)
+                {
+                    std::stringstream ss;
+                    ss << "Failed to retrieve public key: " << mpss::impl::utils::MPSS_SE_GetLastError();
+                    mpss::utils::set_error(ss.str());
+                    return 0;
+                }
+
+                return pk_size;
+            }
+
+            if (!MPSS_GetPublicKey(
                     name_.c_str(),
                     reinterpret_cast<std::uint8_t *>(public_key.data()),
                     &pk_size))
             {
+                std::stringstream ss;
+                ss << "Failed to retrieve public key: " << MPSS_GetLastError();
+                mpss::utils::set_error(ss.str());
                 return 0;
             }
 
@@ -96,7 +186,14 @@ namespace mpss
 
         void MacKeyPair::release_key()
         {
-            RemoveKeyMacOS(name_.c_str());
+            if (secure_enclave_)
+            {
+                MPSS_SE_CloseKey(name_.c_str());
+            }
+            else
+            {
+                MPSS_RemoveKey(name_.c_str());
+            }
         }
     }
 }

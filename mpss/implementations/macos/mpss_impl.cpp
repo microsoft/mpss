@@ -7,6 +7,8 @@
 #include "mpss/utils/utilities.h"
 #include "mac_keypair.h"
 #include "mac_api_wrapper.h"
+#include "mac_se_wrapper.h"
+#include "mac_utils.h"
 
 namespace mpss
 {
@@ -14,18 +16,54 @@ namespace mpss
     {
         std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm)
         {
-            if (CreateKeyMacOS(name.data(), static_cast<int>(algorithm)))
+            std::string key_name(name);
+            if (key_name.empty())
+            {
+                mpss::utils::set_error("Key name cannot be empty.");
+                return {};
+            }
+
+            if (MPSS_SE_SecureEnclaveIsSupported() && algorithm == Algorithm::ecdsa_secp256r1_sha256) {
+                // Secure Enclave only supports ECDSA P256
+                if (MPSS_SE_CreateKey(key_name.c_str()))
+                {
+                    return std::make_unique<MacKeyPair>(name, algorithm, /* secure_enclave */ true);
+                }
+
+                std::stringstream ss;
+                ss << "Failed to create key in Secure Enclave: " << mpss::impl::utils::MPSS_SE_GetLastError();
+                mpss::utils::set_error(ss.str());
+                return {};
+            }
+
+            if (MPSS_CreateKey(key_name.c_str(), static_cast<int>(algorithm)))
             {
                 return std::make_unique<MacKeyPair>(name, algorithm);
             }
 
+            std::stringstream ss;
+            ss << "Failed to create key: " << MPSS_GetLastError();
+            mpss::utils::set_error(ss.str());
             return {};
         }
 
         std::unique_ptr<KeyPair> open_key(std::string_view name)
         {
+            std::string key_name(name);
+            if (key_name.empty())
+            {
+                mpss::utils::set_error("Key name cannot be empty.");
+                return {};
+            }
+
+            // Try secure enclave first if available
+            if (MPSS_SE_SecureEnclaveIsSupported() && MPSS_SE_OpenExistingKey(key_name.c_str()))
+            {
+                return std::make_unique<MacKeyPair>(name, Algorithm::ecdsa_secp256r1_sha256, /* secure_enclave */ true);
+            }
+
             int bitSize = 0;
-            if (OpenExistingKeyMacOS(name.data(), &bitSize))
+            if (MPSS_OpenExistingKey(name.data(), &bitSize))
             {
                 Algorithm algorithm = Algorithm::unsupported;
                 switch (bitSize)
@@ -52,13 +90,22 @@ namespace mpss
 
         bool verify(gsl::span<const std::byte> hash, gsl::span<const std::byte> public_key, Algorithm algorithm, gsl::span<const std::byte> sig)
         {
-            return VerifyStandaloneSignatureMacOS(static_cast<int>(algorithm),
-                                                  reinterpret_cast<const std::uint8_t *>(hash.data()),
-                                                  hash.size(),
-                                                  reinterpret_cast<const std::uint8_t *>(public_key.data()),
-                                                  public_key.size(),
-                                                  reinterpret_cast<const std::uint8_t *>(sig.data()),
-                                                  sig.size());
+            bool result =  MPSS_VerifyStandaloneSignature(
+                static_cast<int>(algorithm),
+                reinterpret_cast<const std::uint8_t *>(hash.data()),
+                hash.size(),
+                reinterpret_cast<const std::uint8_t *>(public_key.data()),
+                public_key.size(),
+                reinterpret_cast<const std::uint8_t *>(sig.data()),
+                sig.size());
+            if (!result)
+            {
+                std::stringstream ss;
+                ss << "Failed to verify standalone signature: " << MPSS_GetLastError();
+                mpss::utils::set_error(ss.str());
+            }
+
+            return result;
         }
     }
 }

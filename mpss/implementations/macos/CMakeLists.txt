@@ -10,6 +10,7 @@ endif()
 set(mpss_SOURCE_FILES ${mpss_SOURCE_FILES}
     ${CMAKE_CURRENT_LIST_DIR}/mac_api_wrapper.m
     ${CMAKE_CURRENT_LIST_DIR}/mac_keypair.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/mac_utils.cpp
     ${CMAKE_CURRENT_LIST_DIR}/mpss_impl.cpp
 )
 
