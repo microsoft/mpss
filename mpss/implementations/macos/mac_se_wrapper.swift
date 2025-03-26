@@ -10,7 +10,7 @@ import CryptoKit
 import Security
 
 private let _keyStoreQueue = DispatchQueue(label: "com.microsoft.mpss.KeyStore")
-private var _keyStore = NSMutableDictionary()
+nonisolated(unsafe) private let _keyStore = NSMutableDictionary()
 
 let KeyChainAccountName = "P256Key"
 
@@ -150,28 +150,67 @@ private func createKeyPriv(_ keyName: String) -> SecureEnclave.P256.Signing.Priv
     }
 }
 
+@_cdecl("MPSS_SecureEnclaveIsSupported")
 func isSupported() -> Bool {
     return SecureEnclave.isAvailable
 }
 
-func openExistingKey(_ keyName: String) -> Bool {
+@_cdecl("MPSS_OpenExistingKey")
+func openExistingKey(_ keyName: UnsafePointer<CChar>) -> Bool {
+    let keyNameString = String(cString: keyName)
+    return openExistingKey(keyNameString)
+}
+
+private func openExistingKey(_ keyName: String) -> Bool {
     let fullKeyName = getKeyName(keyName)
     let existing = getKey(fullKeyName)
     return (existing != nil)
 }
 
-func removeExistingKey(_ keyName: String) {
+@_cdecl("MPSS_RemoveExistingKey")
+func removeExistingKey(_ keyName: UnsafePointer<CChar>) {
+    let keyNameString = String(cString: keyName)
+    removeExistingKey(keyNameString)
+}
+
+private func removeExistingKey(_ keyName: String) {
     let fullKeyName = getKeyName(keyName)
     removeKeyFromDict(keyName)
     removeDataFromKeyChain(account: KeyChainAccountName, service: fullKeyName)
 }
 
-func createKey(_ keyName: String) {
+@_cdecl("MPSS_CreateKey")
+func createKey(_ keyName: UnsafePointer<CChar>) {
+    let keyNameString = String(cString: keyName)
+    createKey(keyNameString)
+}
+
+private func createKey(_ keyName: String) {
     let fullKeyName = getKeyName(keyName)
     let _ = createKeyPriv(fullKeyName)
 }
 
-func sign(keyName: String, hash: Data) -> Data? {
+@_cdecl("MPSS_Sign")
+func sign(_ keyName: UnsafePointer<CChar>, hash: UnsafePointer<UInt8>, hashLength: UInt, sig: UnsafeMutablePointer<UInt8>, signatureLength: UnsafeMutablePointer<UInt>) -> Bool {
+    let keyNameString = String(cString: keyName)
+    let hashData = Data(bytes: hash, count: Int(hashLength))
+    
+    guard let signature = sign(keyName: keyNameString, hash: hashData) else {
+        return false
+    }
+
+    if signature.count > Int(signatureLength.pointee) {
+        // Not enough space in buffer
+        return false
+    }
+
+    signatureLength.pointee = UInt(signature.count)
+    signature.copyBytes(to: sig, count: signature.count)
+    
+    return true
+}
+
+private func sign(keyName: String, hash: Data) -> Data? {
     do {
         let fullKeyName = getKeyName(keyName)
         
@@ -184,14 +223,23 @@ func sign(keyName: String, hash: Data) -> Data? {
         
         let signature = try privateKey.signature(for: hash)
         
-        return signature.rawRepresentation
+        return signature.derRepresentation
     } catch {
         print("Error trying to sign hash: \(error)")
         return nil
     }
 }
 
-func verifySignature(keyName: String, hash: Data, signature: Data) -> Bool {
+@_cdecl("MPSS_VerifySignature")
+func verifySignature(keyName: UnsafePointer<CChar>, hash: UnsafePointer<UInt8>, hashLength: UInt, signature: UnsafePointer<UInt8>, signatureLength: UInt) -> Bool {
+    let keyNameString = String(cString: keyName)
+    let hashData = Data(bytes: hash, count: Int(hashLength))
+    let signatureData = Data(bytes: signature, count: Int(signatureLength))
+    
+    return verifySignature(keyName: keyNameString, hash: hashData, signature: signatureData)
+}
+
+private func verifySignature(keyName: String, hash: Data, signature: Data) -> Bool {
     do {
         let fullKeyName = getKeyName(keyName)
         guard let privateKey = getKey(fullKeyName) else {
@@ -199,16 +247,57 @@ func verifySignature(keyName: String, hash: Data, signature: Data) -> Bool {
             return false
         }
         
-        let ecdsaSignature = try P256.Signing.ECDSASignature(rawRepresentation: signature)
+        let ecdsaSignature = try P256.Signing.ECDSASignature(derRepresentation: signature)
         return privateKey.publicKey.isValidSignature(ecdsaSignature, for: hash)
     }
     catch {
         print("Error verifying signature: \(error)")
-        return false;
+        return false
     }
 }
 
-func getPublicKey(keyName: String) -> Data? {
+@_cdecl("MPSS_VerifyStandaloneSignature")
+func verifyStandaloneSignature(pk: UnsafePointer<UInt8>, pkLength: UInt, hash: UnsafePointer<UInt8>, hashLength: UInt, signature: UnsafePointer<UInt8>, signatureLength: UInt) -> Bool {
+    let pkData = Data(bytes: pk, count: Int(pkLength))
+    let hashData = Data(bytes: hash, count: Int(hashLength))
+    let signatureData = Data(bytes: signature, count: Int(signatureLength))
+    
+    return verifyStandaloneSignature(pk: pkData, hash: hashData, signature: signatureData)
+}
+
+private func verifyStandaloneSignature(pk: Data, hash: Data, signature: Data) -> Bool {
+    do {
+        // Recreate public key
+        let publicKey = try P256.Signing.PublicKey.init(x963Representation: pk)
+        let ecdsaSignature = try P256.Signing.ECDSASignature(derRepresentation: signature)
+        
+        return publicKey.isValidSignature(ecdsaSignature, for: hash)
+    } catch {
+        print("Error verifying signature: \(error)")
+        return false
+    }
+}
+
+@_cdecl("MPSS_GetPublicKey")
+func getPublicKey(keyName: UnsafePointer<CChar>, pk: UnsafeMutablePointer<UInt8>, pkLength: UnsafeMutablePointer<UInt>) -> Bool {
+    let keyNameString = String(cString: keyName)
+    
+    guard let publicKey = getPublicKey(keyName: keyNameString) else {
+        return false
+    }
+    
+    if publicKey.count > pkLength.pointee {
+        // Not enough space
+        return false
+    }
+    
+    publicKey.copyBytes(to: pk, count: publicKey.count)
+    pkLength.pointee = UInt(publicKey.count)
+    
+    return true
+}
+
+private func getPublicKey(keyName: String) -> Data? {
     let fullKeyName = getKeyName(keyName)
     guard let privateKey = getKey(fullKeyName) else {
         print("Could not get private key: \(keyName)")

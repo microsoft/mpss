@@ -16,6 +16,9 @@ elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux")
 elseif (CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     message(STATUS "Building for macOS")
     add_subdirectory(macos)
+
+    # Update mpss_swift_SOURCE_FILES variable in the parent scope.
+    set(mpss_swift_SOURCE_FILES ${mpss_swift_SOURCE_FILES} PARENT_SCOPE)
 elseif (CMAKE_SYSTEM_NAME STREQUAL "iOS")
     message(STATUS "Building for iOS")
     add_subdirectory(ios)

@@ -24,3 +24,7 @@ install(
 
 # Update mpss_SOURCE_FILES variable in the parent scope.
 set(mpss_SOURCE_FILES ${mpss_SOURCE_FILES} PARENT_SCOPE)
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    set(mpss_swift_SOURCE_FILES ${mpss_swift_SOURCE_FILES} PARENT_SCOPE)
+endif()

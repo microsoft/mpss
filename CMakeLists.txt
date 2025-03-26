@@ -46,6 +46,10 @@ endif()
 
 project(mpss VERSION 0.1.0 LANGUAGES C CXX)
 
+if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    enable_language(Swift)
+endif()
+
 # All our modules are in cmake/.
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_LIST_DIR}/cmake)
 
@@ -82,6 +86,7 @@ endif()
 
 # List of all source files.
 set(mpss_SOURCE_FILES "")
+set(mpss_swift_SOURCE_FILES "")
 
 if(MPSS_BUILD_MPSS_CORE_STATIC OR MPSS_BUILD_MPSS_CORE_SHARED)
     add_subdirectory(mpss)
@@ -120,6 +125,12 @@ if(MPSS_BUILD_MPSS_CORE_STATIC OR MPSS_BUILD_MPSS_CORE_SHARED)
         message(STATUS "[mpss] Building static library")
         set(mpss_TARGET mpss_static)
         add_library(${mpss_TARGET} ${mpss_LIBRARY_TYPE} ${mpss_SOURCE_FILES})
+
+        if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+            # Add Swift library
+            add_library(mpss_swift STATIC ${mpss_swift_SOURCE_FILES})
+    endif()
+
     elseif(mpss_LIBRARY_TYPE STREQUAL "SHARED")
         message(STATUS "[mpss] Building shared library")
         set(mpss_TARGET mpss_dynamic)
@@ -165,6 +176,7 @@ if(TARGET ${mpss_TARGET})
         target_link_libraries(${mpss_TARGET} PRIVATE crypt32)
     elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
         target_link_libraries(${mpss_TARGET} PRIVATE "-framework Foundation -framework Security -framework CryptoKit")
+        target_link_libraries(${mpss_TARGET} PRIVATE mpss_swift)
     else()
         message(FATAL_ERROR "Unsupported platform: ${CMAKE_SYSTEM_NAME}")
     endif()
@@ -270,6 +282,10 @@ configure_package_config_file(
 )
 
 # Install our export.
+install(TARGETS mpss_swift EXPORT mpssTargets
+    DESTINATION ${mpss_INCLUDES_INSTALL_DIR}/mpss
+)
+
 install(
     EXPORT mpssTargets
     NAMESPACE mpss::
