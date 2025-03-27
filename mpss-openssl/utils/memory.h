@@ -54,7 +54,8 @@ namespace mpss_openssl::utils {
 
         inline NeatAllocator() = default;
 
-        inline constexpr NeatAllocator(const NeatAllocator<T>&) noexcept {}
+        template<typename U>
+        inline constexpr NeatAllocator(const NeatAllocator<U>&) noexcept {}
 
         [[nodiscard]] inline pointer allocate(size_type n) {
             if (n > max_size()) {

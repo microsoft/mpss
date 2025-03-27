@@ -121,7 +121,7 @@ namespace mpss::impl
             return nullptr;
         }
 
-        return std::make_unique<WindowsKeyPair>(name, algorithm, key_handle);
+        return std::make_unique<WindowsKeyPair>(algorithm, key_handle);
     }
 
     std::unique_ptr<KeyPair> open_key(std::string_view name)
@@ -194,7 +194,7 @@ namespace mpss::impl
             return nullptr;
         }
 
-        return std::make_unique<WindowsKeyPair>(name, algorithm, key_handle);
+        return std::make_unique<WindowsKeyPair>(algorithm, key_handle);
     }
 
     bool verify(gsl::span<const std::byte> hash, gsl::span<const std::byte> public_key, Algorithm algorithm, gsl::span<const std::byte> sig)

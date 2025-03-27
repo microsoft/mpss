@@ -282,9 +282,11 @@ configure_package_config_file(
 )
 
 # Install our export.
-install(TARGETS mpss_swift EXPORT mpssTargets
-    DESTINATION ${mpss_INCLUDES_INSTALL_DIR}/mpss
-)
+if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    install(TARGETS mpss_swift EXPORT mpssTargets
+        DESTINATION ${mpss_INCLUDES_INSTALL_DIR}/mpss
+    )
+endif()
 
 install(
     EXPORT mpssTargets
