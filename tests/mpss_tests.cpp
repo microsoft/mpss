@@ -75,10 +75,17 @@ namespace mpss::tests
         }
         ASSERT_GE(sig_size, written);
 
-        // Verify the data
-        ASSERT_TRUE(handle->verify(hash, signature));
+        // Verify the data. Signature needs to be resized to the actual size written.
+        signature.resize(written);
 
-        // Release the key pair handle
+        bool verified = handle->verify(hash, signature);
+        if (!verified)
+        {
+            std::cout << "Data could not be verified: " << mpss::get_error() << std::endl;
+        }
+        ASSERT_TRUE(verified);
+
+        // Release the key pair
         handle->release_key();
 
         // Delete the key pair
@@ -227,7 +234,12 @@ namespace mpss::tests
         MPSS::DeleteKey(key_name);
 
         // The key should not exist anymore, so try to verify with the public key
-        ASSERT_TRUE(mpss::verify(hash, vk, algorithm, signature));
+        bool verified = mpss::verify(hash, vk, algorithm, signature);
+        if (!verified)
+        {
+            std::cout << "Data could not be verified: " << mpss::get_error() << std::endl;
+        }
+        ASSERT_TRUE(verified);
     }
 
     TEST_F(MPSS, VerifyStandaloneSignature256)
