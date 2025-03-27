@@ -20,9 +20,6 @@
 
 namespace mpss {
     /**
-    * A map listing the the 
-
-    /**
     * @brief Retrieves the last error that occurred.
     * @return The last error that occurred in the library.
     */

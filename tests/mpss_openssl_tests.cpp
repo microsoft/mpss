@@ -118,7 +118,7 @@ namespace mpss_openssl::tests {
         // Now set the parameters to use ECDSA-P256-SHA256.
         OSSL_PARAM params[] = {
             OSSL_PARAM_construct_utf8_string("key_name", const_cast<char*>(key_name), 0),
-            OSSL_PARAM_construct_utf8_string("mpss_algorithm", "ecdsa_secp256r1_sha256", 0),
+            OSSL_PARAM_construct_utf8_string("mpss_algorithm", const_cast<char*>("ecdsa_secp256r1_sha256"), 0),
             OSSL_PARAM_END
         };
         ASSERT_EQ(1, EVP_PKEY_CTX_set_params(ctx, params));

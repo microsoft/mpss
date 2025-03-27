@@ -15,9 +15,9 @@
 #include <openssl/obj_mac.h>
 
 namespace mpss_openssl::utils {
-    inline constexpr char* ec_encoder_names = "EC";
+    inline constexpr const char* ec_encoder_names = "EC";
 
-    inline constexpr char* ec_key_names = "EC:id_ecPublicKey:1.2.840.10045.2.1";
+    inline constexpr const char* ec_key_names = "EC:id_ecPublicKey:1.2.840.10045.2.1";
 
     inline constexpr std::array<const char*, 3> mpss_hash_names = {
         OSSL_DIGEST_NAME_SHA2_256 ":SHA256:SHA2-256:SHA-2-256:sha256:sha2-256:sha-2-256",

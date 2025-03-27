@@ -52,7 +52,7 @@ namespace {
     using namespace mpss_openssl::provider;
 
 #define MPSS_MAKE_DIGEST_NEWCTX(digest) \
-    extern "C" void *mpss_digest_newctx_ ## digest ## (void *provctx) { \
+    extern "C" void *mpss_digest_newctx_##digest (void *provctx) { \
         mpss_provider_ctx *pctx = static_cast<mpss_provider_ctx*>(provctx); \
         if (!pctx) { \
             return nullptr; \
@@ -232,10 +232,10 @@ namespace {
     }
 
 #define MPSS_MAKE_DIGEST_DIGEST(digest) \
-    extern "C" int mpss_digest_digest_ ## digest ## ( \
+    extern "C" int mpss_digest_digest_##digest ( \
         void *provctx, const unsigned char *in, ::size_t inl, \
         unsigned char *out, ::size_t *outl, ::size_t outsz) { \
-        void *ctx = mpss_digest_newctx_ ## digest ## (provctx); \
+        void *ctx = mpss_digest_newctx_##digest (provctx); \
         return mpss_digest_digest_internal(ctx, in, inl, out, outl, outsz); \
     }
 
@@ -255,7 +255,7 @@ namespace {
     }
 
 #define MPSS_MAKE_DIGEST_GET_PARAMS(digest, digestsz, blocksz) \
-    extern "C" int mpss_digest_get_params_ ## digest ## (OSSL_PARAM params[]) { \
+    extern "C" int mpss_digest_get_params_##digest (OSSL_PARAM params[]) { \
         OSSL_PARAM *p; \
         if ((p = OSSL_PARAM_locate(params, OSSL_DIGEST_PARAM_BLOCK_SIZE)) && \
             !OSSL_PARAM_set_size_t(p, blocksz / 8)) { \
@@ -274,7 +274,7 @@ namespace {
     MPSS_MAKE_DIGEST_GET_PARAMS(SHA512, 512, 1024)
 
 #define MPSS_MAKE_DIGEST_DISPATCH_TABLE(digest, digestsz, blocksz) \
-    const OSSL_DISPATCH mpss_digest_functions_ ## digest ## [] = { \
+    const OSSL_DISPATCH mpss_digest_functions_##digest [] = { \
         { OSSL_FUNC_DIGEST_NEWCTX, reinterpret_cast<void(*)(void)>(mpss_digest_newctx_ ## digest) }, \
         { OSSL_FUNC_DIGEST_FREECTX, reinterpret_cast<void(*)(void)>(mpss_digest_freectx) }, \
         { OSSL_FUNC_DIGEST_DUPCTX, reinterpret_cast<void(*)(void)>(mpss_digest_dupctx) }, \
