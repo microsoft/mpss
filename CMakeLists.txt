@@ -11,7 +11,7 @@ if(POLICY CMP0141)
 endif()
 
 # Setting up our options. The library types (static/shared) are mutually exclusive.
-option(MPSS_BUILD_MPSS_CORE_STATIC "Build the mpss core static library." NO)
+option(MPSS_BUILD_MPSS_CORE_STATIC "Build the mpss core static library." YES)
 option(MPSS_BUILD_MPSS_CORE_SHARED "Build the mpss core shared library." NO)
 option(MPSS_BUILD_MPSS_OPENSSL_STATIC "Build the OpenSSL provider static library." NO)
 option(MPSS_BUILD_MPSS_OPENSSL_SHARED "Build the mpss OpenSSL provider shared library." NO)

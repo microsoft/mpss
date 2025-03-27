@@ -115,8 +115,7 @@
             "binaryDir": "${sourceDir}/out/build/${presetName}",
             "installDir": "${sourceDir}/out/install",
             "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Debug",
-                "MPSS_BUILD_MPSS_OPENSSL_STATIC": "NO"
+                "CMAKE_BUILD_TYPE": "Debug"
             },
             "condition": {
                 "type": "equals",
@@ -134,8 +133,7 @@
             "displayName": "macOS Release",
             "inherits": "macos-debug",
             "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Release",
-                "MPSS_BUILD_MPSS_OPENSSL_STATIC": "NO"
+                "CMAKE_BUILD_TYPE": "Release"
             }
         }
     ]
