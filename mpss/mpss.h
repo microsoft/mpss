@@ -1,4 +1,4 @@
-﻿// Copyright(c) Microsoft Corporation. All rights reserved.
+// Copyright(c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
 #pragma once
@@ -37,7 +37,7 @@ namespace mpss {
     * @param[in] hash The hash to verify.
     * @param[in] public_key The public key used for verification.
     * @param[in] algorithm The signature algorithm used to create the signature.
-    * @param[in] signature The signature to verify.
+    * @param[in] sig The signature to verify.
     * @return True if the data was verified successfully, false otherwise.
     */
     [[nodiscard]] bool verify(gsl::span<const std::byte> hash, gsl::span<const std::byte> public_key, Algorithm algorithm, gsl::span<const std::byte> sig);
@@ -107,7 +107,7 @@ namespace mpss {
         /**
         * @brief Verifies the given signature against the given hash data with the key pair with the given name.
         * @param[in] hash The hash to verify.
-        * @param[in] signature The signature to verify.
+        * @param[in] sig The signature to verify.
         * @return True if the data was verified successfully, false otherwise.
         */
         [[nodiscard]] virtual bool verify(gsl::span<const std::byte> hash, gsl::span<const std::byte> sig) const = 0;

@@ -129,7 +129,7 @@ if(MPSS_BUILD_MPSS_CORE_STATIC OR MPSS_BUILD_MPSS_CORE_SHARED)
         if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
             # Add Swift library
             add_library(mpss_swift STATIC ${mpss_swift_SOURCE_FILES})
-    endif()
+        endif()
 
     elseif(mpss_LIBRARY_TYPE STREQUAL "SHARED")
         message(STATUS "[mpss] Building shared library")
@@ -174,7 +174,7 @@ if(TARGET ${mpss_TARGET})
         # mpss on Windows requires ncrypt.lib.
         target_link_libraries(${mpss_TARGET} PRIVATE ncrypt)
         target_link_libraries(${mpss_TARGET} PRIVATE crypt32)
-    elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin" OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
         target_link_libraries(${mpss_TARGET} PRIVATE "-framework Foundation -framework Security -framework CryptoKit")
         target_link_libraries(${mpss_TARGET} PRIVATE mpss_swift)
     else()
