@@ -46,7 +46,7 @@ endif()
 
 project(mpss VERSION 0.1.0 LANGUAGES C CXX)
 
-if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
     enable_language(Swift)
 endif()
 
@@ -126,7 +126,7 @@ if(MPSS_BUILD_MPSS_CORE_STATIC OR MPSS_BUILD_MPSS_CORE_SHARED)
         set(mpss_TARGET mpss_static)
         add_library(${mpss_TARGET} ${mpss_LIBRARY_TYPE} ${mpss_SOURCE_FILES})
 
-        if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+        if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
             # Add Swift library
             add_library(mpss_swift STATIC ${mpss_swift_SOURCE_FILES})
         endif()
@@ -282,7 +282,7 @@ configure_package_config_file(
 )
 
 # Install our export.
-if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
     install(TARGETS mpss_swift EXPORT mpssTargets
         DESTINATION ${mpss_INCLUDES_INSTALL_DIR}/mpss
     )

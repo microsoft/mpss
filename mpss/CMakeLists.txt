@@ -16,15 +16,15 @@ add_subdirectory(utils)
 
 install(
     FILES
-        ${CMAKE_CURRENT_LIST_DIR}/mpss.h
-        ${CMAKE_CURRENT_LIST_DIR}/algorithm.h
+    ${CMAKE_CURRENT_LIST_DIR}/mpss.h
+    ${CMAKE_CURRENT_LIST_DIR}/algorithm.h
     DESTINATION
-        ${mpss_INCLUDES_INSTALL_DIR}/mpss
+    ${mpss_INCLUDES_INSTALL_DIR}/mpss
 )
 
 # Update mpss_SOURCE_FILES variable in the parent scope.
 set(mpss_SOURCE_FILES ${mpss_SOURCE_FILES} PARENT_SCOPE)
 
-if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
     set(mpss_swift_SOURCE_FILES ${mpss_swift_SOURCE_FILES} PARENT_SCOPE)
 endif()
