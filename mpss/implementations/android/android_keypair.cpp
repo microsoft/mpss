@@ -4,7 +4,7 @@
 #include "android_keypair.h"
 #include "android_utils.h"
 #include "JNIObject.h"
-#include "../../utilities.h"
+#include "mpss/utilities.h"
 
 namespace mpss::impl {
     using jni_class = utils::JNIObj<jclass>;
@@ -67,7 +67,13 @@ namespace mpss::impl {
             return 0;
         }
 
-        return utils::CopyJByteArrayToSpan(env(), result.get(), sig);
+        std::size_t sig_size = utils::CopyJByteArrayToSpan(env(), result.get(), sig);
+        if (sig_size == 0) {
+            // Update error
+            mpss::utils::set_error(mpss::impl::utils::GetError(env()));
+        }
+
+        return sig_size;
     }
 
     bool AndroidKeyPair::verify(gsl::span<const std::byte> hash, gsl::span<const std::byte> sig) const {
@@ -102,7 +108,14 @@ namespace mpss::impl {
         }
 
         jni_object result(env(), env()->CallStaticObjectMethod(km.get(), mid, keyName.get(), hash_arr.get(), sig_arr.get()));
-        return utils::UnboxBoolean(env(), result.get());
+        bool verified = utils::UnboxBoolean(env(), result.get());
+
+        if (!verified) {
+            // Update error information
+            mpss::utils::set_error(mpss::impl::utils::GetError(env()));
+        }
+
+        return verified;
     }
 
     std::size_t AndroidKeyPair::extract_key(gsl::span<std::byte> public_key) const {
@@ -130,7 +143,13 @@ namespace mpss::impl {
             return false;
         }
 
-        return utils::CopyJByteArrayToSpan(env(), result.get(), public_key);
+        std::size_t key_size = utils::CopyJByteArrayToSpan(env(), result.get(), public_key);
+        if (key_size == 0) {
+            // Update error information
+            mpss::utils::set_error(mpss::impl::utils::GetError(env()));
+        }
+
+        return key_size;
     }
 
     void AndroidKeyPair::release_key() noexcept {

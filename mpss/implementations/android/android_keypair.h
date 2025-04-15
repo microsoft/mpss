@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "../mpss_impl.h"
+#include "mpss/implementations/mpss_impl.h"
 #include "JNIHelper.h"
 
 namespace mpss {

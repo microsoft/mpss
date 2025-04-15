@@ -2,9 +2,13 @@
 // Licensed under the MIT license.
 
 #include "android_utils.h"
-#include "../../utilities.h"
+#include "JNIObject.h"
+#include "mpss/utilities.h"
 
 namespace mpss::impl::utils {
+    using jni_class = JNIObj<jclass>;
+    using jni_string = JNIObj<jstring>;
+
     jclass GetKeyManagementClass(JNIEnv* env) {
         return env->FindClass("com/microsoft/research/mpss/KeyManagement");
     }
@@ -58,5 +62,43 @@ namespace mpss::impl::utils {
         }
 
         return (JNI_TRUE == env->CallBooleanMethod(booleanObj, mid));
+    }
+
+    std::string GetError(JNIEnv* env) {
+        if (nullptr == env) {
+            throw std::invalid_argument("env is null");
+        }
+
+        jni_class km(env, GetKeyManagementClass(env));
+        if (km.is_null()) {
+            return "Could not get KeyManagement java class";
+        }
+
+        jmethodID mid = env->GetStaticMethodID(km.get(), "GetError", "()Ljava/lang/String;");
+        if (nullptr == mid) {
+            return "Could not find KeyManagement.GetError method";
+        }
+
+        jni_string error(
+                env,
+                reinterpret_cast<jstring>(env->CallStaticObjectMethod(km.get(), mid)));
+        if (error.is_null()) {
+            return "Could not get error string";
+        }
+
+        std::string result = mpss::impl::utils::GetString(env, error.get());
+        return result;
+    }
+
+    std::string GetString(JNIEnv* env, jstring str) {
+        if (nullptr == env){
+            throw std::invalid_argument("env is null");
+        }
+
+        const char* chars = env->GetStringUTFChars(str, /* isCopy */ nullptr);
+        std::string result(chars);
+        env->ReleaseStringUTFChars(str, chars);
+
+        return result;
     }
 }

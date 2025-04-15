@@ -1,7 +1,9 @@
+// Copyright(c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
+
 package com.microsoft.research.mpss;
 
 import android.security.keystore.KeyProperties;
-
 import java.security.spec.ECGenParameterSpec;
 
 public class Utils {

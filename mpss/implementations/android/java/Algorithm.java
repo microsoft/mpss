@@ -1,3 +1,6 @@
+// Copyright(c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
+
 package com.microsoft.research.mpss;
 
 public enum Algorithm {

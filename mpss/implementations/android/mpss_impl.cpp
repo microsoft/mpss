@@ -1,9 +1,8 @@
 // Copyright(c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#include "../mpss_impl.h"
-#include "../../utilities.h"
-#include "../../scope_guard.h"
+#include "mpss/implementations/mpss_impl.h"
+#include "mpss/utilities.h"
 #include "android_keypair.h"
 #include "android_utils.h"
 #include "JNIHelper.h"
@@ -78,6 +77,7 @@ namespace mpss::impl {
 
         if (!utils::UnboxBoolean(guard.Env(), result.get())) {
             // Error happened in Java side
+            mpss::utils::set_error(mpss::impl::utils::GetError(guard.Env()));
             return {};
         }
 
@@ -113,6 +113,7 @@ namespace mpss::impl {
 
         if (!utils::UnboxBoolean(guard.Env(), result.get())) {
             // Java method failed
+            mpss::utils::set_error(mpss::impl::utils::GetError(guard.Env()));
             return {};
         }
 
@@ -149,11 +150,9 @@ namespace mpss::impl {
             return {};
         }
 
-        const char* algo_name_chars = guard->GetStringUTFChars(algo_name.get(), nullptr);
-        std::string algo_name_str(algo_name_chars);
-        guard->ReleaseStringUTFChars(algo_name.get(), algo_name_chars);
-
+        std::string algo_name_str = mpss::impl::utils::GetString(guard.Env(), algo_name.get());
         Algorithm algorithm = Algorithm::unsupported;
+
         if (algo_name_str == "secp256r1")  {
             algorithm = Algorithm::ecdsa_secp256r1_sha256;
         } else if (algo_name_str == "secp384r1") {
@@ -205,6 +204,12 @@ namespace mpss::impl {
             return false;
         }
 
-        return utils::UnboxBoolean(guard.Env(), result.get());
+        bool verified = utils::UnboxBoolean(guard.Env(), result.get());
+        if (!verified) {
+            // Update error information
+            mpss::utils::set_error(mpss::impl::utils::GetError(guard.Env()));
+        }
+
+        return verified;
     }
 }
