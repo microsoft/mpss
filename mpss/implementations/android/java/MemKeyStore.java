@@ -17,4 +17,8 @@ public class MemKeyStore {
     public static void RemoveKey(String keyName) {
         KeyPairs.remove(keyName);
     }
+
+    public static void RemoveAllKeys() {
+        KeyPairs.clear();
+    }
 }

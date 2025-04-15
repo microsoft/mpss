@@ -296,6 +296,32 @@ public class KeyManagement {
         return null != GetExistingKeyPair(keyName);
     }
 
+    /**
+     * Get the Algorithm that was used to create the given key
+     * @param keyName Name of the key pair
+     * @return Algorithm used to create the key pair
+     */
+    public static Algorithm GetKeyAlgorithm(String keyName) {
+        if (null == keyName) throw new IllegalArgumentException("keyName is null");
+
+        // Deduce the type from the length of the public key
+        byte[] pk = GetPublicKey(keyName);
+        if (null == pk) {
+            return Algorithm.undefined;
+        }
+
+        switch(pk.length) {
+            case 65:
+                return Algorithm.secp256r1;
+            case 97:
+                return Algorithm.secp384r1;
+            case 133:
+                return Algorithm.secp521r1;
+            default:
+                return Algorithm.undefined;
+        }
+    }
+
     private static KeyPair GetExistingKeyPair(String keyName) {
         try {
             // Check mem store first
