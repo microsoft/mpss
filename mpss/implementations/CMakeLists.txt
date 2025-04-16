@@ -22,6 +22,9 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin" OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Android")
     message(STATUS "Building for Android")
     add_subdirectory(android)
+
+    # Update mpss_jar_SOURCE_FILES variable in the parent scope.
+    set(mpss_jar_SOURCE_FILES ${mpss_jar_SOURCE_FILES} PARENT_SCOPE)
 else()
     message(FATAL_ERROR "Unsupported platform: ${CMAKE_SYSTEM_NAME}")
 endif()

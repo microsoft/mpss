@@ -11,15 +11,19 @@ if(POLICY CMP0141)
 endif()
 
 # Setting up our options. The library types (static/shared) are mutually exclusive.
-option(MPSS_BUILD_MPSS_CORE_STATIC "Build the mpss core static library." YES)
+option(MPSS_BUILD_MPSS_CORE_STATIC "Build the mpss core static library." NO)
 option(MPSS_BUILD_MPSS_CORE_SHARED "Build the mpss core shared library." NO)
 option(MPSS_BUILD_MPSS_OPENSSL_STATIC "Build the OpenSSL provider static library." NO)
 option(MPSS_BUILD_MPSS_OPENSSL_SHARED "Build the mpss OpenSSL provider shared library." NO)
 option(MPSS_BUILD_TESTS "Build the test suite." NO)
 
-# Check that we are not configuring for both a static or a shared library.
+# Validate mutual exclusivity
 if(MPSS_BUILD_MPSS_CORE_STATIC AND MPSS_BUILD_MPSS_CORE_SHARED)
-    message(FATAL_ERROR "Cannot build both static and shared mpss core libraries.")
+    message(FATAL_ERROR
+        "Cannot build both static and shared mpss core libraries.")
+elseif(NOT MPSS_BUILD_MPSS_CORE_STATIC AND NOT MPSS_BUILD_MPSS_CORE_SHARED)
+    message(STATUS "Neither STATIC nor SHARED selected. Defaulting to STATIC.")
+    set(MPSS_BUILD_MPSS_CORE_STATIC ON CACHE BOOL "Build the mpss core static library." FORCE)
 endif()
 
 if(MPSS_BUILD_MPSS_OPENSSL_STATIC AND MPSS_BUILD_MPSS_OPENSSL_SHARED)
@@ -48,6 +52,11 @@ project(mpss VERSION 0.1.0 LANGUAGES C CXX)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
     enable_language(Swift)
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Android")
+    find_package(Java REQUIRED)
+    include(UseJava)
 endif()
 
 # All our modules are in cmake/.
@@ -87,6 +96,7 @@ endif()
 # List of all source files.
 set(mpss_SOURCE_FILES "")
 set(mpss_swift_SOURCE_FILES "")
+set(mpss_jar_SOURCE_FILES "")
 
 if(MPSS_BUILD_MPSS_CORE_STATIC OR MPSS_BUILD_MPSS_CORE_SHARED)
     add_subdirectory(mpss)
@@ -130,11 +140,10 @@ if(MPSS_BUILD_MPSS_CORE_STATIC OR MPSS_BUILD_MPSS_CORE_SHARED)
             # Add Swift library
             add_library(mpss_swift STATIC ${mpss_swift_SOURCE_FILES})
         endif()
-
     elseif(mpss_LIBRARY_TYPE STREQUAL "SHARED")
         message(STATUS "[mpss] Building shared library")
-        set(mpss_TARGET mpss_dynamic)
-        message(FATAL_ERROR "NOT IMPLEMENTED")
+        set(mpss_TARGET mpss)
+        add_library(${mpss_TARGET} ${mpss_LIBRARY_TYPE} ${mpss_SOURCE_FILES})
     else()
         message(FATAL_ERROR "[mpss] Invalid value for mpss_LIBRARY_TYPE: ${mpss_LIBRARY_TYPE}")
     endif()
@@ -152,6 +161,22 @@ if(MPSS_BUILD_MPSS_OPENSSL_STATIC OR MPSS_BUILD_MPSS_OPENSSL_SHARED)
     else()
         message(FATAL_ERROR "[mpss-openssl] Invalid value for mpss_openssl_LIBRARY_TYPE: ${mpss_openssl_LIBRARY_TYPE}")
     endif()
+endif()
+
+if (CMAKE_SYSTEM_NAME STREQUAL "Android")
+    # CMAKE_SYSTEM_VERSION contains the Android API level.
+    set(ANDROID_SDK $ENV{ANDROID_HOME})
+    set(ANDROID_JAR "${ANDROID_SDK}/platforms/android-${CMAKE_SYSTEM_VERSION}/android.jar")
+    if(NOT EXISTS "${ANDROID_JAR}")
+        message(WARNING "Did not find: ${ANDROID_JAR}")
+        message(FATAL_ERROR "Android SDK not found. Please set ANDROID_HOME environment variable.")
+    endif()
+    set(CMAKE_JAVA_INCLUDE_PATH "${ANDROID_JAR}")
+
+    # Add Jar file with Java part of the code
+    add_jar(mpss_jar
+            STATIC ${mpss_jar_SOURCE_FILES}
+            OUTPUT_DIR ${CMAKE_BINARY_DIR}/lib)
 endif()
 
 if(TARGET ${mpss_TARGET})
@@ -220,7 +245,9 @@ if(TARGET ${mpss_TARGET})
         # THERE IS A REMAINING PROBLEM: ON WINDOWS THE SOME DIRECTORIES ARE BEING
         # NUMBERED WITH VERSION, SO IT MAY NOT BE CLEAR TO THE USER THAT THERE IS
         # JUST ONE LIBRARY ACTUALLY INSTALLED IN THIS CASE. THIS NEEDS TO BE FIXED.
-        message(FATAL_ERROR "NOT IMPLEMENTED")
+        if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+            message(FATAL_ERROR "NOT IMPLEMENTED")
+        endif()
     endif()
 endif()
 
@@ -288,6 +315,10 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
     install(TARGETS mpss_swift EXPORT mpssTargets
         DESTINATION ${mpss_INCLUDES_INSTALL_DIR}/mpss
     )
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Android")
+    install_jar(mpss_jar DESTINATION lib)
 endif()
 
 install(

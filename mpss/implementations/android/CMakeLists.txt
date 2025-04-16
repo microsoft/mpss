@@ -14,5 +14,9 @@ set(mpss_SOURCE_FILES ${mpss_SOURCE_FILES}
     ${CMAKE_CURRENT_LIST_DIR}/mpss_impl.cpp
 )
 
+add_subdirectory(java)
+
 # Update mpss_SOURCE_FILES variable in the parent scope.
 set(mpss_SOURCE_FILES ${mpss_SOURCE_FILES} PARENT_SCOPE)
+# Update mpss_jar_SOURCE_FILES variable in the parent scope.
+set(mpss_jar_SOURCE_FILES ${mpss_jar_SOURCE_FILES} PARENT_SCOPE)
