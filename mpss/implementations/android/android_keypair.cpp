@@ -4,7 +4,7 @@
 #include "android_keypair.h"
 #include "android_utils.h"
 #include "JNIObject.h"
-#include "mpss/utilities.h"
+#include "mpss/utils/utilities.h"
 
 namespace mpss::impl {
     using jni_class = utils::JNIObj<jclass>;

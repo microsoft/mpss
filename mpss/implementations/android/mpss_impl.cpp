@@ -2,7 +2,7 @@
 // Licensed under the MIT license.
 
 #include "mpss/implementations/mpss_impl.h"
-#include "mpss/utilities.h"
+#include "mpss/utils/utilities.h"
 #include "android_keypair.h"
 #include "android_utils.h"
 #include "JNIHelper.h"

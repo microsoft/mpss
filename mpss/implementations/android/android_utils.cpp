@@ -3,7 +3,7 @@
 
 #include "android_utils.h"
 #include "JNIObject.h"
-#include "mpss/utilities.h"
+#include "mpss/utils/utilities.h"
 
 namespace mpss::impl::utils {
     using jni_class = JNIObj<jclass>;
