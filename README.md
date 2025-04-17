@@ -1,12 +1,33 @@
-# mpss is a multi-platform secret storage library
+# MPSS
+
+Modern operating systems provide various methods for safeguarding private cryptographic keys through hardware. MPSS is a multi-platform secret storage library that offers a unified API, allowing users to store cryptographic keys securely without worrying about the specific APIs used by different operating systems.
+
+MPSS uses the following technologies in the different platforms:
+
+| Platform | API |
+|----------|-----|
+| Windows | VBS if available, TPM backed keys otherwise |
+| MacOS / iOS | Secure Enclave if available, Keychain otherwise  |
+| Android | StrongBox if available |
 
 ## Compiling for different platforms
 
+MPSS depends on GSL and Google Test for testing. The easiest way to provide these dependencies is through `vcpkg`.
+
 ### Windows
-TODO
+
+You will only need to provide the path to the `vcpkg` toolchain file.
+
+```
+cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=<vcpkg dir>\scripts\buildsystems\vcpkg.cmake
+```
 
 ### MacOS
-TODO
+Same as above, you only need to provide the path to the `vcpkg` toolchain file.
+
+```
+cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=<vcpkg dir>/scripts/buildsystems/vcpkg.cmake
+```
 
 ### iOS
 Generating an Xcode project is recommended for iOS. After generating the project, it can simply be added to a different Xcode project as a Framework. Another benefit of generating an Xcode project is that you don't have to worry about targeting either the iPhone Simulator or a real iPhone. Xcode will take care of this.
@@ -43,7 +64,7 @@ cmake -S . -B buildArm -DCMAKE_TOOLCHAIN_FILE=<vcpkg dir>\scripts\buildsystems\v
 | -------- | ----- |
 | ANDROID_HOME | Path to your Android SDK installation |
 | ANDROID_NDK_HOME | Path to your Android NDK installation |
-| JAVA_HOME | Path to your Java installation |
+| JAVA_HOME | Path to your Java SDK installation |
 | JAVA_COMPILER | Path to the Java compiler |
 
 **Note**: `CMAKE_SYSTEM_NAME` is used to build a full path to `android.jar`, which needs to be linked against when generating the MPSS jar file. **Make sure this path exists**. The full path to `android.jar` is composed like this:
