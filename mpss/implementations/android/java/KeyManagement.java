@@ -104,6 +104,14 @@ public class KeyManagement {
                 Log.w("MPSSKeyGen", "Strong box is not available");
             }
 
+            if (!useStrongbox && null == kp) {
+                // If we are not using StrongBox, no need to try again
+                String msg = "Failed to create key in TEE";
+                Log.w("MPSSKeyGen", msg);
+                SetError(msg);
+                return false;
+            }
+
             // Try again without StrongBox
             if (null == kp) {
                 kp = CreateKey(keyName, algorithm, /* useStrongBox */ false);
