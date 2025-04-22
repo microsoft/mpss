@@ -91,9 +91,15 @@ public class KeyManagement {
             }
 
             KeyPair kp = null;
+            boolean useStrongbox = false;
+
+            // Only P-256 is supported in StrongBox
+            if (algorithm == Algorithm.secp256r1) {
+                useStrongbox = true;
+            }
 
             try {
-                kp = CreateKey(keyName, algorithm, /* useStrongBox */ true);
+                kp = CreateKey(keyName, algorithm, useStrongBox);
             } catch (StrongBoxUnavailableException ex) {
                 Log.w("MPSSKeyGen", "Strong box is not available");
             }

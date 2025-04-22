@@ -173,6 +173,9 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Android")
     endif()
     set(CMAKE_JAVA_INCLUDE_PATH "${ANDROID_JAR}")
 
+    # This should match the Java version used in Android Studio.
+    set(CMAKE_JAVA_COMPILE_FLAGS --release 21)
+
     # Add Jar file with Java part of the code
     add_jar(mpss_jar
             STATIC ${mpss_jar_SOURCE_FILES}
