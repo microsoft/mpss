@@ -99,7 +99,7 @@ public class KeyManagement {
             }
 
             try {
-                kp = CreateKey(keyName, algorithm, useStrongBox);
+                kp = CreateKey(keyName, algorithm, useStrongbox);
             } catch (StrongBoxUnavailableException ex) {
                 Log.w("MPSSKeyGen", "Strong box is not available");
             }
