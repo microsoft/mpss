@@ -3,7 +3,9 @@
 
 package com.microsoft.research.mpss;
 
+import android.os.Build;
 import android.security.keystore.KeyGenParameterSpec;
+import android.security.keystore.KeyInfo;
 import android.security.keystore.KeyProperties;
 import android.security.keystore.StrongBoxUnavailableException;
 import android.util.Log;
@@ -44,7 +46,7 @@ import java.util.Arrays;
 public class KeyManagement {
     private static final ThreadLocal<String> _lastError = ThreadLocal.withInitial(() -> "");
 
-    private static KeyPair CreateKey(String keyName, Algorithm algorithm, Boolean useStrongbox) throws NoSuchAlgorithmException, NoSuchProviderException, InvalidAlgorithmParameterException {
+    private static KeyPair CreateKey(String keyName, Algorithm algorithm, Boolean useStrongbox) throws NoSuchAlgorithmException, NoSuchProviderException, InvalidAlgorithmParameterException, InvalidKeySpecException {
         if (null == keyName) {
             throw new IllegalArgumentException("keyName is null");
         }
@@ -61,13 +63,48 @@ public class KeyManagement {
                 .setAlgorithmParameterSpec(paramSpec)
                 .setDigests(digest)
                 .setUserAuthenticationRequired(false);
-        if (useStrongbox) {
-            builder.setIsStrongBoxBacked(true);
-        }
+        builder.setIsStrongBoxBacked(useStrongbox);
 
         kpg.initialize(builder.build());
 
-        return kpg.generateKeyPair();
+        KeyPair kp = kpg.generateKeyPair();
+        ShowKeyInfo(kp);
+
+        return kp;
+    }
+
+    @SuppressWarnings("deprecation")
+    private static void ShowKeyInfo(KeyPair kp) throws NoSuchAlgorithmException, NoSuchProviderException, InvalidKeySpecException {
+        PrivateKey pk = kp.getPrivate();
+
+        KeyFactory keyFactory = KeyFactory.getInstance(pk.getAlgorithm(), "AndroidKeyStore");
+        KeyInfo keyInfo = keyFactory.getKeySpec(pk, KeyInfo.class);
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            int level = keyInfo.getSecurityLevel();
+            switch(level) {
+                case KeyProperties.SECURITY_LEVEL_UNKNOWN:
+                    Log.i("MPSS", "Created key with security level Unknown");
+                    break;
+                case KeyProperties.SECURITY_LEVEL_UNKNOWN_SECURE:
+                    Log.i("MPSS", "Created key with security level UnknownSecure");
+                    break;
+                case KeyProperties.SECURITY_LEVEL_SOFTWARE:
+                    Log.i("MPSS", "Created key with security level Software");
+                    break;
+                case KeyProperties.SECURITY_LEVEL_TRUSTED_ENVIRONMENT:
+                    Log.i("MPSS", "Created key with security level TrustedEnvironment");
+                    break;
+                case KeyProperties.SECURITY_LEVEL_STRONGBOX:
+                    Log.i("MPSS", "Created key with security level StrongBox");
+                    break;
+                default:
+                    Log.i("MPSS", "Created key with an unknown security level");
+                    break;
+            }
+        } else {
+            Log.i("MPSS", "Is inside secure hardware: " + keyInfo.isInsideSecureHardware());
+        }
     }
 
     /**
@@ -85,7 +122,7 @@ public class KeyManagement {
         try {
             if (OpenKey(keyName)) {
                 String msg = "Key with same name already exists: " + keyName;
-                Log.e("MPSSKeyGen", msg);
+                Log.e("MPSS", msg);
                 SetError(msg);
                 return false;
             }
@@ -101,13 +138,13 @@ public class KeyManagement {
             try {
                 kp = CreateKey(keyName, algorithm, useStrongbox);
             } catch (StrongBoxUnavailableException ex) {
-                Log.w("MPSSKeyGen", "Strong box is not available");
+                Log.w("MPSS", "Strong box is not available");
             }
 
             if (!useStrongbox && null == kp) {
                 // If we are not using StrongBox, no need to try again
                 String msg = "Failed to create key in TEE";
-                Log.w("MPSSKeyGen", msg);
+                Log.w("MPSS", msg);
                 SetError(msg);
                 return false;
             }
@@ -123,9 +160,9 @@ public class KeyManagement {
 
             return true;
         } catch (InvalidAlgorithmParameterException | NoSuchAlgorithmException |
-                 NoSuchProviderException ex) {
+                 NoSuchProviderException | InvalidKeySpecException ex) {
             String msg = "Error creating key: " + ex.toString();
-            Log.e("MPSSKeyGen", msg);
+            Log.e("MPSS", msg);
             SetError(msg);
             return false;
         }
@@ -154,7 +191,7 @@ public class KeyManagement {
             return signature.sign();
         } catch (InvalidKeyException | SignatureException | NoSuchAlgorithmException ex) {
             String msg = "Error signing hash: " + ex.toString();
-            Log.e("MPSSSign", msg);
+            Log.e("MPSS", msg);
             SetError(msg);
             return null;
         }
@@ -181,7 +218,7 @@ public class KeyManagement {
             return VerifySignature(hash, sig, kp.getPublic());
         } catch (NoSuchAlgorithmException | InvalidKeyException | SignatureException ex) {
             String msg = "Error verifying signature: " + ex.toString();
-            Log.e("MPSSVerifySig", msg);
+            Log.e("MPSS", msg);
             SetError(msg);
             return false;
         }
@@ -206,7 +243,7 @@ public class KeyManagement {
         } catch (NoSuchAlgorithmException | SignatureException | InvalidKeyException |
                  InvalidKeySpecException | InvalidParameterSpecException ex) {
             String msg = "Error verifying signature: " + ex.toString();
-            Log.e("MPSSVerifySig", msg);
+            Log.e("MPSS", msg);
             SetError(msg);
             return false;
         }
@@ -259,7 +296,7 @@ public class KeyManagement {
             return uncompressed;
         } catch (InvalidKeySpecException | NoSuchAlgorithmException ex) {
             String msg = "Error getting public key: " + ex.toString();
-            Log.e("MPSSGetPK", msg);
+            Log.e("MPSS", msg);
             SetError(msg);
             return null;
         }
@@ -285,7 +322,7 @@ public class KeyManagement {
             KeyPair kp = GetExistingKeyPair(keyName);
             if (null == kp) {
                 String msg = "Could not get existing KeyPair";
-                Log.w("MPSSDelKey", msg);
+                Log.w("MPSS", msg);
                 SetError(msg);
                 return;
             }
@@ -298,7 +335,7 @@ public class KeyManagement {
         } catch (KeyStoreException | IOException | CertificateException |
                  NoSuchAlgorithmException ex) {
             String msg = "Error deleting key: " + ex.toString();
-            Log.e("MPSSDelKey", msg);
+            Log.e("MPSS", msg);
             SetError(msg);
         }
     }
@@ -352,7 +389,7 @@ public class KeyManagement {
             PrivateKey pk = (PrivateKey) ks.getKey(keyName, /* password */ null);
             if (null == pk) {
                 String msg = "Failed to get private key from AndroidKeyStore";
-                Log.w("MPSSGetKey", msg);
+                Log.w("MPSS", msg);
                 SetError(msg);
                 return null;
             }
@@ -365,7 +402,7 @@ public class KeyManagement {
         } catch (UnrecoverableKeyException | KeyStoreException | NoSuchAlgorithmException |
                  CertificateException | IOException ex) {
             String msg = "Error opening key: " + ex.toString();
-            Log.e("MPSSOpenKey", msg);
+            Log.e("MPSS", msg);
             SetError(msg);
             return null;
         }
