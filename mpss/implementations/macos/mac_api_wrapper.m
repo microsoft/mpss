@@ -137,7 +137,9 @@ bool MPSS_OpenExistingKey(const char* keyName, int* bitSize)
         NSDictionary *query = @{
             (id)kSecClass: (__bridge id)kSecClassKey,
             (id)kSecAttrApplicationTag: [keyLabel dataUsingEncoding:NSUTF8StringEncoding],
-            (id)kSecReturnRef: @YES
+            (id)kSecAttrKeyClass: (__bridge id)kSecAttrKeyClassPrivate,
+            (id)kSecReturnRef: @YES,
+            (id)kSecMatchLimit: (__bridge id)kSecMatchLimitOne
         };
 
         OSStatus status = SecItemCopyMatching((__bridge CFDictionaryRef)query, (CFTypeRef *)&keyRef);
