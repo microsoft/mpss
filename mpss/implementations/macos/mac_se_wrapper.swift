@@ -4,6 +4,7 @@
 import Foundation
 import CryptoKit
 import Security
+import os
 
 // The dispatch queue is used to serialize access to the key store, in order to make it thread-safe.
 private let _keyStoreQueue = DispatchQueue(label: "com.microsoft.mpss.KeyStore")
@@ -72,9 +73,11 @@ private func getKey(_ keyName: String) -> SecureEnclave.P256.Signing.PrivateKey?
         var result = getKeyFromDict(keyName: keyName)
         if result == nil {
             // Try from keychain
+            os_log("Key %s not found in dictionary, trying to get from Keychain", keyName)
             let keyChainData = retrieveDataFromKeychain(account: KeyChainAccountName, service: keyName)
             if keyChainData == nil {
                 // No key.
+                os_log("Key %s not found in Keychain", keyName)
                 return nil
             }
             
@@ -109,10 +112,21 @@ private func storeDataInKeychain(data: Data, account: String, service: String) -
     ]
     
     // In case the item already exists, delete it before adding the new one
-    SecItemDelete(query as CFDictionary)
+    removeDataFromKeyChain(account: account, service: service)
     
     // Add new data to the Keychain
     let status = SecItemAdd(query as CFDictionary, nil)
+    if status == errSecSuccess {
+        // Successfully added
+        os_log("Successfully added item to Keychain")
+    } else if status == errSecDuplicateItem {
+        // Item already exists
+        os_log("Item already exists in Keychain")
+    } else {
+        // Some other error occurred
+        os_log("Error adding item to Keychain: %d", status)
+    }
+
     return status
 }
 
@@ -136,6 +150,18 @@ private func retrieveDataFromKeychain(account: String, service: String) -> Data?
     
     var item: CFTypeRef?
     let status = SecItemCopyMatching(query as CFDictionary, &item)
+    if status == errSecSuccess {
+        // Successfully retrieved
+        os_log("Successfully retrieved item from Keychain")
+    } else if status == errSecItemNotFound {
+        // Item not found
+        os_log("Item not found in Keychain")
+        return nil
+    } else {
+        // Some other error occurred
+        os_log("Error retrieving item from Keychain: %d", status)
+        return nil
+    }
     
     guard status == errSecSuccess, let retrievedData = item as? Data else {
         return nil
@@ -152,16 +178,21 @@ private func removeDataFromKeyChain(account: String, service: String) {
     let query: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
         kSecAttrAccount as String: account,
-        kSecAttrService as String: service,
-        
-        // We want the data itself returned
-        kSecReturnData as String: kCFBooleanTrue as Any,
-        
-        // Match only one item
-        kSecMatchLimit as String: kSecMatchLimitOne
+        kSecAttrService as String: service
     ]
     
-    let _ = SecItemDelete(query as CFDictionary)
+    let status = SecItemDelete(query as CFDictionary)
+
+    if status == errSecSuccess {
+        // Successfully deleted
+        os_log("Successfully deleted item from Keychain")
+    } else if status == errSecItemNotFound {
+        // Item not found, nothing to delete
+        os_log("Item not found in Keychain, nothing to delete")
+    } else {
+        // Some other error occurred
+        os_log("Error deleting item from Keychain: %d", status)
+    }
 }
 
 /// Get a full key name from a user key name.
