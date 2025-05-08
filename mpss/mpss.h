@@ -72,6 +72,7 @@ namespace mpss {
         * @param[in] name The name of the key pair.
         * @param[in] algorithm The signature algorithm to use.
         * @return Key pair if the key pair was created successfully, a null pointer otherwise.
+        * @note The name must be unique. If a key pair with the same name already exists, the function will fail.
         */
         [[nodiscard]] static std::unique_ptr<KeyPair> Create(std::string_view name, Algorithm algorithm);
 

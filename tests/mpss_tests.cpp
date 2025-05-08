@@ -98,6 +98,30 @@ namespace mpss::tests
         MPSS::DeleteKey(key_name);
     }
 
+    void DoubleCreation(Algorithm algorithm, std::string_view suffix)
+    {
+        std::string key_name = "creation_test_"s + suffix.data();
+
+        // Delete key if it exists
+        MPSS::DeleteKey(key_name);
+
+        // Create the key pair
+        std::unique_ptr<mpss::KeyPair> handle = mpss::KeyPair::Create(key_name, algorithm);
+        ASSERT_TRUE(handle != nullptr);
+
+        // Try to create the key pair again
+        std::unique_ptr<mpss::KeyPair> handle2 = mpss::KeyPair::Create(key_name, algorithm);
+        // It should fail
+        ASSERT_TRUE(handle2 == nullptr);
+
+        // Delete the key pair
+        bool deleted = false;
+        if (nullptr != handle) {
+            deleted = handle->delete_key();
+        }
+        ASSERT_TRUE(deleted);
+    }
+
     TEST_F(MPSS, SignAndVerify256)
     {
         SignAndVerify(Algorithm::ecdsa_secp256r1_sha256, "256", 32);
@@ -111,6 +135,21 @@ namespace mpss::tests
     TEST_F(MPSS, SignAndVerify521)
     {
         SignAndVerify(Algorithm::ecdsa_secp521r1_sha512, "521", 64);
+    }
+
+    TEST_F(MPSS, DoubleCreation256)
+    {
+        DoubleCreation(Algorithm::ecdsa_secp256r1_sha256, "256");
+    }
+
+    TEST_F(MPSS, DoubleCreation384)
+    {
+        DoubleCreation(Algorithm::ecdsa_secp384r1_sha384, "384");
+    }
+
+    TEST_F(MPSS, DoubleCreation521)
+    {
+        DoubleCreation(Algorithm::ecdsa_secp521r1_sha512, "521");
     }
 
     void GetKey(Algorithm algorithm, std::string_view suffix)
