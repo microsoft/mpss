@@ -62,11 +62,17 @@ namespace mpss::tests
         std::unique_ptr<mpss::KeyPair> handle = MPSS::CreateKey(key_name, algorithm);
         ASSERT_TRUE(handle != nullptr);
 
+        // Test invalid hash size
+        std::vector<std::byte> invalid_hash(hash_size - 1, static_cast<std::byte>('b'));
+        std::size_t sig_size = handle->sign_hash(invalid_hash, {});
+        ASSERT_EQ(0, sig_size);
+        std::cout << "Expected error: " << mpss::get_error() << std::endl;
+
         // Sign the data
         std::vector<std::byte> hash(hash_size, static_cast<std::byte>('a'));
 
         // First extract the size of the signature
-        std::size_t sig_size = handle->sign_hash(hash, {});
+        sig_size = handle->sign_hash(hash, {});
         std::vector<std::byte> signature(sig_size);
         std::size_t written = handle->sign_hash(hash, signature);
         if (0 == written)

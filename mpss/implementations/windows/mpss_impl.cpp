@@ -205,6 +205,12 @@ namespace mpss::impl
             return false;
         }
 
+        // Check hash length
+        if (!mpss::utils::check_hash_length(hash, algorithm)) {
+            mpss::utils::set_error("Invalid hash length for algorithm");
+            return false;
+        }
+
         // Check compression indicator
         if (public_key[0] != std::byte{ 0x04 }) {
             mpss::utils::set_error("Invalid public key format.");

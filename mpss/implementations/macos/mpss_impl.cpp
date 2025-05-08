@@ -97,9 +97,16 @@ namespace mpss
                 mpss::utils::set_error("Hash, public key, and signature cannot be empty.");
                 return false;
             }
+
             if (algorithm == Algorithm::unsupported)
             {
                 mpss::utils::set_error("Unsupported algorithm.");
+                return false;
+            }
+
+            // Check hash length
+            if (!mpss::utils::check_hash_length(hash, algorithm)) {
+                mpss::utils::set_error("Invalid hash length for algorithm");
                 return false;
             }
 

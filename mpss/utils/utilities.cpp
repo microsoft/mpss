@@ -83,4 +83,16 @@ namespace mpss::utils {
         }
         return result;
     }
+
+    bool check_hash_length(gsl::span<const std::byte> hash, Algorithm algorithm) noexcept
+    {
+        AlgorithmInfo info = get_algorithm_info(algorithm);
+        if (0 == info.key_bits) {
+            return false;
+        }
+        // The hash length is the size of the hash in bits divided by 8.
+
+        std::size_t hash_length = ((info.hash_bits + 7) / 8);
+        return hash.size() == hash_length;
+    }
 }

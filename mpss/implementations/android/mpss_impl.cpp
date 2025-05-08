@@ -168,6 +168,11 @@ namespace mpss::impl {
     bool verify(gsl::span<const std::byte> hash, gsl::span<const std::byte> public_key, Algorithm algorithm, gsl::span<const std::byte> sig) {
         JNIEnvGuard guard;
 
+        if (!mpss::utils::check_hash_length(hash, algorithm)) {
+            mpss::utils::set_error("Invalid hash length for the specified algorithm");
+            return false;
+        }
+
         jni_class km(guard.Env(), utils::GetKeyManagementClass(guard.Env()));
         if (km.is_null()) {
             mpss::utils::set_error("Could not get KeyManagement java class");

@@ -37,6 +37,11 @@ namespace mpss::impl {
     }
 
     std::size_t AndroidKeyPair::sign_hash(gsl::span<const std::byte> hash, gsl::span<std::byte> sig) const {
+        if (hash.size() != mpss::utils::check_hash_length(hash, algorithm()) {
+            mpss::utils::set_error("Invalid hash length for algorithm");
+            return 0;
+        }
+
         jni_class km(env(), utils::GetKeyManagementClass(env()));
         if (km.is_null()) {
             mpss::utils::set_error("Could not get KeyManagement Java class");

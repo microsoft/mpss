@@ -10,6 +10,7 @@
 #include <random>
 
 #include <gsl/narrow>
+#include <gsl/span>
 
 namespace mpss::utils {
     // Convert a long to a hex string
@@ -48,4 +49,7 @@ namespace mpss::utils {
         }
         return out;
     }
+
+    // Check the length of the hash buffer
+    bool check_hash_length(gsl::span<const std::byte> hash, Algorithm algorithm) noexcept;
 }

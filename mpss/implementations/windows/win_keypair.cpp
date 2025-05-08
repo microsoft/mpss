@@ -44,6 +44,12 @@ namespace mpss::impl {
             return 0;
         }
 
+        // Check hash length
+        if (!mpss::utils::check_hash_length(hash, algorithm())) {
+            mpss::utils::set_error("Invalid hash length for algorithm");
+            return 0;
+        }
+
         if (sig.empty()) {
             // If the signature buffer is empty, we want to return the size of the signature.
             return mpss::utils::get_max_signature_length(algorithm());
@@ -177,6 +183,12 @@ namespace mpss::impl {
         // If either input is empty, return false and set an error.
         if (hash.empty() || sig.empty()) {
             mpss::utils::set_error("Nothing to verify.");
+            return false;
+        }
+
+        // Check hash length
+        if (!mpss::utils::check_hash_length(hash, algorithm())) {
+            mpss::utils::set_error("Invalid hash length for algorithm");
             return false;
         }
 
