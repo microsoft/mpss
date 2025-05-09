@@ -24,6 +24,14 @@ namespace mpss
                 return {};
             }
 
+            // Fail if the key already exists
+            std::unique_ptr<KeyPair> existing_key = open_key(name);
+            if (existing_key)
+            {
+                mpss::utils::set_error("Key already exists.");
+                return {};
+            }
+
             if (MPSS_SE_SecureEnclaveIsSupported() && algorithm == Algorithm::ecdsa_secp256r1_sha256)
             {
                 // Secure Enclave only supports ECDSA P256

@@ -163,6 +163,14 @@ bool MPSS_CreateKey(const char *keyName, int bitSize)
 {
     // Define key attributes
     @autoreleasepool {
+        int existingBitSize = 0;
+        if (MPSS_OpenExistingKey(keyName, &existingBitSize)) {
+            NSString* error = [NSString stringWithFormat:@"Key %s already exists.", keyName];
+            NSLog(@"%@", error);
+            SetThreadLocalError(error);
+            return false;
+        }
+
         NSString *keyLabel = GetKeyLabel(keyName);
 
         int keyBitSize = GetKeyBitSize(bitSize);
