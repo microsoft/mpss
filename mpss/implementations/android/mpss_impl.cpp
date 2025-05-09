@@ -15,6 +15,24 @@ namespace mpss::impl {
     using jni_bytearray = utils::JNIObj<jbyteArray>;
 
     std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm) {
+        // Simple checks
+        if (name.empty()) {
+            mpss::utils::set_error("Key name cannot be empty");
+            return {};
+        }
+
+        if (algorithm == Algorithm::unsupported) {
+            mpss::utils::set_error("Unsupported algorithm");
+            return {};
+        }
+
+        // Check if the key already exists
+        std::unique_ptr<KeyPair> existingKey = open_key(name);
+        if (nullptr != existingKey) {
+            mpss::utils::set_error("Key already exists");
+            return {};
+        }
+
         JNIEnvGuard guard;
         jni_class km(guard.Env(), utils::GetKeyManagementClass(guard.Env()));
         if (km.is_null()) {
@@ -85,6 +103,12 @@ namespace mpss::impl {
     }
 
     std::unique_ptr<KeyPair> open_key(std::string_view name) {
+        // Simple checks
+        if (name.empty()) {
+            mpss::utils::set_error("Key name cannot be empty");
+            return {};
+        }
+
         JNIEnvGuard guard;
         jni_class km(guard.Env(), utils::GetKeyManagementClass(guard.Env()));
         if (km.is_null()) {
