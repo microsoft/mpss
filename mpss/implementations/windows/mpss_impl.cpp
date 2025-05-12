@@ -28,6 +28,9 @@ namespace {
     // To use software provider, use MS_KEY_STORAGE_PROVIDER instead.
     constexpr LPCWSTR provider_name = MS_KEY_STORAGE_PROVIDER;
 
+    // The fallback provider will be used if we cannot create a key backed by VBS.
+    constexpr LPCWSTR fallback_provider_name = MS_PLATFORM_KEY_STORAGE_PROVIDER;
+
     // For some reason NCRYPT_REQUIRE_VBS_FLAG is not defined in the headers.
     constexpr DWORD require_vbs = 0x00020000;
 
@@ -38,14 +41,19 @@ namespace {
     // Additional flags to specify only when creating a key.
     constexpr DWORD key_create_flags = require_vbs;
 
-    NCRYPT_PROV_HANDLE GetProvider()
+    // Additional flags to specify only when creating a fallback key.
+    constexpr DWORD key_create_flags_fallback = 0;
+
+    NCRYPT_PROV_HANDLE GetProvider(bool fallback = false)
     {
         NCRYPT_PROV_HANDLE provider_handle = 0;
 
         // This function uses no extra flags.
         DWORD flags = 0;
 
-        SECURITY_STATUS status = ::NCryptOpenStorageProvider(&provider_handle, provider_name, flags);
+        LPCWSTR provider_name_to_use = fallback ? fallback_provider_name : provider_name;
+
+        SECURITY_STATUS status = ::NCryptOpenStorageProvider(&provider_handle, provider_name_to_use, flags);
         if (ERROR_SUCCESS != status) {
             std::stringstream ss;
             ss << "NCryptOpenStorageProvider failed with error code " << mpss::utils::to_hex(status);
@@ -53,18 +61,22 @@ namespace {
             return 0;
         }
 
+        if (provider_handle == 0) {
+            mpss::utils::set_error("Provider handle is null.");
+            return 0;
+        }
+
         return provider_handle;
     }
 
-    NCRYPT_KEY_HANDLE GetKey(std::string_view name)
+    NCRYPT_KEY_HANDLE GetKey(std::string_view name, bool fallback)
     {
-        NCRYPT_PROV_HANDLE provider_handle = GetProvider();
+        NCRYPT_PROV_HANDLE provider_handle = GetProvider(fallback);
         if (!provider_handle) {
             return 0;
         }
 
         SCOPE_GUARD(::NCryptFreeObject(provider_handle));
-
         NCRYPT_KEY_HANDLE key_handle = 0;
         std::wstring wname(name.begin(), name.end());
 
@@ -78,26 +90,50 @@ namespace {
 
         return key_handle;
     }
-}
 
-namespace mpss::impl
-{
-    std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm)
+    NCRYPT_KEY_HANDLE GetKey(std::string_view name)
     {
-        crypto_params const *const crypto = utils::get_crypto_params(algorithm);
-        if (!crypto) {
-            mpss::utils::set_error("Unsupported algorithm.");
-            return nullptr;
+        // Try to open the key using the primary provider.
+        NCRYPT_KEY_HANDLE key_handle = GetKey(name, /* fallback */ false);
+        if (key_handle) {
+            return key_handle;
+        }
+        std::string error = mpss::utils::get_error();
+
+        // Try to open the key using the fallback provider.
+        key_handle = GetKey(name, /* fallback */ true);
+        if (key_handle) {
+            return key_handle;
         }
 
-        NCRYPT_PROV_HANDLE provider_handle = GetProvider();
+        // If we get here, we failed to open the key in both providers.
+        // Report both errors.
+        std::stringstream ss;
+        ss << error;
+        ss << ", fallback: " << mpss::utils::get_error();
+        mpss::utils::set_error(ss.str());
+
+        return 0;
+    }
+
+    NCRYPT_KEY_HANDLE CreateKey(std::string_view name, mpss::Algorithm algorithm, bool fallback)
+    {
+        mpss::impl::crypto_params const* const crypto = mpss::impl::utils::get_crypto_params(algorithm);
+        if (!crypto) {
+            mpss::utils::set_error("Unsupported algorithm.");
+            return 0;
+        }
+
+        NCRYPT_PROV_HANDLE provider_handle = GetProvider(fallback);
         if (!provider_handle) {
-            return nullptr;
+            return 0;
         }
         SCOPE_GUARD(::NCryptFreeObject(provider_handle));
 
         NCRYPT_KEY_HANDLE key_handle = 0;
         std::wstring wname(name.begin(), name.end());
+
+        DWORD creation_flags = fallback ? key_create_flags_fallback : key_create_flags;
 
         SECURITY_STATUS status = ::NCryptCreatePersistedKey(
             provider_handle,
@@ -105,12 +141,12 @@ namespace mpss::impl
             crypto->key_type_name(),
             wname.c_str(),
             key_spec,
-            key_open_mode | key_create_flags);
+            key_open_mode | creation_flags);
         if (ERROR_SUCCESS != status) {
             std::stringstream ss;
             ss << "NCryptCreatePersistedKey failed with error code " << mpss::utils::to_hex(status);
             mpss::utils::set_error(ss.str());
-            return nullptr;
+            return 0;
         }
 
         status = ::NCryptFinalizeKey(key_handle, /* dwFlags */ 0);
@@ -118,10 +154,48 @@ namespace mpss::impl
             std::stringstream ss;
             ss << "NCryptFinalizeKey failed with error code " << mpss::utils::to_hex(status);
             mpss::utils::set_error(ss.str());
-            return nullptr;
+            return 0;
         }
 
-        return std::make_unique<WindowsKeyPair>(algorithm, key_handle);
+        return key_handle;
+    }
+}
+
+namespace mpss::impl
+{
+    std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm)
+    {
+        // Fail if the key already exists.
+        std::unique_ptr<KeyPair> existing = open_key(name);
+        if (existing) {
+            std::stringstream ss;
+            ss << "Key already exists: " << name;
+            mpss::utils::set_error(ss.str());
+            return {};
+        }
+
+        // Try to create the key using the primary provider.
+        NCRYPT_KEY_HANDLE key_handle = CreateKey(name, algorithm, /* fallback */ false);
+        if (key_handle) {
+            return std::make_unique<WindowsKeyPair>(algorithm, key_handle);
+        }
+
+        std::string error = mpss::utils::get_error();
+
+        // Try to create the key using the fallback provider.
+        key_handle = CreateKey(name, algorithm, /* fallback */ true);
+        if (key_handle) {
+            return std::make_unique<WindowsKeyPair>(algorithm, key_handle);
+        }
+
+        // If we get here, we failed to create the key in both providers.
+        // Report both errors.
+        std::stringstream ss;
+        ss << error;
+        ss << ", fallback: " << mpss::utils::get_error();
+        mpss::utils::set_error(ss.str());
+
+        return {};
     }
 
     std::unique_ptr<KeyPair> open_key(std::string_view name)
