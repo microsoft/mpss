@@ -159,6 +159,98 @@ namespace {
 
         return key_handle;
     }
+
+    mpss::Algorithm GetAlgorithmFromName(NCRYPT_KEY_HANDLE key_handle)
+    {
+        DWORD dwOutputSize = 0;
+
+        SECURITY_STATUS status = ::NCryptGetProperty(
+            key_handle,
+            NCRYPT_ALGORITHM_PROPERTY,
+            /* pbOutput */ nullptr,
+            /* cbOutput */ 0,
+            &dwOutputSize,
+            /* dwFlags */ 0);
+        if (ERROR_SUCCESS != status) {
+            std::stringstream ss;
+            ss << "NCryptGetProperty (algorithm) failed with error code " << mpss::utils::to_hex(status);
+            mpss::utils::set_error(ss.str());
+            return mpss::Algorithm::unsupported;
+        }
+
+        std::wstring algorithm_name(dwOutputSize, '\0');
+        DWORD algorithm_name_size = mpss::utils::narrow_or_error<DWORD>(algorithm_name.size());
+        if (!algorithm_name_size) {
+            return mpss::Algorithm::unsupported;
+        }
+
+        status = ::NCryptGetProperty(
+            key_handle,
+            NCRYPT_ALGORITHM_PROPERTY,
+            reinterpret_cast<PBYTE>(&algorithm_name[0]),
+            algorithm_name_size,
+            &dwOutputSize,
+            /* dwFlags */ 0);
+        if (ERROR_SUCCESS != status) {
+            std::stringstream ss;
+            ss << "NCryptGetProperty failed with error code " << mpss::utils::to_hex(status);
+            mpss::utils::set_error(ss.str());
+            return mpss::Algorithm::unsupported;
+        }
+
+        if (algorithm_name.compare(/* offset */ 0, std::wcslen(NCRYPT_ECDSA_P256_ALGORITHM), NCRYPT_ECDSA_P256_ALGORITHM) == 0) {
+            return mpss::Algorithm::ecdsa_secp256r1_sha256;
+        }
+        else if (algorithm_name.compare(/* offset */ 0, std::wcslen(NCRYPT_ECDSA_P384_ALGORITHM), NCRYPT_ECDSA_P384_ALGORITHM) == 0) {
+            return mpss::Algorithm::ecdsa_secp384r1_sha384;
+        }
+        else if (algorithm_name.compare(/* offset */ 0, std::wcslen(NCRYPT_ECDSA_P521_ALGORITHM), NCRYPT_ECDSA_P521_ALGORITHM) == 0) {
+            return mpss::Algorithm::ecdsa_secp521r1_sha512;
+        }
+        else {
+            std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
+            std::string alg_name = converter.to_bytes(algorithm_name);
+            std::stringstream ss;
+            ss << "Unsupported algorithm: " << alg_name;
+            mpss::utils::set_error(ss.str());
+            return mpss::Algorithm::unsupported;
+        }
+    }
+
+    std::size_t GetKeyLength(NCRYPT_KEY_HANDLE key_handle)
+    {
+        DWORD dwKeyLength = 0;
+        DWORD dwOutputSize = 0;
+
+        SECURITY_STATUS status = ::NCryptGetProperty(
+            key_handle,
+            NCRYPT_LENGTH_PROPERTY,
+            reinterpret_cast<PBYTE>(&dwKeyLength),
+            sizeof(DWORD),
+            &dwOutputSize,
+            /* dwFlags */ 0);
+        if (ERROR_SUCCESS != status) {
+            std::stringstream ss;
+            ss << "NCryptGetProperty (length) failed with error code " << mpss::utils::to_hex(status);
+            mpss::utils::set_error(ss.str());
+            return 0;
+        }
+
+        return static_cast<std::size_t>(dwKeyLength);
+    }
+
+    mpss::Algorithm GetAlgorithmFromKeyBits(std::size_t key_bits) {
+        switch (key_bits) {
+        case 256:
+            return mpss::Algorithm::ecdsa_secp256r1_sha256;
+        case 384:
+            return mpss::Algorithm::ecdsa_secp384r1_sha384;
+        case 521:
+            return mpss::Algorithm::ecdsa_secp521r1_sha512;
+        default:
+            return mpss::Algorithm::unsupported;
+        }
+    }
 }
 
 namespace mpss::impl
@@ -215,57 +307,13 @@ namespace mpss::impl
         });
 
         // Get the algorithm name to deduce SignatureAlgorithm
-        DWORD dwOutputSize = 0;
-        SECURITY_STATUS status = ::NCryptGetProperty(
-            key_handle,
-            NCRYPT_ALGORITHM_PROPERTY,
-            /* pbOutput */ nullptr,
-            /* cbOutput */ 0,
-            &dwOutputSize,
-            /* dwFlags */ 0);
-        if (ERROR_SUCCESS != status) {
-            std::stringstream ss;
-            ss << "NCryptGetProperty failed with error code " << mpss::utils::to_hex(status);
-            mpss::utils::set_error(ss.str());
-            return nullptr;
-        }
-
-        std::wstring algorithm_name(dwOutputSize, '\0');
-        DWORD algorithm_name_size = mpss::utils::narrow_or_error<DWORD>(algorithm_name.size());
-        if (!algorithm_name_size) {
-            return nullptr;
-        }
-
-        status = ::NCryptGetProperty(
-            key_handle,
-            NCRYPT_ALGORITHM_PROPERTY,
-            reinterpret_cast<PBYTE>(&algorithm_name[0]),
-            algorithm_name_size,
-            &dwOutputSize,
-            /* dwFlags */ 0);
-        if (ERROR_SUCCESS != status) {
-            std::stringstream ss;
-            ss << "NCryptGetProperty failed with error code " << mpss::utils::to_hex(status);
-            mpss::utils::set_error(ss.str());
-            return nullptr;
-        }
-
-        if (algorithm_name.compare(/* offset */ 0, std::wcslen(NCRYPT_ECDSA_P256_ALGORITHM), NCRYPT_ECDSA_P256_ALGORITHM) == 0) {
-            algorithm = Algorithm::ecdsa_secp256r1_sha256;
-        }
-        else if (algorithm_name.compare(/* offset */ 0, std::wcslen(NCRYPT_ECDSA_P384_ALGORITHM), NCRYPT_ECDSA_P384_ALGORITHM) == 0) {
-            algorithm = Algorithm::ecdsa_secp384r1_sha384;
-        }
-        else if (algorithm_name.compare(/* offset */ 0, std::wcslen(NCRYPT_ECDSA_P521_ALGORITHM), NCRYPT_ECDSA_P521_ALGORITHM) == 0) {
-            algorithm = Algorithm::ecdsa_secp521r1_sha512;
-        }
-        else {
-            std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
-            std::string alg_name = converter.to_bytes(algorithm_name);
-            std::stringstream ss;
-            ss << "Unsupported algorithm: " << alg_name;
-            mpss::utils::set_error(ss.str());
-            return nullptr;
+        algorithm = GetAlgorithmFromName(key_handle);
+        if (algorithm == Algorithm::unsupported) {
+            // Try directly with the key size
+            algorithm = GetAlgorithmFromKeyBits(GetKeyLength(key_handle));
+            if (algorithm == Algorithm::unsupported) {
+                return nullptr;
+            }
         }
 
         return std::make_unique<WindowsKeyPair>(algorithm, key_handle);
