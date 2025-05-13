@@ -93,6 +93,7 @@ namespace mpss::utils {
         // The hash length is the size of the hash in bits divided by 8.
 
         std::size_t hash_length = ((info.hash_bits + 7) / 8);
-        return hash.size() == hash_length;
+        std::size_t hash_size = hash.size();
+        return hash_size == hash_length;
     }
 }
