@@ -5,12 +5,21 @@
 #include "mac_api_wrapper.h"
 #include "mpss/utils/utilities.h"
 
+namespace {
+    constexpr const char* storage_description = "Keychain";
+}
+
 namespace mpss
 {
     namespace impl
     {
         MacKeyPair::MacKeyPair(std::string_view name, Algorithm algorithm)
-            : KeyPair(algorithm), name_(name)
+            : KeyPair(algorithm, /* hardware_backed */ false, storage_description), name_(name)
+        {
+        }
+
+        MacKeyPair::MacKeyPair(std::string_view name, Algorithm algorithm, bool hardware_backed, const char* storage_description)
+            : KeyPair(algorithm, hardware_backed, storage_description), name_(name)
         {
         }
 

@@ -6,12 +6,16 @@
 #include "mac_utils.h"
 #include "mpss/utils/utilities.h"
 
+namespace {
+    constexpr const char* storage_description = "Secure Enclave";
+}
+
 namespace mpss
 {
     namespace impl
     {
         MacSEKeyPair::MacSEKeyPair(std::string_view name, Algorithm algorithm)
-            : MacKeyPair(name, algorithm)
+            : MacKeyPair(name, algorithm, /* hardware_backed */ true, storage_description) 
         {
         }
 

@@ -26,6 +26,8 @@ namespace mpss
             void release_key() override;
 
         protected:
+            MacKeyPair(std::string_view name, Algorithm algorithm, bool hardware_backed, const char* storage_description);
+            
             const std::string &name() const
             {
                 return name_;
