@@ -22,20 +22,22 @@ namespace mpss::tests
     public:
         static void DeleteKey(std::string name)
         {
-            // Check if key exists, delete if it does
-            std::unique_ptr<mpss::KeyPair> handle = mpss::KeyPair::Open(name);
-            if (handle != nullptr)
-            {
-                bool deleted = handle->delete_key();
-                if (!deleted)
+            for (int i = 0; i < 3; i++) {
+                // Check if key exists, delete if it does
+                std::unique_ptr<mpss::KeyPair> handle = mpss::KeyPair::Open(name);
+                if (handle != nullptr)
                 {
-                    std::cout << "Key could not be deleted: " << mpss::get_error() << std::endl;
+                    bool deleted = handle->delete_key();
+                    if (!deleted)
+                    {
+                        std::cout << "Key could not be deleted: " << mpss::get_error() << std::endl;
+                    }
+                    ASSERT_TRUE(deleted);
                 }
-                ASSERT_TRUE(deleted);
-            }
-            else
-            {
-                std::cout << "Key does not exist: " << mpss::get_error() << std::endl;
+                else
+                {
+                    std::cout << "Key does not exist: " << mpss::get_error() << std::endl;
+                }
             }
         }
 
@@ -47,7 +49,10 @@ namespace mpss::tests
             {
                 std::cout << "Key could not be created: " << mpss::get_error() << std::endl;
             }
-            std::cout << "Key " << name << " created in " << handle->key_info().storage_description << ". Hardware backed: " << handle->key_info().is_hardware_backed << std::endl;
+            else
+            {
+                std::cout << "Key " << name << " created in " << handle->key_info().storage_description << ". Hardware backed: " << handle->key_info().is_hardware_backed << std::endl;
+            }
             return handle;
         }
     };

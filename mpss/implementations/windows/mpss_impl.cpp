@@ -75,7 +75,7 @@ namespace {
         return provider_handle;
     }
 
-    NCRYPT_KEY_HANDLE GetKey(std::string_view name, bool fallback)
+    NCRYPT_KEY_HANDLE GetKeyFromProvider(std::string_view name, bool fallback)
     {
         NCRYPT_PROV_HANDLE provider_handle = GetProvider(fallback);
         if (!provider_handle) {
@@ -102,7 +102,7 @@ namespace {
         *storage_description = nullptr;
 
         // Try to open the key using the primary provider.
-        NCRYPT_KEY_HANDLE key_handle = GetKey(name, /* fallback */ false);
+        NCRYPT_KEY_HANDLE key_handle = GetKeyFromProvider(name, /* fallback */ false);
         if (key_handle) {
             *storage_description = provider_description;
             return key_handle;
@@ -110,7 +110,7 @@ namespace {
         std::string error = mpss::utils::get_error();
 
         // Try to open the key using the fallback provider.
-        key_handle = GetKey(name, /* fallback */ true);
+        key_handle = GetKeyFromProvider(name, /* fallback */ true);
         if (key_handle) {
             *storage_description = fallback_provider_description;
             return key_handle;
@@ -304,7 +304,7 @@ namespace mpss::impl
     {
         Algorithm algorithm;
 
-        char* storage_description = nullptr;
+        const char* storage_description = nullptr;
         NCRYPT_KEY_HANDLE key_handle = GetKey(name, &storage_description);
         if (!key_handle) {
             return nullptr;
