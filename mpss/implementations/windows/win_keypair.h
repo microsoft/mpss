@@ -11,8 +11,8 @@
 namespace mpss::impl {
     class WindowsKeyPair : public mpss::KeyPair {
     public:
-        WindowsKeyPair(mpss::Algorithm algorithm, NCRYPT_KEY_HANDLE handle)
-            : mpss::KeyPair(algorithm), key_handle_(handle)
+        WindowsKeyPair(mpss::Algorithm algorithm, NCRYPT_KEY_HANDLE handle, bool hardware_backed, const char* storage_description)
+            : mpss::KeyPair(algorithm, hardware_backed, storage_description), key_handle_(handle)
         {}
 
         ~WindowsKeyPair() override

@@ -47,6 +47,7 @@ namespace mpss::tests
             {
                 std::cout << "Key could not be created: " << mpss::get_error() << std::endl;
             }
+            std::cout << "Key " << name << " created in " << handle->key_info().storage_description << ". Hardware backed: " << handle->key_info().is_hardware_backed << std::endl;
             return handle;
         }
     };

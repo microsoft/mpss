@@ -4,6 +4,7 @@
 #pragma once
 
 #include "mpss/algorithm.h"
+#include "mpss/key_info.h"
 
 #include <cstdint>
 #include <cstddef>
@@ -66,6 +67,11 @@ namespace mpss {
         * @brief Get the key pair @ref AlgorithmInfo.
         */
         [[nodiscard]] AlgorithmInfo algorithm_info() const noexcept { return info_; }
+
+        /**
+        * @brief Get @ref KeyInfo for the key pair
+        */
+        [[nodiscard]] KeyInfo key_info() const noexcept { return key_info_; }
 
         /**
         * @brief Creates a new key pair with the given name and algorithm.
@@ -140,7 +146,8 @@ namespace mpss {
     protected:
         Algorithm algorithm_;
         AlgorithmInfo info_;
+        KeyInfo key_info_;
 
-        KeyPair(Algorithm algorithm);
+        KeyPair(Algorithm algorithm, bool hardware_backed, const char* storage_description);
     };
 }

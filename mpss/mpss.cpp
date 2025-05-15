@@ -90,8 +90,8 @@ namespace mpss
         return utils::get_public_key_size(algorithm());
     }
 
-    KeyPair::KeyPair(Algorithm algorithm)
-        : algorithm_(algorithm), info_(get_algorithm_info(algorithm))
+    KeyPair::KeyPair(Algorithm algorithm, bool hardware_backed, const char* storage_description)
+        : algorithm_(algorithm), info_(get_algorithm_info(algorithm)), key_info_(hardware_backed, storage_description)
     {
         if (0 == info_.key_bits)
         {

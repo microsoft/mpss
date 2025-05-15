@@ -31,6 +31,12 @@ namespace {
     // The fallback provider will be used if we cannot create a key backed by VBS.
     constexpr LPCWSTR fallback_provider_name = MS_PLATFORM_KEY_STORAGE_PROVIDER;
 
+    // A description of our default provider
+    constexpr LPCSTR provider_description = "Virtualization Based Security";
+
+    // A description of our fallback provider
+    constexpr LPCSTR fallback_provider_description = "TPM Protection";
+
     // For some reason NCRYPT_REQUIRE_VBS_FLAG is not defined in the headers.
     constexpr DWORD require_vbs = 0x00020000;
 
@@ -91,11 +97,14 @@ namespace {
         return key_handle;
     }
 
-    NCRYPT_KEY_HANDLE GetKey(std::string_view name)
+    NCRYPT_KEY_HANDLE GetKey(std::string_view name, const char** storage_description)
     {
+        *storage_description = nullptr;
+
         // Try to open the key using the primary provider.
         NCRYPT_KEY_HANDLE key_handle = GetKey(name, /* fallback */ false);
         if (key_handle) {
+            *storage_description = provider_description;
             return key_handle;
         }
         std::string error = mpss::utils::get_error();
@@ -103,6 +112,7 @@ namespace {
         // Try to open the key using the fallback provider.
         key_handle = GetKey(name, /* fallback */ true);
         if (key_handle) {
+            *storage_description = fallback_provider_description;
             return key_handle;
         }
 
@@ -269,7 +279,7 @@ namespace mpss::impl
         // Try to create the key using the primary provider.
         NCRYPT_KEY_HANDLE key_handle = CreateKey(name, algorithm, /* fallback */ false);
         if (key_handle) {
-            return std::make_unique<WindowsKeyPair>(algorithm, key_handle);
+            return std::make_unique<WindowsKeyPair>(algorithm, key_handle, /* hardware_backed */ true, provider_description);
         }
 
         std::string error = mpss::utils::get_error();
@@ -277,7 +287,7 @@ namespace mpss::impl
         // Try to create the key using the fallback provider.
         key_handle = CreateKey(name, algorithm, /* fallback */ true);
         if (key_handle) {
-            return std::make_unique<WindowsKeyPair>(algorithm, key_handle);
+            return std::make_unique<WindowsKeyPair>(algorithm, key_handle, /* hardware_backed */ true, fallback_provider_description);
         }
 
         // If we get here, we failed to create the key in both providers.
@@ -294,7 +304,8 @@ namespace mpss::impl
     {
         Algorithm algorithm;
 
-        NCRYPT_KEY_HANDLE key_handle = GetKey(name);
+        char* storage_description = nullptr;
+        NCRYPT_KEY_HANDLE key_handle = GetKey(name, &storage_description);
         if (!key_handle) {
             return nullptr;
         }
@@ -316,7 +327,7 @@ namespace mpss::impl
             }
         }
 
-        return std::make_unique<WindowsKeyPair>(algorithm, key_handle);
+        return std::make_unique<WindowsKeyPair>(algorithm, key_handle, /* hardware_backed */ true, storage_description);
     }
 
     bool verify(gsl::span<const std::byte> hash, gsl::span<const std::byte> public_key, Algorithm algorithm, gsl::span<const std::byte> sig)
