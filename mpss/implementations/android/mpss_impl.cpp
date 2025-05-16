@@ -8,12 +8,77 @@
 #include "JNIHelper.h"
 #include "JNIObject.h"
 
-namespace mpss::impl {
-    using jni_class = utils::JNIObj<jclass>;
-    using jni_string = utils::JNIObj<jstring>;
-    using jni_object = utils::JNIObj<jobject>;
-    using jni_bytearray = utils::JNIObj<jbyteArray>;
+using jni_class = mpss::impl::utils::JNIObj<jclass>;
+using jni_string = mpss::impl::utils::JNIObj<jstring>;
+using jni_object = mpss::impl::utils::JNIObj<jobject>;
+using jni_bytearray = mpss::impl::utils::JNIObj<jbyteArray>;
 
+namespace {
+    constexpr const char* unknown_storage = "Unknown";
+    constexpr const char* software_storage = "Software";
+    constexpr const char* trusted_storage = "Trusted Environment";
+    constexpr const char* strongbox_storage = "StrongBox";
+    constexpr const char* unknown_secure_storage = "Unknown Secure";
+
+    void GetKeyProperties(std::string_view name, bool& hardware_backed, const char** storage_description) {
+        hardware_backed = false;
+        *storage_description = nullptr;
+
+        mpss::impl::JNIEnvGuard guard;
+        jni_class km(guard.Env(), mpss::impl::utils::GetKeyManagementClass(guard.Env()));
+        if (km.is_null()) {
+            mpss::utils::set_error("Could not get KeyManagement java class");
+            return;
+        }
+
+        jmethodID mid = guard->GetStaticMethodID(km.get(), "GetKeySecurityLevel", "(Ljava/lang/String;)I");
+        if (nullptr == mid) {
+            mpss::utils::set_error("Could not get KeyManagement.GetKeySecurityLevel java method");
+            return;
+        }
+
+        std::string keyNameStr(name);
+        jni_string keyName(guard.Env(), guard->NewStringUTF(keyNameStr.c_str()));
+        if (keyName.is_null()) {
+            mpss::utils::set_error("Could not convert key name to java String");
+            return;
+        }
+
+        jint result = guard->CallStaticIntMethod(km.get(), mid, keyName.get());
+        if (-1 == result) {
+            mpss::utils::set_error("Error calling KeyManagement.GetKeySecurityLevel java method");
+            return;
+        }
+
+        switch (result) {
+        case 0:
+            hardware_backed = false;
+            *storage_description = unknown_storage;
+            return;
+        case 1:
+            hardware_backed = false;
+            *storage_description = software_storage;
+            return;
+        case 2:
+            hardware_backed = true;
+            *storage_description = unknown_secure_storage;
+            return;
+        case 3:
+            hardware_backed = true;
+            *storage_description = trusted_storage;
+            return;
+        case 4:
+            hardware_backed = true;
+            *storage_description = strongbox_storage;
+            return;
+        default:
+            mpss::utils::set_error("Unknown result from KeyManagement.GetKeySecurityLevel");
+            return;
+        }
+    }
+}
+
+namespace mpss::impl {
     std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm) {
         // Simple checks
         if (name.empty()) {
@@ -99,7 +164,16 @@ namespace mpss::impl {
             return {};
         }
 
-        return std::make_unique<AndroidKeyPair>(algorithm, name);
+        bool hardware_backed = false;
+        const char* storage_description = nullptr;
+        GetKeyProperties(name, hardware_backed, &storage_description);
+
+        if (storage_description == nullptr) {
+            // Error happened getting key properties
+            return {};
+        }
+
+        return std::make_unique<AndroidKeyPair>(algorithm, name, hardware_backed, storage_description);
     }
 
     std::unique_ptr<KeyPair> open_key(std::string_view name) {
@@ -185,8 +259,17 @@ namespace mpss::impl {
             algorithm = Algorithm::ecdsa_secp521r1_sha512;
         }
 
+        bool hardware_backed = false;
+        const char* storage_description = nullptr;
+        GetKeyProperties(name, hardware_backed, &storage_description);
+
+        if (storage_description == nullptr) {
+            // Error happened getting key properties
+            return {};
+        }
+
         // Finally, we can return the key
-        return std::make_unique<AndroidKeyPair>(algorithm, name);
+        return std::make_unique<AndroidKeyPair>(algorithm, name, hardware_backed, storage_description);
     }
 
     bool verify(gsl::span<const std::byte> hash, gsl::span<const std::byte> public_key, Algorithm algorithm, gsl::span<const std::byte> sig) {

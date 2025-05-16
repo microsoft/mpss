@@ -67,43 +67,84 @@ public class KeyManagement {
 
         kpg.initialize(builder.build());
 
-        KeyPair kp = kpg.generateKeyPair();
-        ShowKeyInfo(kp);
-
-        return kp;
+        return kpg.generateKeyPair();
     }
 
+    /**
+     * Get security level for the given Key pair
+     * @param keyName Name of the keypair
+     * @return Integer indicating security level of the key. Possible values are:
+     *         0: Unknown
+     *         1: Software
+     *         2: Unknown Secure
+     *         3: Trusted Environment
+     *         4: StrongBox
+     *         -1: Error getting security level
+     */
     @SuppressWarnings("deprecation")
-    private static void ShowKeyInfo(KeyPair kp) throws NoSuchAlgorithmException, NoSuchProviderException, InvalidKeySpecException {
-        PrivateKey pk = kp.getPrivate();
+    public static int GetKeySecurityLevel(String keyName) {
+        if (null == keyName) throw new IllegalArgumentException("keyName is null");
 
-        KeyFactory keyFactory = KeyFactory.getInstance(pk.getAlgorithm(), "AndroidKeyStore");
-        KeyInfo keyInfo = keyFactory.getKeySpec(pk, KeyInfo.class);
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            int level = keyInfo.getSecurityLevel();
-            switch(level) {
-                case KeyProperties.SECURITY_LEVEL_UNKNOWN:
-                    Log.i("MPSS", "Created key with security level Unknown");
-                    break;
-                case KeyProperties.SECURITY_LEVEL_UNKNOWN_SECURE:
-                    Log.i("MPSS", "Created key with security level UnknownSecure");
-                    break;
-                case KeyProperties.SECURITY_LEVEL_SOFTWARE:
-                    Log.i("MPSS", "Created key with security level Software");
-                    break;
-                case KeyProperties.SECURITY_LEVEL_TRUSTED_ENVIRONMENT:
-                    Log.i("MPSS", "Created key with security level TrustedEnvironment");
-                    break;
-                case KeyProperties.SECURITY_LEVEL_STRONGBOX:
-                    Log.i("MPSS", "Created key with security level StrongBox");
-                    break;
-                default:
-                    Log.i("MPSS", "Created key with an unknown security level");
-                    break;
+        try {
+            KeyPair kp = GetExistingKeyPair(keyName);
+            if (null == kp) {
+                String msg = "Could not get key: " + keyName;
+                Log.e("MPSS", msg);
+                SetError(msg);
+                return -1;
             }
-        } else {
-            Log.i("MPSS", "Is inside secure hardware: " + keyInfo.isInsideSecureHardware());
+
+            PrivateKey pk = kp.getPrivate();
+
+            KeyFactory keyFactory = KeyFactory.getInstance(pk.getAlgorithm(), "AndroidKeyStore");
+            KeyInfo keyInfo = keyFactory.getKeySpec(pk, KeyInfo.class);
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                int level = keyInfo.getSecurityLevel();
+                switch(level) {
+                    case KeyProperties.SECURITY_LEVEL_UNKNOWN:
+                        Log.i("MPSS", "Key has security level Unknown: " + keyName);
+                        return 0;
+                    case KeyProperties.SECURITY_LEVEL_UNKNOWN_SECURE:
+                        Log.i("MPSS", "Key has security level UnknownSecure: " + keyName);
+                        return 2;
+                    case KeyProperties.SECURITY_LEVEL_SOFTWARE:
+                        Log.i("MPSS", "Key has security level Software: " + keyName);
+                        return 1;
+                    case KeyProperties.SECURITY_LEVEL_TRUSTED_ENVIRONMENT:
+                        Log.i("MPSS", "Key has security level TrustedEnvironment: " + keyName);
+                        return 3;
+                    case KeyProperties.SECURITY_LEVEL_STRONGBOX:
+                        Log.i("MPSS", "Key has security level StrongBox: " + keyName);
+                        return 4;
+                    default:
+                        Log.i("MPSS", "Key has unknown security level: " + keyName);
+                        return 0;
+                }
+            } else {
+                if (keyInfo.isInsideSecureHardware()) {
+                    Log.i("MPSS", "Key is inside secure hardware: " + keyName);
+                    return 2; // Unknown secure
+                }
+
+                Log.i("MPSS", "Key is not inside secure hardware: " + keyName);
+                return 0; // Unknown
+            }
+        } catch (NoSuchProviderException e) {
+            String msg = "No such provider";
+            Log.e("MPSS", msg);
+            SetError(msg);
+            return -1;
+        } catch (NoSuchAlgorithmException e) {
+            String msg = "No such algorithm";
+            Log.e("MPSS", "msg");
+            SetError(msg);
+            return -1;
+        } catch (InvalidKeySpecException e) {
+            String msg = "Invalid Key Spec";
+            Log.e("MPSS", msg);
+            SetError(msg);
+            return -1;
         }
     }
 
