@@ -1,20 +1,13 @@
 // Copyright(c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#include "mpss-openssl/utils/memory.h"
-#include "mpss-openssl/utils/names.h"
-
 #include <algorithm>
 #include <cstddef>
+#include <gsl/narrow>
+#include <gsl/span>
 #include <iostream>
 #include <memory>
-#include <string>
-
 #include <mpss/mpss.h>
-
-#include <gsl/span>
-#include <gsl/narrow>
-
 #include <openssl/bn.h>
 #include <openssl/crypto.h>
 #include <openssl/ecdsa.h>
@@ -22,11 +15,17 @@
 #include <openssl/objects.h>
 #include <openssl/params.h>
 #include <openssl/x509v3.h>
+#include <string>
+#include "mpss-openssl/utils/memory.h"
+#include "mpss-openssl/utils/names.h"
 
 namespace mpss_openssl::utils {
     using namespace mpss;
 
-    std::size_t mpss_sign_as_der(const std::unique_ptr<KeyPair>& key_pair, gsl::span<const std::byte> hash_tbs, gsl::span<std::byte> out)
+    std::size_t mpss_sign_as_der(
+        const std::unique_ptr<KeyPair> &key_pair,
+        gsl::span<const std::byte> hash_tbs,
+        gsl::span<std::byte> out)
     {
         // Check for obvious problems.
         if (!key_pair || (key_pair->algorithm() == mpss::Algorithm::unsupported)) {
@@ -37,7 +36,7 @@ namespace mpss_openssl::utils {
 
         // If out is empty, we want to only return the required size.
         if (out.empty()) {
-            // This branch intentionally does not require hash_tbs to be non-empty! 
+            // This branch intentionally does not require hash_tbs to be non-empty!
             return signature_size;
         }
 
@@ -48,12 +47,15 @@ namespace mpss_openssl::utils {
         }
 
         // Compute the signature. The returned signature is ASN.1 DER encoded.
-		std::size_t written = key_pair->sign_hash(hash_tbs, out);
+        std::size_t written = key_pair->sign_hash(hash_tbs, out);
 
         return written;
     }
 
-    [[nodiscard]] bool verify_der(const std::unique_ptr<KeyPair>& key_pair, gsl::span<const std::byte> hash_tbs, gsl::span<const std::byte> der_sig)
+    [[nodiscard]] bool verify_der(
+        const std::unique_ptr<KeyPair> &key_pair,
+        gsl::span<const std::byte> hash_tbs,
+        gsl::span<const std::byte> der_sig)
     {
         // Check for obvious problems.
         if (!key_pair || hash_tbs.empty() || der_sig.empty()) {
@@ -69,40 +71,39 @@ namespace mpss_openssl::utils {
         return res;
     }
 
-    [[nodiscard]] common_byte_vector mpss_vk_params_to_spki(OSSL_LIB_CTX* libctx, const OSSL_PARAM* params) {
+    [[nodiscard]] common_byte_vector mpss_vk_params_to_spki(
+        OSSL_LIB_CTX *libctx, const OSSL_PARAM *params)
+    {
         if (!params) {
             return {};
         }
 
         // Check that we have both parameters.
-        const OSSL_PARAM* group = OSSL_PARAM_locate_const(params, OSSL_PKEY_PARAM_GROUP_NAME);
-        const OSSL_PARAM* pub = OSSL_PARAM_locate_const(params, OSSL_PKEY_PARAM_PUB_KEY);
+        const OSSL_PARAM *group = OSSL_PARAM_locate_const(params, OSSL_PKEY_PARAM_GROUP_NAME);
+        const OSSL_PARAM *pub = OSSL_PARAM_locate_const(params, OSSL_PKEY_PARAM_PUB_KEY);
         if (!group || !pub) {
             return {};
         }
 
         // Set up our own clone of the parameters to ensure nothing unexpected is passed
         // to the EVP_PKEY_fromdata function.
-        OSSL_PARAM params_clone[3]{
-            *group,
-            *pub,
-            OSSL_PARAM_END
-        };
+        OSSL_PARAM params_clone[3]{ *group, *pub, OSSL_PARAM_END };
 
         // Create a new EVP_PKEY from the parameters.
-        EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new_from_name(libctx, "EC", "provider=default");
+        EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_from_name(libctx, "EC", "provider=default");
         if (1 != EVP_PKEY_fromdata_init(ctx)) {
             EVP_PKEY_CTX_free(ctx);
             return {};
         }
-        EVP_PKEY* pkey = nullptr;
-        if (1 != EVP_PKEY_fromdata(ctx, &pkey, EVP_PKEY_KEY_PARAMETERS | EVP_PKEY_PUBLIC_KEY, params_clone)) {
+        EVP_PKEY *pkey = nullptr;
+        if (1 != EVP_PKEY_fromdata(
+                     ctx, &pkey, EVP_PKEY_KEY_PARAMETERS | EVP_PKEY_PUBLIC_KEY, params_clone)) {
             EVP_PKEY_CTX_free(ctx);
             return {};
         }
 
         // Now encode pkey to DER using i2d_PUBKEY.
-        unsigned char* der_buf = nullptr;
+        unsigned char *der_buf = nullptr;
         int der_size = i2d_PUBKEY(pkey, &der_buf);
         if (der_size <= 0) {
             EVP_PKEY_free(pkey);
@@ -111,7 +112,7 @@ namespace mpss_openssl::utils {
         common_byte_vector der_data(der_size);
         std::transform(der_buf, der_buf + der_size, der_data.begin(), [](unsigned char c) {
             return static_cast<std::byte>(c);
-            });
+        });
 
         // Clean up.
         OPENSSL_free(der_buf);
@@ -120,4 +121,4 @@ namespace mpss_openssl::utils {
 
         return der_data;
     }
-}
+} // namespace mpss_openssl::utils

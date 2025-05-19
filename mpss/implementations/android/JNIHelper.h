@@ -22,8 +22,14 @@ namespace mpss::impl {
         JNIEnvGuard();
         virtual ~JNIEnvGuard();
 
-        JNIEnv *operator->() { return env_; }
-        [[nodiscard]] JNIEnv *Env() const { return env_; }
+        JNIEnv *operator->()
+        {
+            return env_;
+        }
+        [[nodiscard]] JNIEnv *Env() const
+        {
+            return env_;
+        }
 
     private:
         JNIEnv *env_ = nullptr;
@@ -32,4 +38,4 @@ namespace mpss::impl {
         static bool attached_;
         static int ref_count_;
     };
-}
+} // namespace mpss::impl

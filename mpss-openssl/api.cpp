@@ -2,16 +2,15 @@
 // Licensed under the MIT license.
 
 #include "mpss-openssl/api.h"
-#include "mpss-openssl/provider/keymgmt.h"
-
 #include <iostream>
 #include <memory>
+#include <mpss/mpss.h>
 #include <optional>
 #include <string>
+#include "mpss-openssl/provider/keymgmt.h"
 
-#include <mpss/mpss.h>
-
-extern "C" bool mpss_delete_key(const char* key_name) {
+extern "C" bool mpss_delete_key(const char *key_name)
+{
     if (!key_name) {
         return false;
     }
@@ -29,11 +28,13 @@ extern "C" bool mpss_delete_key(const char* key_name) {
         return false;
     }
 
-    std::cout << "LOG: mpss_delete_key (mpss::delete_key " << key_name << " succeeded)" << std::endl;
+    std::cout << "LOG: mpss_delete_key (mpss::delete_key " << key_name << " succeeded)"
+              << std::endl;
     return true;
 }
 
-extern "C" bool mpss_is_valid_key(const char* key_name) {
+extern "C" bool mpss_is_valid_key(const char *key_name)
+{
     using namespace mpss_openssl::provider;
 
     if (!key_name) {

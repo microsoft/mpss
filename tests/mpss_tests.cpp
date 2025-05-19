@@ -2,40 +2,32 @@
 // Licensed under the MIT license.
 
 #include "mpss/mpss.h"
-
+#include <gtest/gtest.h>
 #include <iostream>
 #include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include <gtest/gtest.h>
-
-namespace mpss::tests
-{
+namespace mpss::tests {
     using namespace mpss;
     using std::operator""s;
     using std::operator""sv;
 
-    class MPSS : public ::testing::Test
-    {
+    class MPSS : public ::testing::Test {
     public:
         static void DeleteKey(std::string name)
         {
             for (int i = 0; i < 3; i++) {
                 // Check if key exists, delete if it does
                 std::unique_ptr<mpss::KeyPair> handle = mpss::KeyPair::Open(name);
-                if (handle != nullptr)
-                {
+                if (handle != nullptr) {
                     bool deleted = handle->delete_key();
-                    if (!deleted)
-                    {
+                    if (!deleted) {
                         std::cout << "Key could not be deleted: " << mpss::get_error() << std::endl;
                     }
                     ASSERT_TRUE(deleted);
-                }
-                else
-                {
+                } else {
                     std::cout << "Key does not exist: " << mpss::get_error() << std::endl;
                 }
             }
@@ -44,14 +36,15 @@ namespace mpss::tests
         static std::unique_ptr<mpss::KeyPair> CreateKey(std::string name, Algorithm algorithm)
         {
             // Create a key pair
-            std::unique_ptr<mpss::KeyPair> handle = mpss::KeyPair::Create(std::move(name), algorithm);
-            if (handle == nullptr)
-            {
+            std::unique_ptr<mpss::KeyPair> handle =
+                mpss::KeyPair::Create(std::move(name), algorithm);
+            if (handle == nullptr) {
                 std::cout << "Key could not be created: " << mpss::get_error() << std::endl;
-            }
-            else
-            {
-                std::cout << "Key " << name << " created in " << handle->key_info().storage_description << ". Hardware backed: " << handle->key_info().is_hardware_backed << std::endl;
+            } else {
+                std::cout << "Key " << name << " created in "
+                          << handle->key_info().storage_description
+                          << ". Hardware backed: " << handle->key_info().is_hardware_backed
+                          << std::endl;
             }
             return handle;
         }
@@ -81,8 +74,7 @@ namespace mpss::tests
         sig_size = handle->sign_hash(hash, {});
         std::vector<std::byte> signature(sig_size);
         std::size_t written = handle->sign_hash(hash, signature);
-        if (0 == written)
-        {
+        if (0 == written) {
             std::cout << "Data could not be signed: " << mpss::get_error() << std::endl;
         }
         ASSERT_GE(sig_size, written);
@@ -91,8 +83,7 @@ namespace mpss::tests
         signature.resize(written);
 
         bool verified = handle->verify(hash, signature);
-        if (!verified)
-        {
+        if (!verified) {
             std::cout << "Data could not be verified: " << mpss::get_error() << std::endl;
         }
         ASSERT_TRUE(verified);
@@ -173,8 +164,7 @@ namespace mpss::tests
         std::size_t vk_size = handle->extract_key({});
         std::vector<std::byte> vk(vk_size);
         std::size_t read = handle->extract_key(vk);
-        if (0 == read)
-        {
+        if (0 == read) {
             std::cout << "Key could not be retrieved: " << mpss::get_error() << std::endl;
         }
         std::cout << "VK size: " << vk_size << " read: " << read << std::endl;
@@ -202,8 +192,7 @@ namespace mpss::tests
         std::size_t vk_size = handle->extract_key({});
         std::vector<std::byte> vk(vk_size - 1);
         std::size_t read = handle->extract_key(vk);
-        if (0 == read)
-        {
+        if (0 == read) {
             std::cout << "Key could not be retrieved: " << mpss::get_error() << std::endl;
         }
         ASSERT_EQ(0, read);
@@ -245,7 +234,8 @@ namespace mpss::tests
         GetKeySmallBuffer(Algorithm::ecdsa_secp521r1_sha512, "521");
     }
 
-    void VerifyStandaloneSignature(Algorithm algorithm, std::string_view suffix, std::size_t hash_size)
+    void VerifyStandaloneSignature(
+        Algorithm algorithm, std::string_view suffix, std::size_t hash_size)
     {
         std::string key_name = "test_key_4_"s + suffix.data();
         // Delete key if it exists
@@ -260,8 +250,7 @@ namespace mpss::tests
         std::size_t sig_size = handle->sign_hash(hash, {});
         std::vector<std::byte> signature(sig_size);
         std::size_t written = handle->sign_hash(hash, signature);
-        if (0 == written)
-        {
+        if (0 == written) {
             std::cout << "Data could not be signed: " << mpss::get_error() << std::endl;
         }
         ASSERT_GE(sig_size, written);
@@ -271,8 +260,7 @@ namespace mpss::tests
         std::size_t vk_size = handle->extract_key({});
         std::vector<std::byte> vk(vk_size);
         std::size_t read = handle->extract_key(vk);
-        if (0 == read)
-        {
+        if (0 == read) {
             std::cout << "Key could not be retrieved: " << mpss::get_error() << std::endl;
         }
         std::cout << "VK size: " << vk_size << std::endl;
@@ -286,8 +274,7 @@ namespace mpss::tests
 
         // The key should not exist anymore, so try to verify with the public key
         bool verified = mpss::verify(hash, vk, algorithm, signature);
-        if (!verified)
-        {
+        if (!verified) {
             std::cout << "Data could not be verified: " << mpss::get_error() << std::endl;
         }
         ASSERT_TRUE(verified);
@@ -323,4 +310,4 @@ namespace mpss::tests
             std::cout << "Algorithm ecdsa_secp521r1_sha512 supported: " << supported << std::endl;
         });
     }
-}
+} // namespace mpss::tests

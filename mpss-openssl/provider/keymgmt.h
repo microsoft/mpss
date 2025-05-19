@@ -3,17 +3,14 @@
 
 #pragma once
 
-#include "mpss-openssl/utils/utils.h"
-
-#include <mpss/mpss.h>
-
 #include <memory>
+#include <mpss/mpss.h>
+#include <openssl/core.h>
+#include <openssl/types.h>
 #include <optional>
 #include <string>
 #include <string_view>
-
-#include <openssl/core.h>
-#include <openssl/types.h>
+#include "mpss-openssl/utils/utils.h"
 
 namespace mpss_openssl::provider {
     struct mpss_key {
@@ -25,7 +22,7 @@ namespace mpss_openssl::provider {
         std::optional<std::string> group_name = std::nullopt;
         std::optional<std::string> hash_name = std::nullopt;
 
-        mpss_key(std::string_view key_name, std::optional<std::string>& mpss_algorithm);
+        mpss_key(std::string_view key_name, std::optional<std::string> &mpss_algorithm);
 
         ~mpss_key();
 
@@ -34,5 +31,5 @@ namespace mpss_openssl::provider {
 
     extern const OSSL_ALGORITHM mpss_keymgmt_algorithms[];
 
-    int mpss_keymgmt_export(void* keydata, int selection, OSSL_CALLBACK* param_cb, void* cbarg);
-}
+    int mpss_keymgmt_export(void *keydata, int selection, OSSL_CALLBACK *param_cb, void *cbarg);
+} // namespace mpss_openssl::provider

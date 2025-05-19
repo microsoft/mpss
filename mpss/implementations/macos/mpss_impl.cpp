@@ -2,52 +2,47 @@
 // Licensed under the MIT license.
 
 #include "mpss/algorithm.h"
-#include "mpss/implementations/mpss_impl.h"
 #include "mpss/utils/scope_guard.h"
 #include "mpss/utils/utilities.h"
+#include "mpss/implementations/mpss_impl.h"
+#include "mac_api_wrapper.h"
 #include "mac_keypair.h"
 #include "mac_se_keypair.h"
-#include "mac_api_wrapper.h"
 #include "mac_se_wrapper.h"
 #include "mac_utils.h"
 
-namespace mpss
-{
-    namespace impl
-    {
+namespace mpss {
+    namespace impl {
         std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm)
         {
             std::string key_name(name);
-            if (key_name.empty())
-            {
+            if (key_name.empty()) {
                 mpss::utils::set_error("Key name cannot be empty.");
                 return {};
             }
 
             // Fail if the key already exists
             std::unique_ptr<KeyPair> existing_key = open_key(name);
-            if (existing_key)
-            {
+            if (existing_key) {
                 mpss::utils::set_error("Key already exists.");
                 return {};
             }
 
-            if (MPSS_SE_SecureEnclaveIsSupported() && algorithm == Algorithm::ecdsa_secp256r1_sha256)
-            {
+            if (MPSS_SE_SecureEnclaveIsSupported() &&
+                algorithm == Algorithm::ecdsa_secp256r1_sha256) {
                 // Secure Enclave only supports ECDSA P256
-                if (MPSS_SE_CreateKey(key_name.c_str()))
-                {
+                if (MPSS_SE_CreateKey(key_name.c_str())) {
                     return std::make_unique<MacSEKeyPair>(name, algorithm);
                 }
 
                 std::stringstream ss;
-                ss << "Failed to create key in Secure Enclave: " << mpss::impl::utils::MPSS_SE_GetLastError();
+                ss << "Failed to create key in Secure Enclave: "
+                   << mpss::impl::utils::MPSS_SE_GetLastError();
                 mpss::utils::set_error(ss.str());
                 return {};
             }
 
-            if (MPSS_CreateKey(key_name.c_str(), static_cast<int>(algorithm)))
-            {
+            if (MPSS_CreateKey(key_name.c_str(), static_cast<int>(algorithm))) {
                 return std::make_unique<MacKeyPair>(name, algorithm);
             }
 
@@ -60,24 +55,20 @@ namespace mpss
         std::unique_ptr<KeyPair> open_key(std::string_view name)
         {
             std::string key_name(name);
-            if (key_name.empty())
-            {
+            if (key_name.empty()) {
                 mpss::utils::set_error("Key name cannot be empty.");
                 return {};
             }
 
             // Try secure enclave first if available
-            if (MPSS_SE_SecureEnclaveIsSupported() && MPSS_SE_OpenExistingKey(key_name.c_str()))
-            {
+            if (MPSS_SE_SecureEnclaveIsSupported() && MPSS_SE_OpenExistingKey(key_name.c_str())) {
                 return std::make_unique<MacSEKeyPair>(name, Algorithm::ecdsa_secp256r1_sha256);
             }
 
             int bitSize = 0;
-            if (MPSS_OpenExistingKey(name.data(), &bitSize))
-            {
+            if (MPSS_OpenExistingKey(name.data(), &bitSize)) {
                 Algorithm algorithm = Algorithm::unsupported;
-                switch (bitSize)
-                {
+                switch (bitSize) {
                 case 256:
                     algorithm = Algorithm::ecdsa_secp256r1_sha256;
                     break;
@@ -98,16 +89,18 @@ namespace mpss
             return {};
         }
 
-        bool verify(gsl::span<const std::byte> hash, gsl::span<const std::byte> public_key, Algorithm algorithm, gsl::span<const std::byte> sig)
+        bool verify(
+            gsl::span<const std::byte> hash,
+            gsl::span<const std::byte> public_key,
+            Algorithm algorithm,
+            gsl::span<const std::byte> sig)
         {
-            if (hash.empty() || public_key.empty() || sig.empty())
-            {
+            if (hash.empty() || public_key.empty() || sig.empty()) {
                 mpss::utils::set_error("Hash, public key, and signature cannot be empty.");
                 return false;
             }
 
-            if (algorithm == Algorithm::unsupported)
-            {
+            if (algorithm == Algorithm::unsupported) {
                 mpss::utils::set_error("Unsupported algorithm.");
                 return false;
             }
@@ -118,8 +111,8 @@ namespace mpss
                 return false;
             }
 
-            if (MPSS_SE_SecureEnclaveIsSupported() && algorithm == Algorithm::ecdsa_secp256r1_sha256)
-            {
+            if (MPSS_SE_SecureEnclaveIsSupported() &&
+                algorithm == Algorithm::ecdsa_secp256r1_sha256) {
                 // Secure Enclave only supports ECDSA P256
                 bool result = MPSS_SE_VerifyStandaloneSignature(
                     reinterpret_cast<const std::uint8_t *>(public_key.data()),
@@ -128,10 +121,10 @@ namespace mpss
                     hash.size(),
                     reinterpret_cast<const std::uint8_t *>(sig.data()),
                     sig.size());
-                if (!result)
-                {
+                if (!result) {
                     std::stringstream ss;
-                    ss << "Failed to verify standalone signature: " << mpss::impl::utils::MPSS_SE_GetLastError();
+                    ss << "Failed to verify standalone signature: "
+                       << mpss::impl::utils::MPSS_SE_GetLastError();
                     mpss::utils::set_error(ss.str());
                 }
 
@@ -146,8 +139,7 @@ namespace mpss
                 public_key.size(),
                 reinterpret_cast<const std::uint8_t *>(sig.data()),
                 sig.size());
-            if (!result)
-            {
+            if (!result) {
                 std::stringstream ss;
                 ss << "Failed to verify standalone signature: " << MPSS_GetLastError();
                 mpss::utils::set_error(ss.str());
@@ -155,5 +147,5 @@ namespace mpss
 
             return result;
         }
-    }
-}
+    } // namespace impl
+} // namespace mpss

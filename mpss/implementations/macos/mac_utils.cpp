@@ -4,8 +4,7 @@
 #include "mac_utils.h"
 #include "mac_se_wrapper.h"
 
-namespace mpss::impl::utils
-{
+namespace mpss::impl::utils {
     std::string MPSS_SE_GetLastError()
     {
         std::size_t errorSize = ::MPSS_SE_GetLastError(nullptr, 0);
@@ -13,4 +12,4 @@ namespace mpss::impl::utils
         ::MPSS_SE_GetLastError(error.data(), errorSize);
         return error;
     }
-}
+} // namespace mpss::impl::utils

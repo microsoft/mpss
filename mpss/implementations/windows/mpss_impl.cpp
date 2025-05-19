@@ -6,19 +6,16 @@
 #include "mpss/implementations/mpss_impl.h"
 #include "mpss/implementations/windows/win_keypair.h"
 #include "mpss/implementations/windows/win_utils.h"
-
-#include <sstream>
-#include <utility>
-#include <string>
-#include <locale>
+#include <Windows.h>
 #include <codecvt>
 #include <cwchar>
-
-#include <Windows.h>
-#include <ncrypt.h>
-
-#include <gsl/span>
 #include <gsl/narrow>
+#include <gsl/span>
+#include <locale>
+#include <ncrypt.h>
+#include <sstream>
+#include <string>
+#include <utility>
 
 namespace {
     // Legacy key spec. We only store signing keys.
@@ -59,10 +56,12 @@ namespace {
 
         LPCWSTR provider_name_to_use = fallback ? fallback_provider_name : provider_name;
 
-        SECURITY_STATUS status = ::NCryptOpenStorageProvider(&provider_handle, provider_name_to_use, flags);
+        SECURITY_STATUS status =
+            ::NCryptOpenStorageProvider(&provider_handle, provider_name_to_use, flags);
         if (ERROR_SUCCESS != status) {
             std::stringstream ss;
-            ss << "NCryptOpenStorageProvider failed with error code " << mpss::utils::to_hex(status);
+            ss << "NCryptOpenStorageProvider failed with error code "
+               << mpss::utils::to_hex(status);
             mpss::utils::set_error(ss.str());
             return 0;
         }
@@ -86,7 +85,8 @@ namespace {
         NCRYPT_KEY_HANDLE key_handle = 0;
         std::wstring wname(name.begin(), name.end());
 
-        SECURITY_STATUS status = ::NCryptOpenKey(provider_handle, &key_handle, wname.c_str(), key_spec, key_open_mode);
+        SECURITY_STATUS status =
+            ::NCryptOpenKey(provider_handle, &key_handle, wname.c_str(), key_spec, key_open_mode);
         if (ERROR_SUCCESS != status) {
             std::stringstream ss;
             ss << "NCryptOpenKey failed with error code " << mpss::utils::to_hex(status);
@@ -97,7 +97,7 @@ namespace {
         return key_handle;
     }
 
-    NCRYPT_KEY_HANDLE GetKey(std::string_view name, const char** storage_description)
+    NCRYPT_KEY_HANDLE GetKey(std::string_view name, const char **storage_description)
     {
         *storage_description = nullptr;
 
@@ -128,7 +128,8 @@ namespace {
 
     NCRYPT_KEY_HANDLE CreateKey(std::string_view name, mpss::Algorithm algorithm, bool fallback)
     {
-        mpss::impl::crypto_params const* const crypto = mpss::impl::utils::get_crypto_params(algorithm);
+        mpss::impl::crypto_params const *const crypto =
+            mpss::impl::utils::get_crypto_params(algorithm);
         if (!crypto) {
             mpss::utils::set_error("Unsupported algorithm.");
             return 0;
@@ -183,7 +184,8 @@ namespace {
             /* dwFlags */ 0);
         if (ERROR_SUCCESS != status) {
             std::stringstream ss;
-            ss << "NCryptGetProperty (algorithm) failed with error code " << mpss::utils::to_hex(status);
+            ss << "NCryptGetProperty (algorithm) failed with error code "
+               << mpss::utils::to_hex(status);
             mpss::utils::set_error(ss.str());
             return mpss::Algorithm::unsupported;
         }
@@ -208,16 +210,21 @@ namespace {
             return mpss::Algorithm::unsupported;
         }
 
-        if (algorithm_name.compare(/* offset */ 0, std::wcslen(NCRYPT_ECDSA_P256_ALGORITHM), NCRYPT_ECDSA_P256_ALGORITHM) == 0) {
+        if (algorithm_name.compare(/* offset */ 0,
+                                   std::wcslen(NCRYPT_ECDSA_P256_ALGORITHM),
+                                   NCRYPT_ECDSA_P256_ALGORITHM) == 0) {
             return mpss::Algorithm::ecdsa_secp256r1_sha256;
-        }
-        else if (algorithm_name.compare(/* offset */ 0, std::wcslen(NCRYPT_ECDSA_P384_ALGORITHM), NCRYPT_ECDSA_P384_ALGORITHM) == 0) {
+        } else if (
+            algorithm_name.compare(/* offset */ 0,
+                                   std::wcslen(NCRYPT_ECDSA_P384_ALGORITHM),
+                                   NCRYPT_ECDSA_P384_ALGORITHM) == 0) {
             return mpss::Algorithm::ecdsa_secp384r1_sha384;
-        }
-        else if (algorithm_name.compare(/* offset */ 0, std::wcslen(NCRYPT_ECDSA_P521_ALGORITHM), NCRYPT_ECDSA_P521_ALGORITHM) == 0) {
+        } else if (
+            algorithm_name.compare(/* offset */ 0,
+                                   std::wcslen(NCRYPT_ECDSA_P521_ALGORITHM),
+                                   NCRYPT_ECDSA_P521_ALGORITHM) == 0) {
             return mpss::Algorithm::ecdsa_secp521r1_sha512;
-        }
-        else {
+        } else {
             std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
             std::string alg_name = converter.to_bytes(algorithm_name);
             std::stringstream ss;
@@ -241,7 +248,8 @@ namespace {
             /* dwFlags */ 0);
         if (ERROR_SUCCESS != status) {
             std::stringstream ss;
-            ss << "NCryptGetProperty (length) failed with error code " << mpss::utils::to_hex(status);
+            ss << "NCryptGetProperty (length) failed with error code "
+               << mpss::utils::to_hex(status);
             mpss::utils::set_error(ss.str());
             return 0;
         }
@@ -249,7 +257,8 @@ namespace {
         return static_cast<std::size_t>(dwKeyLength);
     }
 
-    mpss::Algorithm GetAlgorithmFromKeyBits(std::size_t key_bits) {
+    mpss::Algorithm GetAlgorithmFromKeyBits(std::size_t key_bits)
+    {
         switch (key_bits) {
         case 256:
             return mpss::Algorithm::ecdsa_secp256r1_sha256;
@@ -261,10 +270,9 @@ namespace {
             return mpss::Algorithm::unsupported;
         }
     }
-}
+} // namespace
 
-namespace mpss::impl
-{
+namespace mpss::impl {
     std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm)
     {
         // Fail if the key already exists.
@@ -279,7 +287,8 @@ namespace mpss::impl
         // Try to create the key using the primary provider.
         NCRYPT_KEY_HANDLE key_handle = CreateKey(name, algorithm, /* fallback */ false);
         if (key_handle) {
-            return std::make_unique<WindowsKeyPair>(algorithm, key_handle, /* hardware_backed */ true, provider_description);
+            return std::make_unique<WindowsKeyPair>(
+                algorithm, key_handle, /* hardware_backed */ true, provider_description);
         }
 
         std::string error = mpss::utils::get_error();
@@ -287,7 +296,8 @@ namespace mpss::impl
         // Try to create the key using the fallback provider.
         key_handle = CreateKey(name, algorithm, /* fallback */ true);
         if (key_handle) {
-            return std::make_unique<WindowsKeyPair>(algorithm, key_handle, /* hardware_backed */ true, fallback_provider_description);
+            return std::make_unique<WindowsKeyPair>(
+                algorithm, key_handle, /* hardware_backed */ true, fallback_provider_description);
         }
 
         // If we get here, we failed to create the key in both providers.
@@ -304,7 +314,7 @@ namespace mpss::impl
     {
         Algorithm algorithm;
 
-        const char* storage_description = nullptr;
+        const char *storage_description = nullptr;
         NCRYPT_KEY_HANDLE key_handle = GetKey(name, &storage_description);
         if (!key_handle) {
             return nullptr;
@@ -327,10 +337,15 @@ namespace mpss::impl
             }
         }
 
-        return std::make_unique<WindowsKeyPair>(algorithm, key_handle, /* hardware_backed */ true, storage_description);
+        return std::make_unique<WindowsKeyPair>(
+            algorithm, key_handle, /* hardware_backed */ true, storage_description);
     }
 
-    bool verify(gsl::span<const std::byte> hash, gsl::span<const std::byte> public_key, Algorithm algorithm, gsl::span<const std::byte> sig)
+    bool verify(
+        gsl::span<const std::byte> hash,
+        gsl::span<const std::byte> public_key,
+        Algorithm algorithm,
+        gsl::span<const std::byte> sig)
     {
         // Check for obvious problems.
         if (hash.empty() || public_key.empty() || sig.empty()) {
@@ -352,9 +367,9 @@ namespace mpss::impl
 
         // Get the algorithm info.
         AlgorithmInfo info = get_algorithm_info(algorithm);
-        
+
         // Get crypto parameters
-        crypto_params const* const crypto = utils::get_crypto_params(algorithm);
+        crypto_params const *const crypto = utils::get_crypto_params(algorithm);
         if (!crypto) {
             mpss::utils::set_error("Unsupported algorithm.");
             return false;
@@ -370,9 +385,10 @@ namespace mpss::impl
         SCOPE_GUARD({
             // Zero out the key blob buffer.
             ::SecureZeroMemory(key_blob_buffer.get(), pk_blob_size);
-            });
+        });
 
-        crypto_params::key_blob_t* key_blob = reinterpret_cast<crypto_params::key_blob_t*>(key_blob_buffer.get());
+        crypto_params::key_blob_t *key_blob =
+            reinterpret_cast<crypto_params::key_blob_t *>(key_blob_buffer.get());
         key_blob->dwMagic = crypto->public_key_magic();
         // Field size, apparently
         key_blob->cbKey = mpss::utils::narrow_or_error<ULONG>((info.key_bits + 7) / 8);
@@ -381,7 +397,11 @@ namespace mpss::impl
         }
 
         // Copy public key data to the blob
-        std::transform(public_key.begin() + 1, public_key.end(), key_blob_buffer.get() + sizeof(crypto_params::key_blob_t), [](auto in) { return static_cast<BYTE>(in); });
+        std::transform(
+            public_key.begin() + 1,
+            public_key.end(),
+            key_blob_buffer.get() + sizeof(crypto_params::key_blob_t),
+            [](auto in) { return static_cast<BYTE>(in); });
 
         NCRYPT_PROV_HANDLE provider = GetProvider();
         if (!provider) {
@@ -425,7 +445,7 @@ namespace mpss::impl
         SCOPE_GUARD({
             // Zero out the signature buffer.
             ::SecureZeroMemory(raw_sig.data(), raw_sig.size());
-            });
+        });
         std::size_t written = mpss::impl::utils::decode_raw_signature(sig, algorithm, raw_sig);
 
         DWORD hash_size = mpss::utils::narrow_or_error<DWORD>(hash.size());
@@ -436,7 +456,7 @@ namespace mpss::impl
         status = ::NCryptVerifySignature(
             key_handle,
             /* pPaddingInfo */ nullptr,
-            reinterpret_cast<PBYTE>(const_cast<std::byte*>(hash.data())),
+            reinterpret_cast<PBYTE>(const_cast<std::byte *>(hash.data())),
             hash_size,
             reinterpret_cast<PBYTE>(raw_sig.data()),
             raw_sig.size(),
@@ -450,4 +470,4 @@ namespace mpss::impl
 
         return true;
     }
-}
+} // namespace mpss::impl

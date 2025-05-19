@@ -4,13 +4,13 @@
 #pragma once
 
 #include <array>
-#include <utility>
 #include <string_view>
+#include <utility>
 
 namespace mpss {
     /**
-    * @brief The supported signature algorithms.
-    */
+     * @brief The supported signature algorithms.
+     */
     enum class Algorithm {
         unsupported,
         ecdsa_secp256r1_sha256,
@@ -19,8 +19,8 @@ namespace mpss {
     };
 
     /**
-    * @brief Security info for an algorithm.
-    */
+     * @brief Security info for an algorithm.
+     */
     struct AlgorithmInfo {
         const std::size_t key_bits;
         const std::size_t security_bits;
@@ -29,20 +29,27 @@ namespace mpss {
     };
 
     /**
-    * @brief A map describing @ref AlgorithmInfo for each supported algorithm.
-    */
+     * @brief A map describing @ref AlgorithmInfo for each supported algorithm.
+     */
     constexpr std::array<std::pair<Algorithm, AlgorithmInfo>, 4> algorithm_info = {
-        std::make_pair(Algorithm::unsupported, AlgorithmInfo {0, 0, 0, "unsupported" }),
-        std::make_pair(Algorithm::ecdsa_secp256r1_sha256, AlgorithmInfo { 256, 128, 256, "ecdsa_secp256r1_sha256" }),
-        std::make_pair(Algorithm::ecdsa_secp384r1_sha384, AlgorithmInfo { 384, 192, 384, "ecdsa_secp384r1_sha384" }),
-        std::make_pair(Algorithm::ecdsa_secp521r1_sha512, AlgorithmInfo { 521, 256, 512, "ecdsa_secp521r1_sha512" })
+        std::make_pair(Algorithm::unsupported, AlgorithmInfo{ 0, 0, 0, "unsupported" }),
+        std::make_pair(
+            Algorithm::ecdsa_secp256r1_sha256,
+            AlgorithmInfo{ 256, 128, 256, "ecdsa_secp256r1_sha256" }),
+        std::make_pair(
+            Algorithm::ecdsa_secp384r1_sha384,
+            AlgorithmInfo{ 384, 192, 384, "ecdsa_secp384r1_sha384" }),
+        std::make_pair(
+            Algorithm::ecdsa_secp521r1_sha512,
+            AlgorithmInfo{ 521, 256, 512, "ecdsa_secp521r1_sha512" })
     };
 
     /**
-    * @brief Retrieve the @ref AlgorithmInfo for a given @ref Algorithm.
-    */
-    inline AlgorithmInfo get_algorithm_info(Algorithm algorithm) {
-        for (const auto& [alg, info] : algorithm_info) {
+     * @brief Retrieve the @ref AlgorithmInfo for a given @ref Algorithm.
+     */
+    inline AlgorithmInfo get_algorithm_info(Algorithm algorithm)
+    {
+        for (const auto &[alg, info] : algorithm_info) {
             if (alg == algorithm) {
                 return info;
             }
@@ -51,14 +58,15 @@ namespace mpss {
     }
 
     /**
-    * @brief Try to find an algorithm corresponding to a given string.
-    */
-    inline Algorithm algorithm_from_str(std::string_view type_str) {
-        for (const auto& [alg, info] : algorithm_info) {
+     * @brief Try to find an algorithm corresponding to a given string.
+     */
+    inline Algorithm algorithm_from_str(std::string_view type_str)
+    {
+        for (const auto &[alg, info] : algorithm_info) {
             if (info.type_str == type_str) {
                 return alg;
             }
         }
         return Algorithm::unsupported;
     }
-}
+} // namespace mpss

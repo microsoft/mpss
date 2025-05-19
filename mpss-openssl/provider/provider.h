@@ -7,7 +7,7 @@
 
 namespace mpss_openssl::provider {
     struct mpss_provider_ctx {
-        const OSSL_CORE_HANDLE* handle;
-        OSSL_LIB_CTX* libctx;
+        const OSSL_CORE_HANDLE *handle;
+        OSSL_LIB_CTX *libctx;
     };
-}
+} // namespace mpss_openssl::provider

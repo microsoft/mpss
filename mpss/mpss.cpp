@@ -2,14 +2,12 @@
 // Licensed under the MIT license.
 
 #include "mpss/mpss.h"
-#include "mpss/implementations/mpss_impl.h"
 #include "mpss/utils/utilities.h"
-
+#include "mpss/implementations/mpss_impl.h"
 #include <iostream>
 #include <stdexcept>
 
-namespace mpss
-{
+namespace mpss {
     std::unique_ptr<KeyPair> KeyPair::Create(std::string_view name, Algorithm algorithm)
     {
         return impl::create_key(name, algorithm);
@@ -23,8 +21,7 @@ namespace mpss
     bool is_algorithm_supported(Algorithm algorithm)
     {
         AlgorithmInfo info = get_algorithm_info(algorithm);
-        if (0 == info.key_bits)
-        {
+        if (0 == info.key_bits) {
             return false;
         }
 
@@ -34,19 +31,16 @@ namespace mpss
 
         // Could we even create a key?
         bool key_created = (nullptr != key);
-        if (!key_created)
-        {
+        if (!key_created) {
             return false;
         }
 
         // Create some data and sign.
         std::vector<std::byte> hash(info.hash_bits / 8, static_cast<std::byte>('a'));
         std::size_t sig_size = key->sign_hash(hash, {});
-        if (0 == sig_size)
-        {
+        if (0 == sig_size) {
             bool key_deleted = key->delete_key();
-            if (!key_deleted)
-            {
+            if (!key_deleted) {
                 throw std::runtime_error("Test key deletion failed");
             }
             return false;
@@ -54,11 +48,9 @@ namespace mpss
 
         std::vector<std::byte> sig(sig_size);
         std::size_t written = key->sign_hash(hash, sig);
-        if (written != sig_size)
-        {
+        if (written != sig_size) {
             bool key_deleted = key->delete_key();
-            if (!key_deleted)
-            {
+            if (!key_deleted) {
                 throw std::runtime_error("Test key deletion failed");
             }
             return false;
@@ -70,7 +62,11 @@ namespace mpss
         return key_deleted;
     }
 
-    bool verify(gsl::span<const std::byte> hash, gsl::span<const std::byte> public_key, Algorithm algorithm, gsl::span<const std::byte> sig)
+    bool verify(
+        gsl::span<const std::byte> hash,
+        gsl::span<const std::byte> public_key,
+        Algorithm algorithm,
+        gsl::span<const std::byte> sig)
     {
         return impl::verify(hash, public_key, algorithm, sig);
     }
@@ -90,11 +86,11 @@ namespace mpss
         return utils::get_public_key_size(algorithm());
     }
 
-    KeyPair::KeyPair(Algorithm algorithm, bool hardware_backed, const char* storage_description)
-        : algorithm_(algorithm), info_(get_algorithm_info(algorithm)), key_info_(hardware_backed, storage_description)
+    KeyPair::KeyPair(Algorithm algorithm, bool hardware_backed, const char *storage_description)
+        : algorithm_(algorithm), info_(get_algorithm_info(algorithm)),
+          key_info_(hardware_backed, storage_description)
     {
-        if (0 == info_.key_bits)
-        {
+        if (0 == info_.key_bits) {
             throw std::invalid_argument("Unsupported algorithm");
         }
     }

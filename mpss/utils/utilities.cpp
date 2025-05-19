@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 #include "mpss/utils/utilities.h"
-
 #include <iomanip>
 #include <sstream>
 #include <string>
@@ -40,7 +39,7 @@ namespace mpss::utils {
 
         // The maximum signature length is the size of the signature
         // plus the maximum size of the ASN.1 DER encoding.
-        // 
+        //
         // ASN.1 DER encoded signatures contain:
         // 1 byte to declare a sequence
         // 2 bytes for the length of the sequence (can be 1 or 2 bytes, depending on the length)
@@ -50,7 +49,7 @@ namespace mpss::utils {
         // 1 byte for the length of the second integer
         // 1 additional byte if the highest order bit of the first byte of 'r' is 1
         // 1 additional byte if the highest order bit of the first byte of 's' is 1
-        // 
+        //
         // So in total, we have a maximum overhead of 9 bytes.
         std::size_t max_sig_size = ((info.key_bits + 7) / 8) * 2 + 9;
         return max_sig_size;
@@ -71,10 +70,9 @@ namespace mpss::utils {
 
     std::string random_string(std::size_t length)
     {
-        static const char chars[] =
-            "0123456789"
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-            "abcdefghijklmnopqrstuvwxyz";
+        static const char chars[] = "0123456789"
+                                    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                                    "abcdefghijklmnopqrstuvwxyz";
         std::random_device rd;
         std::string result;
         result.reserve(length);
@@ -96,4 +94,4 @@ namespace mpss::utils {
         std::size_t hash_size = hash.size();
         return hash_size == hash_length;
     }
-}
+} // namespace mpss::utils

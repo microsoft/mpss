@@ -1,23 +1,20 @@
 // Copyright(c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+#include "mpss/utils/utilities.h"
 #include "mac_se_keypair.h"
 #include "mac_se_wrapper.h"
 #include "mac_utils.h"
-#include "mpss/utils/utilities.h"
 
 namespace {
-    constexpr const char* storage_description = "Secure Enclave";
+    constexpr const char *storage_description = "Secure Enclave";
 }
 
-namespace mpss
-{
-    namespace impl
-    {
+namespace mpss {
+    namespace impl {
         MacSEKeyPair::MacSEKeyPair(std::string_view name, Algorithm algorithm)
-            : MacKeyPair(name, algorithm, /* hardware_backed */ true, storage_description) 
-        {
-        }
+            : MacKeyPair(name, algorithm, /* hardware_backed */ true, storage_description)
+        {}
 
         MacSEKeyPair::~MacSEKeyPair()
         {
@@ -30,16 +27,17 @@ namespace mpss
             return true;
         }
 
-        std::size_t MacSEKeyPair::do_sign_hash(gsl::span<const std::byte> hash, gsl::span<std::byte> sig) const
+        std::size_t MacSEKeyPair::do_sign_hash(
+            gsl::span<const std::byte> hash, gsl::span<std::byte> sig) const
         {
             std::size_t signature_size = sig.size();
 
-            if (!MPSS_SE_Sign(name().c_str(),
-                              reinterpret_cast<const std::uint8_t *>(hash.data()),
-                              hash.size(),
-                              reinterpret_cast<std::uint8_t *>(sig.data()),
-                              &signature_size))
-            {
+            if (!MPSS_SE_Sign(
+                    name().c_str(),
+                    reinterpret_cast<const std::uint8_t *>(hash.data()),
+                    hash.size(),
+                    reinterpret_cast<std::uint8_t *>(sig.data()),
+                    &signature_size)) {
                 std::stringstream ss;
                 ss << "Failed to sign hash: " << mpss::impl::utils::MPSS_SE_GetLastError();
                 mpss::utils::set_error(ss.str());
@@ -49,7 +47,8 @@ namespace mpss
             return signature_size;
         }
 
-        bool MacSEKeyPair::do_verify(gsl::span<const std::byte> hash, gsl::span<const std::byte> sig) const
+        bool MacSEKeyPair::do_verify(
+            gsl::span<const std::byte> hash, gsl::span<const std::byte> sig) const
         {
             bool result = MPSS_SE_VerifySignature(
                 name().c_str(),
@@ -57,8 +56,7 @@ namespace mpss
                 hash.size(),
                 reinterpret_cast<const std::uint8_t *>(sig.data()),
                 sig.size());
-            if (!result)
-            {
+            if (!result) {
                 std::stringstream ss;
                 ss << "Failed to verify signature: " << mpss::impl::utils::MPSS_SE_GetLastError();
                 mpss::utils::set_error(ss.str());
@@ -72,13 +70,11 @@ namespace mpss
             std::size_t pk_size = public_key.size();
 
             bool result = MPSS_SE_GetPublicKey(
-                name().c_str(),
-                reinterpret_cast<std::uint8_t *>(public_key.data()),
-                &pk_size);
-            if (!result)
-            {
+                name().c_str(), reinterpret_cast<std::uint8_t *>(public_key.data()), &pk_size);
+            if (!result) {
                 std::stringstream ss;
-                ss << "Failed to retrieve public key: " << mpss::impl::utils::MPSS_SE_GetLastError();
+                ss << "Failed to retrieve public key: "
+                   << mpss::impl::utils::MPSS_SE_GetLastError();
                 mpss::utils::set_error(ss.str());
                 return 0;
             }
@@ -90,5 +86,5 @@ namespace mpss
         {
             MPSS_SE_CloseKey(name().c_str());
         }
-    }
-}
+    } // namespace impl
+} // namespace mpss

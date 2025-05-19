@@ -1,12 +1,12 @@
 // Copyright(c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#include "mpss/implementations/mpss_impl.h"
 #include "mpss/utils/utilities.h"
-#include "android_keypair.h"
-#include "android_utils.h"
+#include "mpss/implementations/mpss_impl.h"
 #include "JNIHelper.h"
 #include "JNIObject.h"
+#include "android_keypair.h"
+#include "android_utils.h"
 
 using jni_class = mpss::impl::utils::JNIObj<jclass>;
 using jni_string = mpss::impl::utils::JNIObj<jstring>;
@@ -14,13 +14,15 @@ using jni_object = mpss::impl::utils::JNIObj<jobject>;
 using jni_bytearray = mpss::impl::utils::JNIObj<jbyteArray>;
 
 namespace {
-    constexpr const char* unknown_storage = "Unknown";
-    constexpr const char* software_storage = "Software";
-    constexpr const char* trusted_storage = "Trusted Environment";
-    constexpr const char* strongbox_storage = "StrongBox";
-    constexpr const char* unknown_secure_storage = "Unknown Secure";
+    constexpr const char *unknown_storage = "Unknown";
+    constexpr const char *software_storage = "Software";
+    constexpr const char *trusted_storage = "Trusted Environment";
+    constexpr const char *strongbox_storage = "StrongBox";
+    constexpr const char *unknown_secure_storage = "Unknown Secure";
 
-    void GetKeyProperties(std::string_view name, bool& hardware_backed, const char** storage_description) {
+    void GetKeyProperties(
+        std::string_view name, bool &hardware_backed, const char **storage_description)
+    {
         hardware_backed = false;
         *storage_description = nullptr;
 
@@ -31,7 +33,8 @@ namespace {
             return;
         }
 
-        jmethodID mid = guard->GetStaticMethodID(km.get(), "GetKeySecurityLevel", "(Ljava/lang/String;)I");
+        jmethodID mid =
+            guard->GetStaticMethodID(km.get(), "GetKeySecurityLevel", "(Ljava/lang/String;)I");
         if (nullptr == mid) {
             mpss::utils::set_error("Could not get KeyManagement.GetKeySecurityLevel java method");
             return;
@@ -76,10 +79,11 @@ namespace {
             return;
         }
     }
-}
+} // namespace
 
 namespace mpss::impl {
-    std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm) {
+    std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm)
+    {
         // Simple checks
         if (name.empty()) {
             mpss::utils::set_error("Key name cannot be empty");
@@ -105,7 +109,10 @@ namespace mpss::impl {
             return {};
         }
 
-        jmethodID mid = guard->GetStaticMethodID(km.get(), "CreateKey", "(Ljava/lang/String;Lcom/microsoft/research/mpss/Algorithm;)Ljava/lang/Boolean;");
+        jmethodID mid = guard->GetStaticMethodID(
+            km.get(),
+            "CreateKey",
+            "(Ljava/lang/String;Lcom/microsoft/research/mpss/Algorithm;)Ljava/lang/Boolean;");
         if (nullptr == mid) {
             mpss::utils::set_error("Could not get KeyManagement.CreateKey java method");
             return {};
@@ -118,7 +125,8 @@ namespace mpss::impl {
             return {};
         }
 
-        jni_class algorithmClass(guard.Env(), guard->FindClass("com/microsoft/research/mpss/Algorithm"));
+        jni_class algorithmClass(
+            guard.Env(), guard->FindClass("com/microsoft/research/mpss/Algorithm"));
         if (algorithmClass.is_null()) {
             mpss::utils::set_error("Could not get Algorithm java class");
             return {};
@@ -126,19 +134,22 @@ namespace mpss::impl {
 
         jfieldID algoFieldId = nullptr;
 
-        switch(algorithm) {
-            case Algorithm::ecdsa_secp256r1_sha256:
-                algoFieldId = guard->GetStaticFieldID(algorithmClass.get(), "secp256r1", "Lcom/microsoft/research/mpss/Algorithm;");
-                break;
-            case Algorithm::ecdsa_secp384r1_sha384:
-                algoFieldId = guard->GetStaticFieldID(algorithmClass.get(), "secp384r1", "Lcom/microsoft/research/mpss/Algorithm;");
-                break;
-            case Algorithm::ecdsa_secp521r1_sha512:
-                algoFieldId = guard->GetStaticFieldID(algorithmClass.get(), "secp521r1", "Lcom/microsoft/research/mpss/Algorithm;");
-                break;
-            default:
-                mpss::utils::set_error("Unsupported algorithm");
-                return {};
+        switch (algorithm) {
+        case Algorithm::ecdsa_secp256r1_sha256:
+            algoFieldId = guard->GetStaticFieldID(
+                algorithmClass.get(), "secp256r1", "Lcom/microsoft/research/mpss/Algorithm;");
+            break;
+        case Algorithm::ecdsa_secp384r1_sha384:
+            algoFieldId = guard->GetStaticFieldID(
+                algorithmClass.get(), "secp384r1", "Lcom/microsoft/research/mpss/Algorithm;");
+            break;
+        case Algorithm::ecdsa_secp521r1_sha512:
+            algoFieldId = guard->GetStaticFieldID(
+                algorithmClass.get(), "secp521r1", "Lcom/microsoft/research/mpss/Algorithm;");
+            break;
+        default:
+            mpss::utils::set_error("Unsupported algorithm");
+            return {};
         }
 
         if (nullptr == algoFieldId) {
@@ -146,13 +157,16 @@ namespace mpss::impl {
             return {};
         }
 
-        jni_object algorithmValue(guard.Env(), guard->GetStaticObjectField(algorithmClass.get(), algoFieldId));
+        jni_object algorithmValue(
+            guard.Env(), guard->GetStaticObjectField(algorithmClass.get(), algoFieldId));
         if (algorithmValue.is_null()) {
             mpss::utils::set_error("Could not get object for Algorithm value");
             return {};
         }
 
-        jni_object result(guard.Env(), guard->CallStaticObjectMethod(km.get(), mid, keyName.get(), algorithmValue.get()));
+        jni_object result(
+            guard.Env(),
+            guard->CallStaticObjectMethod(km.get(), mid, keyName.get(), algorithmValue.get()));
         if (result.is_null()) {
             mpss::utils::set_error("KeyManagement.CreateKey returned null");
             return {};
@@ -165,7 +179,7 @@ namespace mpss::impl {
         }
 
         bool hardware_backed = false;
-        const char* storage_description = nullptr;
+        const char *storage_description = nullptr;
         GetKeyProperties(name, hardware_backed, &storage_description);
 
         if (storage_description == nullptr) {
@@ -173,10 +187,12 @@ namespace mpss::impl {
             return {};
         }
 
-        return std::make_unique<AndroidKeyPair>(algorithm, name, hardware_backed, storage_description);
+        return std::make_unique<AndroidKeyPair>(
+            algorithm, name, hardware_backed, storage_description);
     }
 
-    std::unique_ptr<KeyPair> open_key(std::string_view name) {
+    std::unique_ptr<KeyPair> open_key(std::string_view name)
+    {
         // Simple checks
         if (name.empty()) {
             mpss::utils::set_error("Key name cannot be empty");
@@ -197,7 +213,8 @@ namespace mpss::impl {
             return {};
         }
 
-        jmethodID mid = guard->GetStaticMethodID(km.get(), "OpenKey", "(Ljava/lang/String;)Ljava/lang/Boolean;");
+        jmethodID mid = guard->GetStaticMethodID(
+            km.get(), "OpenKey", "(Ljava/lang/String;)Ljava/lang/Boolean;");
         if (nullptr == mid) {
             mpss::utils::set_error("Could not get KeyManagement.OpenKey java method");
             return {};
@@ -216,13 +233,17 @@ namespace mpss::impl {
         }
 
         // Now we need the Algorithm
-        jmethodID mid_algo = guard->GetStaticMethodID(km.get(), "GetKeyAlgorithm", "(Ljava/lang/String;)Lcom/microsoft/research/mpss/Algorithm;");
+        jmethodID mid_algo = guard->GetStaticMethodID(
+            km.get(),
+            "GetKeyAlgorithm",
+            "(Ljava/lang/String;)Lcom/microsoft/research/mpss/Algorithm;");
         if (nullptr == mid_algo) {
             mpss::utils::set_error("Failed to get KeyManagement.GetKeyAlgorithm method");
             return {};
         }
 
-        jni_object algo_result(guard.Env(), guard->CallStaticObjectMethod(km.get(), mid_algo, keyName.get()));
+        jni_object algo_result(
+            guard.Env(), guard->CallStaticObjectMethod(km.get(), mid_algo, keyName.get()));
         if (algo_result.is_null()) {
             mpss::utils::set_error("KeyManagement.GetKeyAlgorithm returned null");
             return {};
@@ -241,8 +262,8 @@ namespace mpss::impl {
         }
 
         jni_string algo_name(
-                guard.Env(),
-                reinterpret_cast<jstring>(guard->CallObjectMethod(algo_result.get(), nameMethod)));
+            guard.Env(),
+            reinterpret_cast<jstring>(guard->CallObjectMethod(algo_result.get(), nameMethod)));
         if (algo_name.is_null()) {
             mpss::utils::set_error("Could not get name of enum Algorithm");
             return {};
@@ -251,7 +272,7 @@ namespace mpss::impl {
         std::string algo_name_str = mpss::impl::utils::GetString(guard.Env(), algo_name.get());
         Algorithm algorithm = Algorithm::unsupported;
 
-        if (algo_name_str == "secp256r1")  {
+        if (algo_name_str == "secp256r1") {
             algorithm = Algorithm::ecdsa_secp256r1_sha256;
         } else if (algo_name_str == "secp384r1") {
             algorithm = Algorithm::ecdsa_secp384r1_sha384;
@@ -260,7 +281,7 @@ namespace mpss::impl {
         }
 
         bool hardware_backed = false;
-        const char* storage_description = nullptr;
+        const char *storage_description = nullptr;
         GetKeyProperties(name, hardware_backed, &storage_description);
 
         if (storage_description == nullptr) {
@@ -269,10 +290,16 @@ namespace mpss::impl {
         }
 
         // Finally, we can return the key
-        return std::make_unique<AndroidKeyPair>(algorithm, name, hardware_backed, storage_description);
+        return std::make_unique<AndroidKeyPair>(
+            algorithm, name, hardware_backed, storage_description);
     }
 
-    bool verify(gsl::span<const std::byte> hash, gsl::span<const std::byte> public_key, Algorithm algorithm, gsl::span<const std::byte> sig) {
+    bool verify(
+        gsl::span<const std::byte> hash,
+        gsl::span<const std::byte> public_key,
+        Algorithm algorithm,
+        gsl::span<const std::byte> sig)
+    {
         JNIEnvGuard guard;
 
         if (!mpss::utils::check_hash_length(hash, algorithm)) {
@@ -286,7 +313,8 @@ namespace mpss::impl {
             return false;
         }
 
-        jmethodID  mid = guard->GetStaticMethodID(km.get(), "VerifySignature", "([B[B[B)Ljava/lang/Boolean;");
+        jmethodID mid =
+            guard->GetStaticMethodID(km.get(), "VerifySignature", "([B[B[B)Ljava/lang/Boolean;");
         if (nullptr == mid) {
             mpss::utils::set_error("Could not get KeyManagement.VerifySignature java method");
             return false;
@@ -310,7 +338,10 @@ namespace mpss::impl {
             return false;
         }
 
-        jni_object result(guard.Env(), guard->CallStaticObjectMethod(km.get(), mid, hash_arr.get(), sig_arr.get(), pk_arr.get()));
+        jni_object result(
+            guard.Env(),
+            guard->CallStaticObjectMethod(
+                km.get(), mid, hash_arr.get(), sig_arr.get(), pk_arr.get()));
         if (result.is_null()) {
             mpss::utils::set_error("KeyManagement.VerifySignature returned null");
             return false;
@@ -324,4 +355,4 @@ namespace mpss::impl {
 
         return verified;
     }
-}
+} // namespace mpss::impl

@@ -26,17 +26,29 @@ namespace mpss::impl {
         virtual DWORD public_key_magic() const = 0;
     };
 
-#define MPSS_IMPL_WINDOWS_CRYPTO_PARAMS(curve) \
-    class ECDSA_##curve## : public crypto_params { \
-    public: \
-        LPCWSTR key_type_name() const override { return NCRYPT_ECDSA_##curve##_ALGORITHM; }; \
-        LPCWSTR public_key_blob_name() const override { return BCRYPT_ECCPUBLIC_BLOB; } \
-        LPCWSTR private_key_blob_name() const override { return BCRYPT_ECCPRIVATE_BLOB; } \
-        DWORD public_key_magic() const override { return BCRYPT_ECDSA_PUBLIC_##curve##_MAGIC; } \
+#define MPSS_IMPL_WINDOWS_CRYPTO_PARAMS(curve)          \
+    class ECDSA_##curve## : public crypto_params {      \
+    public:                                             \
+        LPCWSTR key_type_name() const override          \
+        {                                               \
+            return NCRYPT_ECDSA_##curve##_ALGORITHM;    \
+        };                                              \
+        LPCWSTR public_key_blob_name() const override   \
+        {                                               \
+            return BCRYPT_ECCPUBLIC_BLOB;               \
+        }                                               \
+        LPCWSTR private_key_blob_name() const override  \
+        {                                               \
+            return BCRYPT_ECCPRIVATE_BLOB;              \
+        }                                               \
+        DWORD public_key_magic() const override         \
+        {                                               \
+            return BCRYPT_ECDSA_PUBLIC_##curve##_MAGIC; \
+        }                                               \
     };
 
     // For now, provide three concrete implementations.
     MPSS_IMPL_WINDOWS_CRYPTO_PARAMS(P256)
     MPSS_IMPL_WINDOWS_CRYPTO_PARAMS(P384)
     MPSS_IMPL_WINDOWS_CRYPTO_PARAMS(P521)
-}
+} // namespace mpss::impl

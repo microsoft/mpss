@@ -4,13 +4,11 @@
 #pragma once
 
 #include "mpss/mpss.h"
-
-#include <string>
-#include <sstream>
-#include <random>
-
 #include <gsl/narrow>
 #include <gsl/span>
+#include <random>
+#include <sstream>
+#include <string>
 
 namespace mpss::utils {
     // Convert a long to a hex string
@@ -34,13 +32,13 @@ namespace mpss::utils {
     std::size_t get_public_key_size(Algorithm algorithm);
 
     // Try to narrow input. On failure, set an error and return zero.
-    template<typename Out, typename In>
-    Out narrow_or_error(In in) {
+    template <typename Out, typename In>
+    Out narrow_or_error(In in)
+    {
         Out out;
         try {
             out = gsl::narrow<Out>(in);
-        }
-        catch (const gsl::narrowing_error& e) {
+        } catch (const gsl::narrowing_error &e) {
             // Narrowing failed.
             std::stringstream ss;
             ss << "Narrowing error: " << e.what() << " (in value: " << in << ")";
@@ -52,4 +50,4 @@ namespace mpss::utils {
 
     // Check the length of the hash buffer
     bool check_hash_length(gsl::span<const std::byte> hash, Algorithm algorithm) noexcept;
-}
+} // namespace mpss::utils

@@ -7,11 +7,11 @@
 
 namespace mpss {
     struct KeyInfo {
-        KeyInfo(bool hardware_backed, const char* storage_description)
+        KeyInfo(bool hardware_backed, const char *storage_description)
             : is_hardware_backed(hardware_backed), storage_description(storage_description)
         {}
 
         bool is_hardware_backed;
-        const char* storage_description;
+        const char *storage_description;
     };
-}
+} // namespace mpss
