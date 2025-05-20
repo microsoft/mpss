@@ -164,6 +164,11 @@ if(MPSS_BUILD_MPSS_OPENSSL_STATIC OR MPSS_BUILD_MPSS_OPENSSL_SHARED)
 endif()
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Android")
+    if(MPSS_BUILD_MPSS_CORE_STATIC OR MPSS_BUILD_MPSS_OPENSSL_STATIC)
+        # Android does not support static libraries.
+        message(FATAL_ERROR "Static libraries are not supported on Android.")
+    endif()
+
     # CMAKE_SYSTEM_VERSION contains the Android API level.
     set(ANDROID_SDK $ENV{ANDROID_HOME})
     set(ANDROID_JAR "${ANDROID_SDK}/platforms/android-${CMAKE_SYSTEM_VERSION}/android.jar")
