@@ -82,6 +82,17 @@ namespace mpss::tests {
         // Verify the data. Signature needs to be resized to the actual size written.
         signature.resize(written);
 
+        // Sign a second time to verify we get different signatures when signing the same data
+        std::vector<std::byte> signature2(sig_size);
+        written = handle->sign_hash(hash, signature2);
+        if (0 == written) {
+            std::cout << "Data could not be signed second time: " << mpss::get_error() << std::endl;
+        }
+        ASSERT_GE(sig_size, written);
+
+        signature2.resize(written);
+        ASSERT_NE(signature, signature2);
+
         bool verified = handle->verify(hash, signature);
         if (!verified) {
             std::cout << "Data could not be verified: " << mpss::get_error() << std::endl;
