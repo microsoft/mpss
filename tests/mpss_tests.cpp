@@ -93,9 +93,17 @@ namespace mpss::tests {
         signature2.resize(written);
         ASSERT_NE(signature, signature2);
 
+        // Verify first signature
         bool verified = handle->verify(hash, signature);
         if (!verified) {
-            std::cout << "Data could not be verified: " << mpss::get_error() << std::endl;
+            std::cout << "Signature 1 could not be verified: " << mpss::get_error() << std::endl;
+        }
+        ASSERT_TRUE(verified);
+
+        // Verify second signature
+        verified = handle->verify(hash, signature2);
+        if (!verified) {
+            std::cout << "Signature 2 could not be verified: " << mpss::get_error() << std::endl;
         }
         ASSERT_TRUE(verified);
 
