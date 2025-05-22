@@ -77,7 +77,7 @@ namespace mpss::utils {
         std::string result;
         result.reserve(length);
         for (std::size_t i = 0; i < length; i++) {
-            result += chars[chars[rd() % (sizeof(chars) - 1)]];
+            result += chars[rd() % (sizeof(chars) - 1)];
         }
         return result;
     }

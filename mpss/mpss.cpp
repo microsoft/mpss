@@ -3,6 +3,7 @@
 
 #include "mpss/mpss.h"
 #include "mpss/utils/utilities.h"
+#include "mpss/utils/scope_guard.h"
 #include "mpss/implementations/mpss_impl.h"
 #include <iostream>
 #include <stdexcept>
@@ -34,32 +35,29 @@ namespace mpss {
         if (!key_created) {
             return false;
         }
+        SCOPE_GUARD({
+            // Delete the key if it was created.
+            bool key_deleted = key->delete_key();
+            if (!key_deleted) {
+                throw std::runtime_error("Test key deletion failed");
+            }
+        });
 
         // Create some data and sign.
         std::vector<std::byte> hash(info.hash_bits / 8, static_cast<std::byte>('a'));
         std::size_t sig_size = key->sign_hash(hash, {});
         if (0 == sig_size) {
-            bool key_deleted = key->delete_key();
-            if (!key_deleted) {
-                throw std::runtime_error("Test key deletion failed");
-            }
             return false;
         }
 
         std::vector<std::byte> sig(sig_size);
         std::size_t written = key->sign_hash(hash, sig);
-        if (written != sig_size) {
-            bool key_deleted = key->delete_key();
-            if (!key_deleted) {
-                throw std::runtime_error("Test key deletion failed");
-            }
+        if (written == 0) {
             return false;
         }
 
-        bool key_deleted = key->delete_key();
-
         // Did everything work out?
-        return key_deleted;
+        return true;
     }
 
     bool verify(

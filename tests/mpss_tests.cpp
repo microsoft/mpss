@@ -329,4 +329,14 @@ namespace mpss::tests {
             std::cout << "Algorithm ecdsa_secp521r1_sha512 supported: " << supported << std::endl;
         });
     }
+
+    TEST(MPSSTests, IsAlgorithmSupported256)
+    {
+        // All platforms should support P256 at least
+        ASSERT_NO_THROW(
+        {
+            bool supported = mpss::is_algorithm_supported(Algorithm::ecdsa_secp256r1_sha256);
+            ASSERT_TRUE(supported);
+        });
+    }
 } // namespace mpss::tests
