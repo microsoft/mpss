@@ -1,0 +1,75 @@
+# This file selects the correct job definition based on system and buildType.
+
+parameters:
+  debug: 'false'
+
+jobs:
+
+- ${{ if eq(parameters.name, 'Windows') }}:
+  - job: ${{ parameters.name }}
+    displayName: ${{ parameters.name }}
+    pool:
+      vmImage: 'windows-latest'
+    steps:
+    - template: windows.yaml
+      parameters:
+        ${{ if eq(parameters.debug, 'true') }}:
+          configuration: 'debug'
+          path: 'Debug'
+        ${{ if eq(parameters.debug, 'false') }}:
+          configuration: 'release'
+          path: 'Release'
+
+# - ${{ if eq(parameters.name, 'Linux') }}:
+#   - job: ${{ parameters.name }}
+#     displayName: ${{ parameters.name }}
+#     pool:
+#       vmImage: 'ubuntu-latest'
+#     steps:
+#     - template: nix.yaml
+#       parameters:
+#         artifactName: linux-drop
+#         ${{ if eq(parameters.debug, 'true') }}:
+#           configuration: 'Debug'
+#         ${{ if eq(parameters.debug, 'false') }}:
+#           configuration: 'Release'
+
+- ${{ if eq(parameters.name, 'macOS') }}:
+  - job: ${{ parameters.name }}
+    displayName: ${{ parameters.name }}
+    pool:
+      vmImage: 'macos-latest'
+    steps:
+    - template: nix.yaml
+      parameters:
+        artifactName: macos-drop
+        ${{ if eq(parameters.debug, 'true') }}:
+          configuration: 'Debug'
+        ${{ if eq(parameters.debug, 'false') }}:
+          configuration: 'Release'
+
+- ${{ if eq(parameters.name, 'Android') }}:
+  - job: ${{ parameters.name }}
+    displayName: ${{ parameters.name }}
+    pool:
+      vmImage: 'windows-latest'
+    steps:
+    - template: android.yaml
+      parameters:
+        ${{ if eq(parameters.debug, 'true') }}:
+          configuration: 'Debug'
+        ${{ if eq(parameters.debug, 'false') }}:
+          configuration: 'Release'
+
+- ${{ if eq(parameters.name, 'iOS') }}:
+  - job: ${{ parameters.name }}
+    displayName: ${{ parameters.name }}
+    pool:
+      vmImage: 'macos-latest'
+    steps:
+    - template: ios.yaml
+      parameters:
+        ${{ if eq(parameters.debug, 'true') }}:
+          configuration: 'Debug'
+        ${{ if eq(parameters.debug, 'false') }}:
+          configuration: 'Release'
