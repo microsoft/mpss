@@ -1,1 +1,8 @@
 steps:
+- task: CmdLine@2
+  displayName: 'NOP'
+  inputs:
+    script: |
+      echo "This is a placeholder step for Android pipeline."
+    workingDirectory: '$(Build.SourcesDirectory)'
+    failOnStderr: false
