@@ -38,9 +38,10 @@ steps:
     platform: 'x64'
     configuration: '${{ parameters.configuration }}'
 
-- script: '${{ parameters.configuration }}\mpss_tests.exe'
-  workingDirectory: '$(Build.SourcesDirectory)\build\bin'
-  displayName: 'Run unit tests'
+# Unit tests cannot run because TPM cannot be accessed in the Azure Pipelines hosted agents.
+# - script: '${{ parameters.configuration }}\mpss_tests.exe'
+#   workingDirectory: '$(Build.SourcesDirectory)\build\bin'
+#   displayName: 'Run unit tests'
 
 - task: CopyFiles@2
   displayName: 'Copy Files to: $(Build.ArtifactStagingDirectory)'
