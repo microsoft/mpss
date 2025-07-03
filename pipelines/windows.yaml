@@ -24,14 +24,6 @@ steps:
     workingDirectory: '$(Build.SourcesDirectory)'
     failOnStderr: false
 
-- task: CmdLine@2
-  displayName: 'Configure vcpkg dependencies'
-  inputs:
-    script: |
-      vcpkg install --triplet=x64-windows-static-md ms-gsl openssl gtest
-    workingDirectory: '$(Build.SourcesDirectory)/vcpkg'
-    failOnStderr: false
-
 - task: CMake@1
   displayName: 'Configure MPSS'
   inputs:
