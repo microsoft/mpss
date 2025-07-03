@@ -43,14 +43,6 @@ steps:
 #   workingDirectory: '$(Build.SourcesDirectory)\build\bin'
 #   displayName: 'Run unit tests'
 
-- task: CopyFiles@2
-  displayName: 'Copy Files to: $(Build.ArtifactStagingDirectory)'
-  inputs:
-    SourceFolder: '$(Build.SourcesDirectory)\build\bin'
-    Contents: |
-      ${{ parameters.configuration }}\**\?(*.exe|*.dll|*.lib|*.xml)
-    TargetFolder: '$(Build.ArtifactStagingDirectory)'
-
 - task: PublishSecurityAnalysisLogs@3
   inputs:
     ArtifactName: 'CodeAnalysisLogs'

@@ -1,8 +1,28 @@
 steps:
 - task: CmdLine@2
-  displayName: 'NOP'
+  displayName: 'Bootstrap vcpkg'
   inputs:
     script: |
-      echo "This is a placeholder step for Nix pipeline."
+      cd $(Build.SourcesDirectory)
+      git clone https://github.com/microsoft/vcpkg.git
+      cd vcpkg
+      git checkout 2025.06.13
+      ./bootstrap-vcpkg.sh -disableMetrics
     workingDirectory: '$(Build.SourcesDirectory)'
     failOnStderr: false
+
+- task: CMake@1
+  displayName: 'Configure MPSS'
+  inputs:
+    cmakeArgs: -S . -B build -DCMAKE_BUILD_TYPE='${{ parameters.configuration }}' -DMPSS_BUILD_TESTS=ON -DMPSS_BUILD_MPSS_OPENSSL_STATIC=ON -DCMAKE_TOOLCHAIN_FILE=$(Build.SourcesDirectory)\vcpkg\scripts\buildsystems\vcpkg.cmake
+    workingDirectory: '$(Build.SourcesDirectory)'
+
+- task: CMake@1
+  displayName: 'Build MPSS'
+  inputs:
+    cmakeArgs: --build build --config '${{ parameters.configuration }}'
+    workingDirectory: '$(Build.SourcesDirectory)'
+
+- script: '${{ parameters.configuration }}\mpss_tests.exe'
+  workingDirectory: '$(Build.SourcesDirectory)\build\bin'
+  displayName: 'Run unit tests'
