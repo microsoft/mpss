@@ -27,7 +27,14 @@ steps:
 - task: CMake@1
   displayName: 'Configure MPSS'
   inputs:
-    cmakeArgs: -S . -B build -DCMAKE_BUILD_TYPE='${{ parameters.configuration }}' -DMPSS_BUILD_TESTS=ON -DMPSS_BUILD_MPSS_OPENSSL_STATIC=ON -DCMAKE_TOOLCHAIN_FILE=$(Build.SourcesDirectory)\vcpkg\scripts\buildsystems\vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows-static-md
+    cmakeArgs: >
+        -S .
+        -B build
+        -DCMAKE_BUILD_TYPE='${{ parameters.configuration }}'
+        -DMPSS_BUILD_TESTS=ON
+        -DMPSS_BUILD_MPSS_OPENSSL_STATIC=ON
+        -DCMAKE_TOOLCHAIN_FILE=$(Build.SourcesDirectory)\vcpkg\scripts\buildsystems\vcpkg.cmake
+        -DVCPKG_TARGET_TRIPLET=x64-windows-static-md
     workingDirectory: '$(Build.SourcesDirectory)'
 
 - task: MSBuild@1
