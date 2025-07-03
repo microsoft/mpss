@@ -23,6 +23,8 @@ steps:
     cmakeArgs: --build build --config '${{ parameters.configuration }}'
     workingDirectory: '$(Build.SourcesDirectory)'
 
-- script: 'mpss_tests'
-  workingDirectory: '$(Build.SourcesDirectory)/build/bin'
-  displayName: 'Run unit tests'
+- task: CmdLine@2
+  displayName: 'Run MPSS unit tests'
+  inputs:
+    script: 'build/bin/mpss_tests'
+    workingDirectory: '$(Build.SourcesDirectory)'
