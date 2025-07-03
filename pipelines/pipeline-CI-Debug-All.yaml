@@ -16,19 +16,19 @@ stages:
   - stage: build
     displayName: Build
     jobs:
-    - template: jobs.yml
+    - template: jobs.yaml
       parameters:
         debug: true
         name: Windows
-    - template: jobs.yml
+    - template: jobs.yaml
       parameters:
         debug: true
         name: macOS
-    - template: jobs.yml
+    - template: jobs.yaml
       parameters:
         debug: true
         name: Android
-    - template: jobs.yml
+    - template: jobs.yaml
       parameters:
         debug: true
         name: iOS
