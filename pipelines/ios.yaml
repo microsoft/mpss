@@ -1,8 +1,50 @@
 steps:
 - task: CmdLine@2
-  displayName: 'NOP'
+  displayName: 'Bootstrap vcpkg'
   inputs:
     script: |
-      echo "This is a placeholder step for iOS pipeline."
+      cd $(Build.SourcesDirectory)
+      git clone https://github.com/microsoft/vcpkg.git
+      cd vcpkg
+      git checkout 2025.06.13
+      ./bootstrap-vcpkg.sh -disableMetrics
     workingDirectory: '$(Build.SourcesDirectory)'
     failOnStderr: false
+
+- task: CMake@1
+  displayName: 'Configure MPSS for x64'
+  inputs:
+    workingDirectory: '$(Build.SourcesDirectory)'
+    cmakeArgs: >
+      -S .
+      -B build-x64
+      -GXcode
+      -DMPSS_BUILD_MPSS_OPENSSL_STATIC=ON
+      -DCMAKE_SYSTEM_NAME=iOS
+      "-DCMAKE_OSX_ARCHITECTURES=x86_64;arm64"
+      -DCMAKE_TOOLCHAIN_FILE=$(Build.SourcesDirectory)/vcpkg/scripts/buildsystems/vcpkg.cmake
+
+- task: CMake@1
+  displayName: 'Configure MPSS for arm64'
+  inputs:
+    workingDirectory: '$(Build.SourcesDirectory)'
+    cmakeArgs: >
+      -S .
+      -B build-arm64
+      -GXcode
+      -DMPSS_BUILD_MPSS_OPENSSL_STATIC=ON
+      -DCMAKE_SYSTEM_NAME=iOS
+      "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"
+      -DCMAKE_TOOLCHAIN_FILE=$(Build.SourcesDirectory)/vcpkg/scripts/buildsystems/vcpkg.cmake
+
+- script: |
+      cd $BUILD_SOURCESDIRECTORY
+      xcodebuild -project build-x64/SEAL.xcodeproj -sdk iphonesimulator -arch x86_64 -configuration ${{ parameters.configuration }} clean build
+
+      xcodebuild -project build-arm64/SEAL.xcodeproj -sdk iphonesimulator -arch arm64 -configuration ${{ parameters.configuration }} clean build
+  displayName: 'Build SEAL for Simulator (x64 and arm64)'
+
+- script: |
+      cd $BUILD_SOURCESDIRECTORY
+      xcodebuild -project build-arm64/SEAL.xcodeproj -sdk iphoneos -arch arm64 -configuration ${{ parameters.configuration }} clean build
+  displayName: 'Build SEAL for iOS (arm64)'
