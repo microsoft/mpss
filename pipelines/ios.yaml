@@ -39,12 +39,12 @@ steps:
 
 - script: |
       cd $BUILD_SOURCESDIRECTORY
-      xcodebuild -project build-x64/SEAL.xcodeproj -sdk iphonesimulator -arch x86_64 -configuration ${{ parameters.configuration }} clean build
+      xcodebuild -project build-x64/mpss.xcodeproj -sdk iphonesimulator -arch x86_64 -configuration ${{ parameters.configuration }} clean build
 
-      xcodebuild -project build-arm64/SEAL.xcodeproj -sdk iphonesimulator -arch arm64 -configuration ${{ parameters.configuration }} clean build
-  displayName: 'Build SEAL for Simulator (x64 and arm64)'
+      xcodebuild -project build-arm64/mpss.xcodeproj -sdk iphonesimulator -arch arm64 -configuration ${{ parameters.configuration }} clean build
+  displayName: 'Build MPSS for Simulator (x64 and arm64)'
 
 - script: |
       cd $BUILD_SOURCESDIRECTORY
-      xcodebuild -project build-arm64/SEAL.xcodeproj -sdk iphoneos -arch arm64 -configuration ${{ parameters.configuration }} clean build
-  displayName: 'Build SEAL for iOS (arm64)'
+      xcodebuild -project build-arm64/mpss.xcodeproj -sdk iphoneos -arch arm64 -configuration ${{ parameters.configuration }} clean build
+  displayName: 'Build MPSS for iOS (arm64)'
