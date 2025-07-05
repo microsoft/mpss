@@ -1,51 +1,60 @@
 steps:
 - task: CmdLine@2
-  displayName: 'Bootstrap vcpkg'
+  displayName: 'Install Android SDK'
   inputs:
     script: |
-      cd $(Build.SourcesDirectory)
-      git clone https://github.com/microsoft/vcpkg.git
-      cd vcpkg
-      git checkout 2025.06.13
-      bootstrap-vcpkg.bat -disableMetrics
+      echo "Installing Android SDK..."
+      sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
     workingDirectory: '$(Build.SourcesDirectory)'
     failOnStderr: false
 
-- task: CMake@1
-  displayName: 'Configure MPSS for x64'
-  inputs:
-    cmakeArgs: >
-        -S .
-        -B build-x64
-        -GNinja
-        -DCMAKE_BUILD_TYPE='${{ parameters.configuration }}'
-        -DMPSS_BUILD_MPSS_OPENSSL_STATIC=ON
-        -DCMAKE_SYSTEM_NAME=Android
-        -DCMAKE_ANDROID_ARCH_ABI=x86_64
-        -DCMAKE_TOOLCHAIN_FILE=$(Build.SourcesDirectory)/vcpkg/scripts/buildsystems/vcpkg.cmake
-    workingDirectory: '$(Build.SourcesDirectory)'
+# - task: CmdLine@2
+#   displayName: 'Bootstrap vcpkg'
+#   inputs:
+#     script: |
+#       cd $(Build.SourcesDirectory)
+#       git clone https://github.com/microsoft/vcpkg.git
+#       cd vcpkg
+#       git checkout 2025.06.13
+#       bootstrap-vcpkg.bat -disableMetrics
+#     workingDirectory: '$(Build.SourcesDirectory)'
+#     failOnStderr: false
 
-- task: CMake@1
-  displayName: 'Configure MPSS for Arm64'
-  inputs:
-    cmakeArgs: >
-        -S .
-        -B build-arm64
-        -DCMAKE_BUILD_TYPE='${{ parameters.configuration }}'
-        -DMPSS_BUILD_MPSS_OPENSSL_STATIC=ON
-        -DCMAKE_SYSTEM_NAME=Android
-        -DCMAKE_ANDROID_ARCH_ABI=arm64-v8a
-        -DCMAKE_TOOLCHAIN_FILE=$(Build.SourcesDirectory)/vcpkg/scripts/buildsystems/vcpkg.cmake
-    workingDirectory: '$(Build.SourcesDirectory)'
+# - task: CMake@1
+#   displayName: 'Configure MPSS for x64'
+#   inputs:
+#     cmakeArgs: >
+#         -S .
+#         -B build-x64
+#         -GNinja
+#         -DCMAKE_BUILD_TYPE='${{ parameters.configuration }}'
+#         -DMPSS_BUILD_MPSS_OPENSSL_STATIC=ON
+#         -DCMAKE_SYSTEM_NAME=Android
+#         -DCMAKE_ANDROID_ARCH_ABI=x86_64
+#         -DCMAKE_TOOLCHAIN_FILE=$(Build.SourcesDirectory)/vcpkg/scripts/buildsystems/vcpkg.cmake
+#     workingDirectory: '$(Build.SourcesDirectory)'
 
-- task: CMake@1
-  displayName: 'Build MPSS for x64'
-  inputs:
-    cmakeArgs: --build build-x64 --config '${{ parameters.configuration }}'
-    workingDirectory: '$(Build.SourcesDirectory)'
+# - task: CMake@1
+#   displayName: 'Configure MPSS for Arm64'
+#   inputs:
+#     cmakeArgs: >
+#         -S .
+#         -B build-arm64
+#         -DCMAKE_BUILD_TYPE='${{ parameters.configuration }}'
+#         -DMPSS_BUILD_MPSS_OPENSSL_STATIC=ON
+#         -DCMAKE_SYSTEM_NAME=Android
+#         -DCMAKE_ANDROID_ARCH_ABI=arm64-v8a
+#         -DCMAKE_TOOLCHAIN_FILE=$(Build.SourcesDirectory)/vcpkg/scripts/buildsystems/vcpkg.cmake
+#     workingDirectory: '$(Build.SourcesDirectory)'
 
-- task: CMake@1
-  displayName: 'Build MPSS for Arm64'
-  inputs:
-    cmakeArgs: --build build-arm64 --config '${{ parameters.configuration }}'
-    workingDirectory: '$(Build.SourcesDirectory)'
+# - task: CMake@1
+#   displayName: 'Build MPSS for x64'
+#   inputs:
+#     cmakeArgs: --build build-x64 --config '${{ parameters.configuration }}'
+#     workingDirectory: '$(Build.SourcesDirectory)'
+
+# - task: CMake@1
+#   displayName: 'Build MPSS for Arm64'
+#   inputs:
+#     cmakeArgs: --build build-arm64 --config '${{ parameters.configuration }}'
+#     workingDirectory: '$(Build.SourcesDirectory)'
