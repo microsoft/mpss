@@ -4,12 +4,22 @@ steps:
   inputs:
     targetType: 'inline'
     script: |
-      dir env:
-      $env:ANDROID_HOME = "$(ANDROID_HOME)"
-      $env:ANDROID_SDK_ROOT = "$(ANDROID_SDK_ROOT)"
-      $env:ANDROID_NDK_HOME = "$(ANDROID_NDK_HOME)"
-      $env:ANDROID_NDK_ROOT = "$(ANDROID_NDK_ROOT)"
-      Write-Host "Environment variables set for Android SDK and NDK."
+        $root = $Env:ANDROID_HOME -or $Env:ANDROID_SDK_ROOT
+        if (-not $root) { throw "ANDROID_HOME / ANDROID_SDK_ROOT not set." }
+
+        $api = (Get-ChildItem "$root\platforms" -Directory |
+                Where-Object Name -match '^android-(\d+)$' |
+                Sort-Object { [int]($_.Name -replace 'android-','') } -Descending |
+                Select-Object -First 1).Name
+
+        echo "Using Android API: $api"
+
+        dir env:
+        $env:ANDROID_HOME = "$(ANDROID_HOME)"
+        $env:ANDROID_SDK_ROOT = "$(ANDROID_SDK_ROOT)"
+        $env:ANDROID_NDK_HOME = "$(ANDROID_NDK_HOME)"
+        $env:ANDROID_NDK_ROOT = "$(ANDROID_NDK_ROOT)"
+        Write-Host "Environment variables set for Android SDK and NDK."
 
 - task: CmdLine@2
   displayName: 'Install Android SDK'
