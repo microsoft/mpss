@@ -21,7 +21,7 @@ stages:
   - stage: build
     displayName: Build
     jobs:
-    - template: jobs.yml
+    - template: jobs.yaml
       parameters:
         debug: true
         name: Android
