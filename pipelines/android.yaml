@@ -1,4 +1,16 @@
 steps:
+- task: Powershell@2
+  displayName: 'Set Environment Variables'
+  inputs:
+    targetType: 'inline'
+    script: |
+      dir env:
+      $env:ANDROID_HOME = "$(ANDROID_HOME)"
+      $env:ANDROID_SDK_ROOT = "$(ANDROID_SDK_ROOT)"
+      $env:ANDROID_NDK_HOME = "$(ANDROID_NDK_HOME)"
+      $env:ANDROID_NDK_ROOT = "$(ANDROID_NDK_ROOT)"
+      Write-Host "Environment variables set for Android SDK and NDK."
+
 - task: CmdLine@2
   displayName: 'Install Android SDK'
   inputs:
@@ -17,18 +29,6 @@ steps:
       sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
     workingDirectory: '$(Build.SourcesDirectory)'
     failOnStderr: false
-
-- task: Powershell@2
-  displayName: 'Set Environment Variables'
-  inputs:
-    targetType: 'inline'
-    script: |
-      dir env:
-      $env:ANDROID_HOME = "$(ANDROID_HOME)"
-      $env:ANDROID_SDK_ROOT = "$(ANDROID_SDK_ROOT)"
-      $env:ANDROID_NDK_HOME = "$(ANDROID_NDK_HOME)"
-      $env:ANDROID_NDK_ROOT = "$(ANDROID_NDK_ROOT)"
-      Write-Host "Environment variables set for Android SDK and NDK."
 
 # - task: CmdLine@2
 #   displayName: 'Bootstrap vcpkg'
