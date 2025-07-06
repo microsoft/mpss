@@ -131,11 +131,11 @@ steps:
 - task: CMake@1
   displayName: 'Build MPSS for x64'
   inputs:
-    cmakeArgs: --build build-x64 --config '${{ parameters.configuration }}'
+    cmakeArgs: --build build-x64
     workingDirectory: '$(Build.SourcesDirectory)'
 
 - task: CMake@1
   displayName: 'Build MPSS for Arm64'
   inputs:
-    cmakeArgs: --build build-arm64 --config '${{ parameters.configuration }}'
+    cmakeArgs: --build build-arm64
     workingDirectory: '$(Build.SourcesDirectory)'
