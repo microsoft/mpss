@@ -5,19 +5,61 @@ steps:
   inputs:
     targetType: 'inline'
     script: |
-        $root = $Env:ANDROID_HOME
-        if (-not $root) { throw "ANDROID_HOME not set." }
+        function Get-AndroidNdkMaxApi {
+            param(
+                # Optionally pass a specific NDK path; otherwise we auto-detect.
+                [string]$NdkRoot
+            )
 
-        $api = (Get-ChildItem "$root\platforms" -Directory |
-                Where-Object Name -match '^android-(\d+)$' |
-                Sort-Object { [int]($_.Name -replace 'android-','') } -Descending |
-                Select-Object -First 1).Name
-                
-        $api = ($api -replace 'android-')
-        
-        echo "Will use API level: $api"
-        $env:MPSS_ANDROID_API_LEVEL = $api
-        echo "##vso[task.setvariable variable=MPSSAndroidAPILevel;isOutput=true]$api"
+            # 1. Locate the NDK root --------------------------------------------------
+            if (-not $NdkRoot) {
+                # a) Respect common env-vars
+                $NdkRoot = $Env:ANDROID_NDK_ROOT, $Env:ANDROID_NDK_HOME |
+                           Where-Object { $_ } | Select-Object -First 1
+
+                # b) Otherwise pick the *latest* version under the SDK
+                if (-not $NdkRoot) {
+                    $sdkRoot = $Env:ANDROID_SDK_ROOT, $Env:ANDROID_HOME |
+                               Where-Object { $_ } | Select-Object -First 1
+                    if (-not $sdkRoot) { throw "ANDROID_SDK_ROOT / ANDROID_HOME not set." }
+
+                    $NdkRoot = Get-ChildItem "$sdkRoot\ndk" -Directory |
+                               Sort-Object { [version]$_.Name } -Descending |
+                               Select-Object -First 1 |
+                               ForEach-Object FullName
+
+                    # fallback for really old layouts
+                    if (-not $NdkRoot -and (Test-Path "$sdkRoot\ndk-bundle")) {
+                        $NdkRoot = "$sdkRoot\ndk-bundle"
+                    }
+                }
+            }
+
+            if (-not (Test-Path $NdkRoot)) {
+                throw "NDK not found at '$NdkRoot'."
+            }
+
+            # 2. Read meta/platforms.json --------------------------------------------
+            $metaFile = Join-Path $NdkRoot "meta\platforms.json"
+            if (Test-Path $metaFile) {
+                $json = Get-Content $metaFile -Raw | ConvertFrom-Json
+                return [int]$json.max
+            }
+
+            # 3. Legacy NDKs (< r23): fall back to directory scan ---------------------
+            $maxApi = Get-ChildItem "$NdkRoot\platforms" -Directory |
+                      Where-Object Name -match '^android-(\d+)$' |
+                      ForEach-Object { [int]$Matches[1] } |
+                      Sort-Object -Descending |
+                      Select-Object -First 1
+            if (-not $maxApi) { throw "Unable to determine supported API levels." }
+            return $maxApi
+        }
+
+        $maxSupportedApi = Get-AndroidNdkMaxApi
+        Write-Host "Highest API level supported by this NDK: $maxSupportedApi"        
+        $env:MPSS_ANDROID_API_LEVEL = $maxSupportedApi
+        echo "##vso[task.setvariable variable=MPSSAndroidAPILevel;isOutput=true]$maxSupportedApi"
 
 
         $ninjaPath = (Get-Command ninja).Source
