@@ -18,7 +18,7 @@ steps:
         $env:MPSS_ANDROID_API_LEVEL = $api
 
         echo "Where is Ninja?"
-        $ninjaPath = Get-Command ninja -ErrorAction SilentlyContinue
+        $ninjaPath = (Get-Command ninja).Source
         if (-not $ninjaPath) {
             throw "Ninja build tool not found. Please install Ninja."
         } else {
