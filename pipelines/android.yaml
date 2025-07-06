@@ -1,6 +1,7 @@
 steps:
 - task: Powershell@2
   displayName: 'Get tool info'
+  name: GetToolInfo
   inputs:
     targetType: 'inline'
     script: |
@@ -16,6 +17,8 @@ steps:
         
         echo "Will use API level: $api"
         $env:MPSS_ANDROID_API_LEVEL = $api
+        echo "##vso[task.setvariable variable=MPSSAndroidAPILevel;isOutput=true]$api"
+
 
         $ninjaPath = (Get-Command ninja).Source
         if (-not $ninjaPath) {
@@ -24,6 +27,7 @@ steps:
             echo "Ninja found at: $ninjaPath"
         }
         $env:NINJA_PATH = $ninjaPath
+        echo "##vso[task.setvariable variable=NinjaPath;isOutput=true]$ninjaPath"
 
 - task: CmdLine@2
   displayName: 'Bootstrap vcpkg'
@@ -46,9 +50,9 @@ steps:
         -GNinja
         -DCMAKE_BUILD_TYPE='${{ parameters.configuration }}'
         -DCMAKE_SYSTEM_NAME=Android
-        -DCMAKE_SYSTEM_VERSION=$ENV{MPSS_ANDROID_API_LEVEL}
+        -DCMAKE_SYSTEM_VERSION=$(GetToolInfo.MPSSAndroidAPILevel)
         -DCMAKE_ANDROID_ARCH_ABI=x86_64
-        -DCMAKE_MAKE_PROGRAM=$ENV{NINJA_PATH}
+        -DCMAKE_MAKE_PROGRAM=$(GetToolInfo.NinjaPath)
         -DCMAKE_TOOLCHAIN_FILE=$(Build.SourcesDirectory)/vcpkg/scripts/buildsystems/vcpkg.cmake
     workingDirectory: '$(Build.SourcesDirectory)'
 
@@ -60,9 +64,9 @@ steps:
         -B build-arm64
         -DCMAKE_BUILD_TYPE='${{ parameters.configuration }}'
         -DCMAKE_SYSTEM_NAME=Android
-        -DCMAKE_SYSTEM_VERSION=$ENV{MPSS_ANDROID_API_LEVEL}
+        -DCMAKE_SYSTEM_VERSION=$(GetToolInfo.MPSSAndroidAPILevel)
         -DCMAKE_ANDROID_ARCH_ABI=arm64-v8a
-        -DCMAKE_MAKE_PROGRAM=$ENV{NINJA_PATH}
+        -DCMAKE_MAKE_PROGRAM=$(GetToolInfo.NinjaPath)
         -DCMAKE_TOOLCHAIN_FILE=$(Build.SourcesDirectory)/vcpkg/scripts/buildsystems/vcpkg.cmake
     workingDirectory: '$(Build.SourcesDirectory)'
 
