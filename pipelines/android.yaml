@@ -17,6 +17,14 @@ steps:
         echo "Will use API level: $api"
         $env:MPSS_ANDROID_API_LEVEL = $api
 
+        echo "Where is Ninja?"
+        $ninjaPath = Get-Command ninja -ErrorAction SilentlyContinue
+        if (-not $ninjaPath) {
+            throw "Ninja build tool not found. Please install Ninja."
+        } else {
+            echo "Ninja found at: $ninjaPath"
+        }
+
         dir env:
         $env:ANDROID_HOME = "$(ANDROID_HOME)"
         $env:ANDROID_SDK_ROOT = "$(ANDROID_SDK_ROOT)"
