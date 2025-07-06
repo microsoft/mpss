@@ -91,6 +91,7 @@ steps:
         -B build-x64
         -GNinja
         -DCMAKE_BUILD_TYPE='${{ parameters.configuration }}'
+        -DMPSS_BUILD_MPSS_CORE_SHARED=ON
         -DCMAKE_SYSTEM_NAME=Android
         -DCMAKE_SYSTEM_VERSION=$(GetToolInfo.MPSSAndroidAPILevel)
         -DCMAKE_ANDROID_ARCH_ABI=x86_64
@@ -105,6 +106,7 @@ steps:
         -S .
         -B build-arm64
         -DCMAKE_BUILD_TYPE='${{ parameters.configuration }}'
+        -DMPSS_BUILD_MPSS_CORE_SHARED=ON
         -DCMAKE_SYSTEM_NAME=Android
         -DCMAKE_SYSTEM_VERSION=$(GetToolInfo.MPSSAndroidAPILevel)
         -DCMAKE_ANDROID_ARCH_ABI=arm64-v8a
