@@ -112,11 +112,12 @@ steps:
     workingDirectory: '$(Build.SourcesDirectory)'
 
 - task: CMake@1
-  displayName: 'Configure MPSS for Arm64'
+  displayName: 'Configure MPSS for ARM64'
   inputs:
     cmakeArgs: >
         -S .
         -B build-arm64
+        -GNinja
         -DCMAKE_BUILD_TYPE='${{ parameters.configuration }}'
         -DMPSS_BUILD_MPSS_CORE_SHARED=ON
         -DCMAKE_SYSTEM_NAME=Android
