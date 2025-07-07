@@ -1,4 +1,11 @@
 steps:
+- task: JavaToolInstaller@0
+  displayName: 'Install JDK 21'
+  inputs:
+    versionSpec: '21'
+    jdkArchitectureOption: 'x64'
+    jdkSourceOption: 'PreInstalled'
+
 - task: Powershell@2
   displayName: 'Get tool info'
   name: GetToolInfo
