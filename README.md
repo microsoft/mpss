@@ -1,29 +1,35 @@
-# MPSS
+# MPSS – A Multi-Platform Secure Signing Library
 
-Modern operating systems provide various methods for safeguarding private cryptographic keys through hardware. MPSS is a multi-platform secret storage library that offers a unified API, allowing users to store cryptographic keys securely without worrying about the specific APIs used by different operating systems.
+Modern operating systems provide various methods for safeguarding private cryptographic keys through hardware.
+MPSS is a multi-platform C++ library for generating and storing (secret) digital signature keys.
+It offers a unified API so that downstream applications do not need to worry about the specific APIs used by different operating systems.
 
-MPSS uses the following technologies in the different platforms:
+In addition to the core library, MPSS includes an OpenSSL 3.x provider, which enables MPSS to be used easily through the OpenSSL API.
 
+MPSS uses the following technologies on the different supported platforms:
 | Platform | API |
 |----------|-----|
-| Windows | VBS if available, TPM backed keys otherwise |
-| MacOS / iOS | Secure Enclave if available, Keychain otherwise  |
-| Android | StrongBox if available |
+| Windows | [VBS](https://learn.microsoft.com/en-us/windows-hardware/design/device-experiences/oem-vbs) if available; TPM-backed [MS_PLATFORM_CRYPTO_PROVIDER](https://learn.microsoft.com/en-us/windows/win32/api/ncrypt/nf-ncrypt-ncryptopenstorageprovider) otherwise |
+| macOS / iOS | [SecureEnclave](https://developer.apple.com/documentation/cryptokit/secureenclave) if available; [Keychain](https://developer.apple.com/documentation/security/storing-keys-in-the-keychain) otherwise |
+| Android | [StrongBox](https://developer.android.com/privacy-and-security/keystore) if available |
 
 ## Compiling for different platforms
 
-MPSS depends on GSL and Google Test for testing. The easiest way to provide these dependencies is through `vcpkg`.
+MPSS API depends on [Microsoft GSL](https://GitHub.com/Microsoft/GSL) and the library uses [GoogleTest](https://GitHub.com/Google/GoogleTest) for testing.
+The OpenSSL provider naturally requires [OpenSSL](https://GitHub.com/openssl/openssl).
+MPSS provides the relevant dependencies file ([vcpkg.json](vcpkg.json)) for [vcpkg](https://GitHub.com/Microsoft/vcpkg).
 
 ### Windows
 
-You will only need to provide the path to the `vcpkg` toolchain file.
+When configuring with CMake, simply provide the path to the `vcpkg` toolchain file, as follows:
 
 ```cmd
 cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake
 ```
 
-### MacOS
-Same as above, you only need to provide the path to the `vcpkg` toolchain file.
+### macOS
+
+As for Windows, when configuring with CMake, you only need to provide the path to the `vcpkg` toolchain file:
 
 ```bash
 cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
