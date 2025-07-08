@@ -19,6 +19,7 @@ install(
     ${CMAKE_CURRENT_LIST_DIR}/key_info.h
     ${CMAKE_CURRENT_LIST_DIR}/mpss.h
     ${CMAKE_CURRENT_LIST_DIR}/algorithm.h
+    ${CMAKE_CURRENT_LIST_DIR}/defines.h
     DESTINATION
     ${mpss_INCLUDES_INSTALL_DIR}/mpss
 )

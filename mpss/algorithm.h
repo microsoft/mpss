@@ -6,12 +6,13 @@
 #include <array>
 #include <string_view>
 #include <utility>
+#include "mpss/defines.h"
 
 namespace mpss {
     /**
      * @brief The supported signature algorithms.
      */
-    enum class Algorithm {
+    enum class MPSS_DECOR Algorithm {
         unsupported,
         ecdsa_secp256r1_sha256,
         ecdsa_secp384r1_sha384,
@@ -21,7 +22,7 @@ namespace mpss {
     /**
      * @brief Security info for an algorithm.
      */
-    struct AlgorithmInfo {
+    struct MPSS_DECOR AlgorithmInfo {
         const std::size_t key_bits;
         const std::size_t security_bits;
         const std::size_t hash_bits;

@@ -5,6 +5,7 @@
 
 #include "mpss/algorithm.h"
 #include "mpss/key_info.h"
+#include "mpss/defines.h"
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -22,7 +23,7 @@ namespace mpss {
      * @brief Retrieves the last error that occurred.
      * @return The last error that occurred in the library.
      */
-    [[nodiscard]] std::string get_error() noexcept;
+    [[nodiscard]] MPSS_DECOR std::string get_error() noexcept;
 
     /**
      * @brief Determines whether the given signature algorithm is supported in the safe storage
@@ -30,7 +31,7 @@ namespace mpss {
      * @param algorithm The signature algorithm to verify
      * @return True if the signature algorithm is supported in safe storage, false otherwise.
      */
-    [[nodiscard]] bool is_algorithm_supported(Algorithm algorithm);
+    [[nodiscard]] MPSS_DECOR bool is_algorithm_supported(Algorithm algorithm);
 
     /**
      * @brief Verifies the given signature against the given hash data and public key.
@@ -40,7 +41,7 @@ namespace mpss {
      * @param[in] sig The signature to verify.
      * @return True if the data was verified successfully, false otherwise.
      */
-    [[nodiscard]] bool verify(
+    [[nodiscard]] MPSS_DECOR bool verify(
         gsl::span<const std::byte> hash,
         gsl::span<const std::byte> public_key,
         Algorithm algorithm,
@@ -49,7 +50,7 @@ namespace mpss {
     /**
      * @brief Represents a handle to a key pair in the safe storage system.
      */
-    class KeyPair {
+    class MPSS_DECOR KeyPair {
     public:
         KeyPair() = delete;
 

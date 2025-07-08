@@ -4,12 +4,13 @@
 #pragma once
 
 #include <string>
+#include "mpss/defines.h"
 
 namespace mpss {
     /**
      * @brief Structure to hold information about a key.
      */
-    struct KeyInfo {
+    struct MPSS_DECOR KeyInfo {
         KeyInfo(bool hardware_backed, const char *storage_description)
             : is_hardware_backed(hardware_backed), storage_description(storage_description)
         {}

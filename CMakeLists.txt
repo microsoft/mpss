@@ -253,8 +253,10 @@ if(TARGET ${mpss_TARGET})
         # THERE IS A REMAINING PROBLEM: ON WINDOWS THE SOME DIRECTORIES ARE BEING
         # NUMBERED WITH VERSION, SO IT MAY NOT BE CLEAR TO THE USER THAT THERE IS
         # JUST ONE LIBRARY ACTUALLY INSTALLED IN THIS CASE. THIS NEEDS TO BE FIXED.
-        if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
-            message(FATAL_ERROR "NOT IMPLEMENTED")
+        if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
+            target_compile_definitions(${mpss_TARGET} PRIVATE
+                MPSS_EXPORTS
+            )
         endif()
     endif()
 endif()
