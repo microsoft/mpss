@@ -37,13 +37,13 @@ steps:
         -DVCPKG_TARGET_TRIPLET=x64-windows-static-md
     workingDirectory: '$(Build.SourcesDirectory)'
 
-- task: MSBuild@1
+- task: CMake@1
   displayName: 'Build MPSS'
   inputs:
-    solution: '$(Build.SourcesDirectory)/build/mpss.sln'
-    msbuildArchitecture: 'x64'
-    platform: 'x64'
-    configuration: '${{ parameters.configuration }}'
+    cmakeArgs: >
+      --build build
+      --config ${{ parameters.configuration }}
+    workingDirectory: '$(Build.SourcesDirectory)'
 
 # Unit tests cannot run because TPM cannot be accessed in the Azure Pipelines hosted agents.
 # - script: '${{ parameters.configuration }}\mpss_tests.exe'
