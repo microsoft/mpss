@@ -74,7 +74,7 @@ cmake -S . -B buildArm -DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\
 | JAVA_HOME | Path to your Java SDK installation |
 | JAVA_COMPILER | Path to the Java compiler |
 
-**Note**: `CMAKE_SYSTEM_NAME` is used to build a full path to `android.jar`, which needs to be linked against when generating the MPSS jar file. **Make sure this path exists**. The full path to `android.jar` is composed like this:
+**Note**: `CMAKE_SYSTEM_VERSION` is used to build a full path to `android.jar`, which needs to be linked against when generating the MPSS jar file. **Make sure this path exists**. The full path to `android.jar` is composed like this:
 ```cmd
-%ANDROID_HOME%\platforms\android-%CMAKE_SYSTEM_NAME%\android.jar
+%ANDROID_HOME%\platforms\android-%CMAKE_SYSTEM_VERSION%\android.jar
 ```
