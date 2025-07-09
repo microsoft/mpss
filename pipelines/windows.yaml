@@ -30,6 +30,7 @@ steps:
     cmakeArgs: >
         -S .
         -B build
+        -G "Microsoft Visual Studio 17 2022"
         -DCMAKE_BUILD_TYPE='${{ parameters.configuration }}'
         -DMPSS_BUILD_TESTS=ON
         -DMPSS_BUILD_MPSS_OPENSSL_STATIC=ON
