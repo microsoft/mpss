@@ -44,7 +44,7 @@ if(MPSS_BUILD_TESTS)
 endif()
 
 # Enable openssl feature in vcpkg if we are building mpss-openssl.
-if(MPSS_BUILD_MPSS_OPENSSL_STATIC OR MPSS_BUILD_OPENSSL_SHARED)
+if(MPSS_BUILD_MPSS_OPENSSL_STATIC OR MPSS_BUILD_MPSS_OPENSSL_SHARED)
     list(APPEND VCPKG_MANIFEST_FEATURES "openssl")
 endif()
 
@@ -157,7 +157,7 @@ if(MPSS_BUILD_MPSS_OPENSSL_STATIC OR MPSS_BUILD_MPSS_OPENSSL_SHARED)
     elseif(mpss_openssl_LIBRARY_TYPE STREQUAL "SHARED")
         message(STATUS "[mpss-openssl] Building shared library")
         set(mpss_openssl_TARGET mpss_openssl_dynamic)
-        message(FATAL_ERROR "NOT IMPLEMENTED")
+        add_library(${mpss_openssl_TARGET} ${mpss_openssl_LIBRARY_TYPE} ${mpss_openssl_SOURCE_FILES})
     else()
         message(FATAL_ERROR "[mpss-openssl] Invalid value for mpss_openssl_LIBRARY_TYPE: ${mpss_openssl_LIBRARY_TYPE}")
     endif()
@@ -308,7 +308,11 @@ if(TARGET ${mpss_openssl_TARGET})
         # THERE IS A REMAINING PROBLEM: ON WINDOWS THE SOME DIRECTORIES ARE BEING
         # NUMBERED WITH VERSION, SO IT MAY NOT BE CLEAR TO THE USER THAT THERE IS
         # JUST ONE LIBRARY ACTUALLY INSTALLED IN THIS CASE. THIS NEEDS TO BE FIXED.
-        message(FATAL_ERROR "NOT IMPLEMENTED")
+        if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
+            target_compile_definitions(${mpss_openssl_TARGET} PRIVATE
+                MPSS_OPENSSL_EXPORTS
+            )
+        endif()
     endif()
 endif()
 

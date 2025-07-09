@@ -45,7 +45,7 @@ steps:
       --config ${{ parameters.configuration }}
     workingDirectory: '$(Build.SourcesDirectory)'
 
-# Unit tests cannot run because TPM cannot be accessed in the Azure Pipelines hosted agents.
+# Unit tests will fail because TPM cannot be accessed in the Azure Pipelines hosted agents.
 # - script: '${{ parameters.configuration }}\mpss_tests.exe'
 #   workingDirectory: '$(Build.SourcesDirectory)\build\bin'
 #   displayName: 'Run unit tests'

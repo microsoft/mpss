@@ -17,6 +17,7 @@ add_subdirectory(provider)
 install(
     FILES
         ${CMAKE_CURRENT_LIST_DIR}/api.h
+        ${CMAKE_CURRENT_LIST_DIR}/defines.h
     DESTINATION
         ${mpss_INCLUDES_INSTALL_DIR}/mpss-openssl
 )
