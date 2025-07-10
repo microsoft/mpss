@@ -57,13 +57,13 @@ This will show all installed SDKs. If the SDK appears as `iOS 18.4`, for example
 Generate Ninja build files for cross compiling to the x64 Android simulator. The vcpkg toolchain file is specified to satisfy build dependencies of MPSS.
 
 ```cmd
-cmake -S . -B buildX64 -DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake -DCMAKE_SYSTEM_NAME=Android -DCMAKE_SYSTEM_VERSION=%ANDROID_API_VERSION% -DCMAKE_ANDROID_ARCH_ABI=x86_64 -GNinja -DCMAKE_MAKE_PROGRAM=%NINJA_ROOT%\ninja.exe -DCMAKE_ANDROID_NDK=%ANDROID_NDK_HOME%
+cmake -S . -B buildX64 -DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-android -DCMAKE_SYSTEM_NAME=Android -DCMAKE_SYSTEM_VERSION=%ANDROID_API_VERSION% -DCMAKE_ANDROID_ARCH_ABI=x86_64 -GNinja -DCMAKE_MAKE_PROGRAM=%NINJA_ROOT%\ninja.exe -DCMAKE_ANDROID_NDK=%ANDROID_NDK_HOME%
 ```
 
 Generate Ninja build files for cross compiling to Arm64.
 
 ```cmd
-cmake -S . -B buildArm -DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake -DCMAKE_SYSTEM_NAME=Android -DCMAKE_SYSTEM_VERSION=%ANDROID_API_VERSION% -DCMAKE_ANDROID_ARCH_ABI=arm64-v8a -GNinja -DCMAKE_MAKE_PROGRAM=%NINJA_ROOT%\ninja.exe -DCMAKE_ANDROID_NDK=%ANDROID_NDK_HOME%
+cmake -S . -B buildArm -DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake -DVCPKG_TARGET_TRIPLET=arm64-android -DCMAKE_SYSTEM_NAME=Android -DCMAKE_SYSTEM_VERSION=%ANDROID_API_VERSION% -DCMAKE_ANDROID_ARCH_ABI=arm64-v8a -GNinja -DCMAKE_MAKE_PROGRAM=%NINJA_ROOT%\ninja.exe -DCMAKE_ANDROID_NDK=%ANDROID_NDK_HOME%
 ```
 
 **Note**: You will need to also set the following environment variables:
