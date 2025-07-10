@@ -117,6 +117,7 @@ steps:
         -DCMAKE_MAKE_PROGRAM=$(GetToolInfo.NinjaPath)
         -DCMAKE_ANDROID_NDK=$(GetToolInfo.AndroidNdkHome)
         -DCMAKE_TOOLCHAIN_FILE=$(Build.SourcesDirectory)/vcpkg/scripts/buildsystems/vcpkg.cmake
+        -DVCPKG_TARGET_TRIPLET=x64-android
     workingDirectory: '$(Build.SourcesDirectory)'
 
 - task: CMake@1
@@ -135,6 +136,7 @@ steps:
         -DCMAKE_MAKE_PROGRAM=$(GetToolInfo.NinjaPath)
         -DCMAKE_ANDROID_NDK=$(GetToolInfo.AndroidNdkHome)
         -DCMAKE_TOOLCHAIN_FILE=$(Build.SourcesDirectory)/vcpkg/scripts/buildsystems/vcpkg.cmake
+        -DVCPKG_TARGET_TRIPLET=arm64-android
     workingDirectory: '$(Build.SourcesDirectory)'
 
 - task: CMake@1
