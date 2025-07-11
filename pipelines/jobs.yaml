@@ -8,6 +8,7 @@ jobs:
 - ${{ if eq(parameters.name, 'Windows') }}:
   - job: ${{ parameters.name }}
     displayName: ${{ parameters.name }}
+    timeoutInMinutes: 180
     pool:
       vmImage: 'windows-latest'
     steps:
@@ -51,6 +52,7 @@ jobs:
 - ${{ if eq(parameters.name, 'Android') }}:
   - job: ${{ parameters.name }}
     displayName: ${{ parameters.name }}
+    timeoutInMinutes: 180
     pool:
       vmImage: 'windows-latest'
     steps:
