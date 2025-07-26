@@ -84,8 +84,7 @@ namespace mpss::impl::utils {
             return "Could not find KeyManagement.GetError method";
         }
 
-        jni_string error(
-            env, reinterpret_cast<jstring>(env->CallStaticObjectMethod(km.get(), mid)));
+        jni_string error(env, reinterpret_cast<jstring>(env->CallStaticObjectMethod(km.get(), mid)));
         if (error.is_null()) {
             return "Could not get error string";
         }

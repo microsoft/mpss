@@ -78,3 +78,14 @@ cmake -S . -B buildArm -DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\
 ```cmd
 %ANDROID_HOME%\platforms\android-%CMAKE_SYSTEM_VERSION%\android.jar
 ```
+
+## OpenSSL Provider (mpss-openssl)
+
+To build the OpenSSL provider, configure the CMake project with `-DMPSS_BUILD_MPSS_OPENSSL_STATIC=ON` (for a static library build) or `-DMPSS_BUILD_MPSS_OPENSSL_SHARED=ON` (for a shared library build).
+Examples for using the OpenSSL provider can be found in [tests/mpss_openssl_tests.cpp](tests/mpss_openssl_tests.cpp).
+
+## Contributing to MPSS
+
+MPSS is released under the MIT license.
+We welcome contributions, including feature additions and bug fixes.
+If you have a feature request or a question about how to use the library, please [submit an issue](https://github.com/microsoft/mpss/issues).

@@ -75,9 +75,7 @@ namespace mpss_openssl::utils {
 
     template <std::size_t N>
     [[nodiscard]] bool are_aliases(
-        std::string_view name1,
-        std::string_view name2,
-        const std::array<const char *, N> &alias_arr)
+        std::string_view name1, std::string_view name2, const std::array<const char *, N> &alias_arr)
     {
         if (name1 == name2) {
             return true;
@@ -108,8 +106,7 @@ namespace mpss_openssl::utils {
 
     namespace unsafe {
         template <std::size_t N>
-        std::string_view try_extract_canonical_name(
-            std::string_view str, const std::array<const char *, N> &alias_arr)
+        std::string_view try_extract_canonical_name(std::string_view str, const std::array<const char *, N> &alias_arr)
         {
             // IMPORTANT NOTE: The std::string_view this function returns IS NOT NULL-TERMINATED!
             // THIS FUNCTION IS DANGEROUS TO USE DIRECTLY.
@@ -166,8 +163,7 @@ namespace mpss_openssl::utils {
         }
     } // namespace unsafe
 
-    [[nodiscard]] std::optional<std::string> try_get_ec_group(
-        const std::unique_ptr<KeyPair> &key_pair)
+    [[nodiscard]] std::optional<std::string> try_get_ec_group(const std::unique_ptr<KeyPair> &key_pair)
     {
         // Fail if no key is present.
         if (!key_pair) {
@@ -181,8 +177,7 @@ namespace mpss_openssl::utils {
         return std::string(unsafe::try_extract_canonical_name(type_str, mpss_group_names));
     }
 
-    [[nodiscard]] std::optional<std::string> try_get_hash_func(
-        const std::unique_ptr<KeyPair> &key_pair)
+    [[nodiscard]] std::optional<std::string> try_get_hash_func(const std::unique_ptr<KeyPair> &key_pair)
     {
         // Fail if no key is present.
         if (!key_pair) {
@@ -196,8 +191,7 @@ namespace mpss_openssl::utils {
         return std::string(unsafe::try_extract_canonical_name(type_str, mpss_hash_names));
     }
 
-    [[nodiscard]] std::optional<std::string> try_get_signature_scheme(
-        const std::unique_ptr<KeyPair> &key_pair)
+    [[nodiscard]] std::optional<std::string> try_get_signature_scheme(const std::unique_ptr<KeyPair> &key_pair)
     {
         // Fail if no key is present.
         if (!key_pair) {
@@ -211,8 +205,7 @@ namespace mpss_openssl::utils {
         return std::string(unsafe::try_extract_canonical_name(type_str, mpss_sig_names));
     }
 
-    [[nodiscard]] std::optional<std::string> try_get_algorithm_name(
-        const std::unique_ptr<KeyPair> &key_pair)
+    [[nodiscard]] std::optional<std::string> try_get_algorithm_name(const std::unique_ptr<KeyPair> &key_pair)
     {
         // Fail if no key is present.
         if (!key_pair) {
@@ -233,14 +226,12 @@ namespace mpss_openssl::utils {
         // Iterate over every algorithm name in the list.
         for (const auto &alg_name : mpss_algorithm_names) {
             // Check that the signature scheme and hash function are in the algorithm name.
-            std::string_view canonical_sig_name =
-                unsafe::try_extract_canonical_name(alg_name, mpss_sig_names);
+            std::string_view canonical_sig_name = unsafe::try_extract_canonical_name(alg_name, mpss_sig_names);
             if (canonical_sig_name.empty() || (canonical_sig_name != sig_scheme.value())) {
                 continue;
             }
 
-            std::string_view canonical_hash_name =
-                unsafe::try_extract_canonical_name(alg_name, mpss_hash_names);
+            std::string_view canonical_hash_name = unsafe::try_extract_canonical_name(alg_name, mpss_hash_names);
             if (canonical_hash_name.empty() || (canonical_hash_name != hash_func.value())) {
                 continue;
             }

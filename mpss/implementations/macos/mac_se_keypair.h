@@ -14,10 +14,8 @@ namespace mpss {
 
         protected:
             bool do_delete_key() override;
-            std::size_t do_sign_hash(
-                gsl::span<const std::byte> hash, gsl::span<std::byte> sig) const override;
-            bool do_verify(
-                gsl::span<const std::byte> hash, gsl::span<const std::byte> sig) const override;
+            std::size_t do_sign_hash(gsl::span<const std::byte> hash, gsl::span<std::byte> sig) const override;
+            bool do_verify(gsl::span<const std::byte> hash, gsl::span<const std::byte> sig) const override;
             std::size_t do_extract_key(gsl::span<std::byte> public_key) const override;
             void do_release_key() override;
         };

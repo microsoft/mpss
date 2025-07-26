@@ -3,12 +3,12 @@
 
 #pragma once
 
-#include <cstddef>
+#include "mpss-openssl/utils/utils.h"
 #include <openssl/core.h>
 #include <openssl/evp.h>
 #include <openssl/types.h>
+#include <cstddef>
 #include <string>
-#include "mpss-openssl/utils/utils.h"
 
 namespace mpss_openssl::provider {
     enum class digest_state { uninitialized, digesting, finalized, error };

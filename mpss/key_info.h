@@ -3,8 +3,8 @@
 
 #pragma once
 
-#include <string>
 #include "mpss/defines.h"
+#include <string>
 
 namespace mpss {
     /**

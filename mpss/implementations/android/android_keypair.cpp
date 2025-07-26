@@ -37,8 +37,7 @@ namespace mpss::impl {
         return true;
     }
 
-    std::size_t AndroidKeyPair::sign_hash(
-        gsl::span<const std::byte> hash, gsl::span<std::byte> sig) const
+    std::size_t AndroidKeyPair::sign_hash(gsl::span<const std::byte> hash, gsl::span<std::byte> sig) const
     {
         if (!mpss::utils::check_hash_length(hash, algorithm())) {
             mpss::utils::set_error("Invalid hash length for algorithm");
@@ -71,8 +70,7 @@ namespace mpss::impl {
 
         jni_bytearray result(
             env(),
-            reinterpret_cast<jbyteArray>(
-                env()->CallStaticObjectMethod(km.get(), mid, keyName.get(), hash_arr.get())));
+            reinterpret_cast<jbyteArray>(env()->CallStaticObjectMethod(km.get(), mid, keyName.get(), hash_arr.get())));
         if (result.is_null()) {
             mpss::utils::set_error("KeyManagement.SignHash returned null");
             return 0;
@@ -87,8 +85,7 @@ namespace mpss::impl {
         return sig_size;
     }
 
-    bool AndroidKeyPair::verify(
-        gsl::span<const std::byte> hash, gsl::span<const std::byte> sig) const
+    bool AndroidKeyPair::verify(gsl::span<const std::byte> hash, gsl::span<const std::byte> sig) const
     {
         jni_class km(env(), utils::GetKeyManagementClass(env()));
         if (km.is_null()) {
@@ -96,8 +93,8 @@ namespace mpss::impl {
             return false;
         }
 
-        jmethodID mid = env()->GetStaticMethodID(
-            km.get(), "VerifySignature", "(Ljava/lang/String;[B[B)Ljava/lang/Boolean;");
+        jmethodID mid =
+            env()->GetStaticMethodID(km.get(), "VerifySignature", "(Ljava/lang/String;[B[B)Ljava/lang/Boolean;");
         if (nullptr == mid) {
             mpss::utils::set_error("Could not get KeyManagement.VerifySignature method");
             return false;
@@ -122,9 +119,7 @@ namespace mpss::impl {
         }
 
         jni_object result(
-            env(),
-            env()->CallStaticObjectMethod(
-                km.get(), mid, keyName.get(), hash_arr.get(), sig_arr.get()));
+            env(), env()->CallStaticObjectMethod(km.get(), mid, keyName.get(), hash_arr.get(), sig_arr.get()));
         bool verified = utils::UnboxBoolean(env(), result.get());
 
         if (!verified) {
@@ -143,8 +138,7 @@ namespace mpss::impl {
             return 0;
         }
 
-        jmethodID mid =
-            env()->GetStaticMethodID(km.get(), "GetPublicKey", "(Ljava/lang/String;)[B");
+        jmethodID mid = env()->GetStaticMethodID(km.get(), "GetPublicKey", "(Ljava/lang/String;)[B");
         if (nullptr == mid) {
             mpss::utils::set_error("Could not get KeyManagement.GetPublicKey method");
             return false;
@@ -157,9 +151,7 @@ namespace mpss::impl {
         }
 
         jni_bytearray result(
-            env(),
-            reinterpret_cast<jbyteArray>(
-                env()->CallStaticObjectMethod(km.get(), mid, keyName.get())));
+            env(), reinterpret_cast<jbyteArray>(env()->CallStaticObjectMethod(km.get(), mid, keyName.get())));
         if (result.is_null()) {
             mpss::utils::set_error("KeyManagement.GetPublicKey returned null");
             return false;

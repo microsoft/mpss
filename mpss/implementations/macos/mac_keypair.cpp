@@ -16,10 +16,7 @@ namespace mpss {
         {}
 
         MacKeyPair::MacKeyPair(
-            std::string_view name,
-            Algorithm algorithm,
-            bool hardware_backed,
-            const char *storage_description)
+            std::string_view name, Algorithm algorithm, bool hardware_backed, const char *storage_description)
             : KeyPair(algorithm, hardware_backed, storage_description), name_(name)
         {}
 
@@ -33,8 +30,7 @@ namespace mpss {
             return do_delete_key();
         }
 
-        std::size_t MacKeyPair::sign_hash(
-            gsl::span<const std::byte> hash, gsl::span<std::byte> sig) const
+        std::size_t MacKeyPair::sign_hash(gsl::span<const std::byte> hash, gsl::span<std::byte> sig) const
         {
             // If there is nothing to sign, return 0
             if (hash.empty()) {
@@ -44,8 +40,7 @@ namespace mpss {
 
             if (hash.size() != info_.hash_bits / 8) {
                 std::stringstream ss;
-                ss << "Invalid hash length " << hash.size() << " (expected " << info_.hash_bits
-                   << " bits)";
+                ss << "Invalid hash length " << hash.size() << " (expected " << info_.hash_bits << " bits)";
                 mpss::utils::set_error(ss.str());
                 return 0;
             }
@@ -58,8 +53,7 @@ namespace mpss {
             return do_sign_hash(hash, sig);
         }
 
-        bool MacKeyPair::verify(
-            gsl::span<const std::byte> hash, gsl::span<const std::byte> sig) const
+        bool MacKeyPair::verify(gsl::span<const std::byte> hash, gsl::span<const std::byte> sig) const
         {
             // If there is nothing to verify, return false
             if (hash.empty() || sig.empty()) {
@@ -69,8 +63,7 @@ namespace mpss {
 
             if (hash.size() != info_.hash_bits / 8) {
                 std::stringstream ss;
-                ss << "Invalid hash length " << hash.size() << " (expected " << info_.hash_bits
-                   << " bits)";
+                ss << "Invalid hash length " << hash.size() << " (expected " << info_.hash_bits << " bits)";
                 mpss::utils::set_error(ss.str());
                 return false;
             }
@@ -105,8 +98,7 @@ namespace mpss {
             return result;
         }
 
-        std::size_t MacKeyPair::do_sign_hash(
-            gsl::span<const std::byte> hash, gsl::span<std::byte> sig) const
+        std::size_t MacKeyPair::do_sign_hash(gsl::span<const std::byte> hash, gsl::span<std::byte> sig) const
         {
             std::size_t signature_size = sig.size();
 
@@ -126,8 +118,7 @@ namespace mpss {
             return signature_size;
         }
 
-        bool MacKeyPair::do_verify(
-            gsl::span<const std::byte> hash, gsl::span<const std::byte> sig) const
+        bool MacKeyPair::do_verify(gsl::span<const std::byte> hash, gsl::span<const std::byte> sig) const
         {
             bool result = MPSS_VerifySignature(
                 name().c_str(),
@@ -149,10 +140,7 @@ namespace mpss {
         {
             std::size_t pk_size = public_key.size();
 
-            if (!MPSS_GetPublicKey(
-                    name().c_str(),
-                    reinterpret_cast<std::uint8_t *>(public_key.data()),
-                    &pk_size)) {
+            if (!MPSS_GetPublicKey(name().c_str(), reinterpret_cast<std::uint8_t *>(public_key.data()), &pk_size)) {
                 std::stringstream ss;
                 ss << "Failed to retrieve public key: " << MPSS_GetLastError();
                 mpss::utils::set_error(ss.str());

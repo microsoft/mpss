@@ -1,14 +1,14 @@
 // Copyright(c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#include "mpss-openssl/provider/provider.h"
-#include <iostream>
-#include <openssl/core_dispatch.h>
 #include "mpss-openssl/provider/digest.h"
 #include "mpss-openssl/provider/encoder.h"
 #include "mpss-openssl/provider/keymgmt.h"
+#include "mpss-openssl/provider/provider.h"
 #include "mpss-openssl/provider/signature.h"
 #include "mpss-openssl/utils/utils.h"
+#include <openssl/core_dispatch.h>
+#include <iostream>
 
 namespace {
     using namespace mpss_openssl::provider;
@@ -45,18 +45,13 @@ namespace {
     }
 
     const OSSL_DISPATCH mpss_provider_functions[] = {
-        { OSSL_FUNC_PROVIDER_TEARDOWN, reinterpret_cast<void (*)(void)>(mpss_provider_teardown) },
-        { OSSL_FUNC_PROVIDER_QUERY_OPERATION,
-          reinterpret_cast<void (*)(void)>(mpss_provider_query_operation) },
-        OSSL_DISPATCH_END
-    };
+        {OSSL_FUNC_PROVIDER_TEARDOWN, reinterpret_cast<void (*)(void)>(mpss_provider_teardown)},
+        {OSSL_FUNC_PROVIDER_QUERY_OPERATION, reinterpret_cast<void (*)(void)>(mpss_provider_query_operation)},
+        OSSL_DISPATCH_END};
 } // namespace
 
 extern "C" int OSSL_provider_init(
-    const OSSL_CORE_HANDLE *handle,
-    const OSSL_DISPATCH *in,
-    const OSSL_DISPATCH **out,
-    void **provctx)
+    const OSSL_CORE_HANDLE *handle, const OSSL_DISPATCH *in, const OSSL_DISPATCH **out, void **provctx)
 {
     using namespace mpss_openssl::provider;
     using namespace mpss_openssl::utils;

@@ -31,4 +31,3 @@
 #define MPSS_CALL
 
 #endif // _MSC_VER
-

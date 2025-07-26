@@ -3,16 +3,15 @@
 
 #pragma once
 
-#include "mpss/mpss.h"
 #include "mpss/defines.h"
+#include "mpss/mpss.h"
 #include <memory>
 #include <string>
 #include <string_view>
 
 namespace mpss {
     namespace impl {
-        [[nodiscard]] MPSS_DECOR std::unique_ptr<KeyPair> create_key(
-            std::string_view name, Algorithm algorithm);
+        [[nodiscard]] MPSS_DECOR std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm);
 
         [[nodiscard]] MPSS_DECOR std::unique_ptr<KeyPair> open_key(std::string_view name);
 

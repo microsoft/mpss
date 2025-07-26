@@ -6,11 +6,11 @@
 #include "mpss/implementations/mpss_impl.h"
 #include "mpss/implementations/windows/win_keypair.h"
 #include "mpss/implementations/windows/win_utils.h"
+#include <gsl/narrow>
+#include <gsl/span>
 #include <Windows.h>
 #include <codecvt>
 #include <cwchar>
-#include <gsl/narrow>
-#include <gsl/span>
 #include <locale>
 #include <ncrypt.h>
 #include <sstream>
@@ -56,12 +56,10 @@ namespace {
 
         LPCWSTR provider_name_to_use = fallback ? fallback_provider_name : provider_name;
 
-        SECURITY_STATUS status =
-            ::NCryptOpenStorageProvider(&provider_handle, provider_name_to_use, flags);
+        SECURITY_STATUS status = ::NCryptOpenStorageProvider(&provider_handle, provider_name_to_use, flags);
         if (ERROR_SUCCESS != status) {
             std::stringstream ss;
-            ss << "NCryptOpenStorageProvider failed with error code "
-               << mpss::utils::to_hex(status);
+            ss << "NCryptOpenStorageProvider failed with error code " << mpss::utils::to_hex(status);
             mpss::utils::set_error(ss.str());
             return 0;
         }
@@ -85,8 +83,7 @@ namespace {
         NCRYPT_KEY_HANDLE key_handle = 0;
         std::wstring wname(name.begin(), name.end());
 
-        SECURITY_STATUS status =
-            ::NCryptOpenKey(provider_handle, &key_handle, wname.c_str(), key_spec, key_open_mode);
+        SECURITY_STATUS status = ::NCryptOpenKey(provider_handle, &key_handle, wname.c_str(), key_spec, key_open_mode);
         if (ERROR_SUCCESS != status) {
             std::stringstream ss;
             ss << "NCryptOpenKey failed with error code " << mpss::utils::to_hex(status);
@@ -128,8 +125,7 @@ namespace {
 
     NCRYPT_KEY_HANDLE CreateKey(std::string_view name, mpss::Algorithm algorithm, bool fallback)
     {
-        mpss::impl::crypto_params const *const crypto =
-            mpss::impl::utils::get_crypto_params(algorithm);
+        mpss::impl::crypto_params const *const crypto = mpss::impl::utils::get_crypto_params(algorithm);
         if (!crypto) {
             mpss::utils::set_error("Unsupported algorithm.");
             return 0;
@@ -184,8 +180,7 @@ namespace {
             /* dwFlags */ 0);
         if (ERROR_SUCCESS != status) {
             std::stringstream ss;
-            ss << "NCryptGetProperty (algorithm) failed with error code "
-               << mpss::utils::to_hex(status);
+            ss << "NCryptGetProperty (algorithm) failed with error code " << mpss::utils::to_hex(status);
             mpss::utils::set_error(ss.str());
             return mpss::Algorithm::unsupported;
         }
@@ -210,19 +205,16 @@ namespace {
             return mpss::Algorithm::unsupported;
         }
 
-        if (algorithm_name.compare(/* offset */ 0,
-                                   std::wcslen(NCRYPT_ECDSA_P256_ALGORITHM),
-                                   NCRYPT_ECDSA_P256_ALGORITHM) == 0) {
+        if (algorithm_name.compare(
+                /* offset */ 0, std::wcslen(NCRYPT_ECDSA_P256_ALGORITHM), NCRYPT_ECDSA_P256_ALGORITHM) == 0) {
             return mpss::Algorithm::ecdsa_secp256r1_sha256;
         } else if (
-            algorithm_name.compare(/* offset */ 0,
-                                   std::wcslen(NCRYPT_ECDSA_P384_ALGORITHM),
-                                   NCRYPT_ECDSA_P384_ALGORITHM) == 0) {
+            algorithm_name.compare(
+                /* offset */ 0, std::wcslen(NCRYPT_ECDSA_P384_ALGORITHM), NCRYPT_ECDSA_P384_ALGORITHM) == 0) {
             return mpss::Algorithm::ecdsa_secp384r1_sha384;
         } else if (
-            algorithm_name.compare(/* offset */ 0,
-                                   std::wcslen(NCRYPT_ECDSA_P521_ALGORITHM),
-                                   NCRYPT_ECDSA_P521_ALGORITHM) == 0) {
+            algorithm_name.compare(
+                /* offset */ 0, std::wcslen(NCRYPT_ECDSA_P521_ALGORITHM), NCRYPT_ECDSA_P521_ALGORITHM) == 0) {
             return mpss::Algorithm::ecdsa_secp521r1_sha512;
         } else {
             std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
@@ -248,8 +240,7 @@ namespace {
             /* dwFlags */ 0);
         if (ERROR_SUCCESS != status) {
             std::stringstream ss;
-            ss << "NCryptGetProperty (length) failed with error code "
-               << mpss::utils::to_hex(status);
+            ss << "NCryptGetProperty (length) failed with error code " << mpss::utils::to_hex(status);
             mpss::utils::set_error(ss.str());
             return 0;
         }
@@ -337,8 +328,7 @@ namespace mpss::impl {
             }
         }
 
-        return std::make_unique<WindowsKeyPair>(
-            algorithm, key_handle, /* hardware_backed */ true, storage_description);
+        return std::make_unique<WindowsKeyPair>(algorithm, key_handle, /* hardware_backed */ true, storage_description);
     }
 
     bool verify(
@@ -360,7 +350,7 @@ namespace mpss::impl {
         }
 
         // Check compression indicator
-        if (public_key[0] != std::byte{ 0x04 }) {
+        if (public_key[0] != std::byte{0x04}) {
             mpss::utils::set_error("Invalid public key format.");
             return false;
         }
@@ -387,8 +377,7 @@ namespace mpss::impl {
             ::SecureZeroMemory(key_blob_buffer.get(), pk_blob_size);
         });
 
-        crypto_params::key_blob_t *key_blob =
-            reinterpret_cast<crypto_params::key_blob_t *>(key_blob_buffer.get());
+        crypto_params::key_blob_t *key_blob = reinterpret_cast<crypto_params::key_blob_t *>(key_blob_buffer.get());
         key_blob->dwMagic = crypto->public_key_magic();
         // Field size, apparently
         key_blob->cbKey = mpss::utils::narrow_or_error<ULONG>((info.key_bits + 7) / 8);

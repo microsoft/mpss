@@ -2,13 +2,13 @@
 // Licensed under the MIT license.
 
 #include "mpss-openssl/provider/keymgmt.h"
-#include <cstddef>
-#include <cstdint>
-#include <iostream>
+#include "mpss-openssl/utils/utils.h"
 #include <openssl/core_dispatch.h>
 #include <openssl/core_names.h>
 #include <openssl/params.h>
-#include "mpss-openssl/utils/utils.h"
+#include <cstddef>
+#include <cstdint>
+#include <iostream>
 
 namespace mpss_openssl::provider {
     using namespace ::mpss_openssl::utils;
@@ -53,18 +53,15 @@ namespace mpss_openssl::provider {
         this->mpss_algorithm = mpss_algorithm;
 
         if (has_valid_key()) {
-            std::cout << "LOG: mpss_key constructor (acquired valid key: " << key_name << ")"
-                      << std::endl;
+            std::cout << "LOG: mpss_key constructor (acquired valid key: " << key_name << ")" << std::endl;
         } else {
-            std::cout << "LOG: mpss_key constructor (failed to acquire valid key: " << key_name
-                      << ")" << std::endl;
+            std::cout << "LOG: mpss_key constructor (failed to acquire valid key: " << key_name << ")" << std::endl;
         }
     }
 
     mpss_key::~mpss_key()
     {
-        std::cout << "LOG: mpss_key destructor (key: " << name.value_or("unnamed") << ")"
-                  << std::endl;
+        std::cout << "LOG: mpss_key destructor (key: " << name.value_or("unnamed") << ")" << std::endl;
         key_pair.release();
         key_pair = nullptr;
         std::cout << "LOG: mpss_key destructor (key released)" << std::endl;
@@ -72,9 +69,9 @@ namespace mpss_openssl::provider {
 
     [[nodiscard]] bool mpss_key::has_valid_key() const noexcept
     {
-        return key_pair && (key_pair->algorithm() != mpss::Algorithm::unsupported) &&
-               name.has_value() && sig_name.has_value() && group_name.has_value() &&
-               hash_name.has_value() && mpss_algorithm.has_value() && alg_name.has_value();
+        return key_pair && (key_pair->algorithm() != mpss::Algorithm::unsupported) && name.has_value() &&
+               sig_name.has_value() && group_name.has_value() && hash_name.has_value() && mpss_algorithm.has_value() &&
+               alg_name.has_value();
     }
 } // namespace mpss_openssl::provider
 
@@ -82,8 +79,7 @@ namespace {
     using namespace ::mpss_openssl::provider;
     using namespace ::mpss_openssl::utils;
 
-    extern "C" int mpss_keymgmt_export(
-        void *keydata, int selection, OSSL_CALLBACK *param_cb, void *cbarg)
+    extern "C" int mpss_keymgmt_export(void *keydata, int selection, OSSL_CALLBACK *param_cb, void *cbarg)
     {
         // Ensure that key data is supplied and holds a key.
         mpss_key *pkey = static_cast<mpss_key *>(keydata);
@@ -136,25 +132,20 @@ namespace {
 
     extern "C" const OSSL_PARAM *mpss_keymgmt_export_types(int selection)
     {
-        static constexpr OSSL_PARAM no_types[] = { OSSL_PARAM_END };
+        static constexpr OSSL_PARAM no_types[] = {OSSL_PARAM_END};
 
         static constexpr OSSL_PARAM param_types[] = {
-            OSSL_PARAM_utf8_string(OSSL_PKEY_PARAM_GROUP_NAME, nullptr, 0), OSSL_PARAM_END
-        };
+            OSSL_PARAM_utf8_string(OSSL_PKEY_PARAM_GROUP_NAME, nullptr, 0), OSSL_PARAM_END};
 
         static constexpr OSSL_PARAM key_types[] = {
-            OSSL_PARAM_octet_string(OSSL_PKEY_PARAM_PUB_KEY, nullptr, 0), OSSL_PARAM_END
-        };
+            OSSL_PARAM_octet_string(OSSL_PKEY_PARAM_PUB_KEY, nullptr, 0), OSSL_PARAM_END};
 
         static constexpr OSSL_PARAM all_types[] = {
             OSSL_PARAM_utf8_string(OSSL_PKEY_PARAM_GROUP_NAME, nullptr, 0),
             OSSL_PARAM_octet_string(OSSL_PKEY_PARAM_PUB_KEY, nullptr, 0),
-            OSSL_PARAM_END
-        };
+            OSSL_PARAM_END};
 
-        static constexpr const OSSL_PARAM *types_array[] = {
-            no_types, param_types, key_types, all_types
-        };
+        static constexpr const OSSL_PARAM *types_array[] = {no_types, param_types, key_types, all_types};
 
         std::size_t types_idx = 0;
         if (selection & OSSL_KEYMGMT_SELECT_ALL_PARAMETERS) {
@@ -170,9 +161,10 @@ namespace {
 
     extern "C" const OSSL_PARAM *mpss_keymgmt_gen_settable_params([[maybe_unused]] void *provctx)
     {
-        static constexpr OSSL_PARAM ret[] = { OSSL_PARAM_utf8_string("key_name", nullptr, 0),
-                                              OSSL_PARAM_utf8_string("mpss_algorithm", nullptr, 0),
-                                              OSSL_PARAM_END };
+        static constexpr OSSL_PARAM ret[] = {
+            OSSL_PARAM_utf8_string("key_name", nullptr, 0),
+            OSSL_PARAM_utf8_string("mpss_algorithm", nullptr, 0),
+            OSSL_PARAM_END};
 
         return ret;
     }
@@ -218,8 +210,7 @@ namespace {
             OSSL_PARAM_int32(OSSL_PKEY_PARAM_SECURITY_BITS, nullptr),
             OSSL_PARAM_utf8_string(OSSL_PKEY_PARAM_MANDATORY_DIGEST, nullptr, 0),
             OSSL_PARAM_utf8_string(OSSL_PKEY_PARAM_DEFAULT_DIGEST, nullptr, 0),
-            OSSL_PARAM_END
-        };
+            OSSL_PARAM_END};
 
         std::cout << "LOG: mpss_keymgmt_gettable_params" << std::endl;
         return ret;
@@ -253,20 +244,17 @@ namespace {
         }
 
         OSSL_PARAM *p;
-        if ((p = OSSL_PARAM_locate(params, "key_name")) &&
-            !OSSL_PARAM_set_utf8_string(p, key_name.data())) {
+        if ((p = OSSL_PARAM_locate(params, "key_name")) && !OSSL_PARAM_set_utf8_string(p, key_name.data())) {
             return 0;
         }
         if ((p = OSSL_PARAM_locate(params, "mpss_algorithm")) &&
             !OSSL_PARAM_set_utf8_string(p, mpss_algorithm.data())) {
             return 0;
         }
-        if ((p = OSSL_PARAM_locate(params, OSSL_PKEY_PARAM_BITS)) &&
-            !OSSL_PARAM_set_int32(p, bits)) {
+        if ((p = OSSL_PARAM_locate(params, OSSL_PKEY_PARAM_BITS)) && !OSSL_PARAM_set_int32(p, bits)) {
             return 0;
         }
-        if ((p = OSSL_PARAM_locate(params, OSSL_PKEY_PARAM_SECURITY_BITS)) &&
-            !OSSL_PARAM_set_int32(p, security_bits)) {
+        if ((p = OSSL_PARAM_locate(params, OSSL_PKEY_PARAM_SECURITY_BITS)) && !OSSL_PARAM_set_int32(p, security_bits)) {
             return 0;
         }
         if ((p = OSSL_PARAM_locate(params, OSSL_PKEY_PARAM_MANDATORY_DIGEST)) &&
@@ -290,8 +278,7 @@ namespace {
         std::cout << "LOG: mpss_keymgmt_gen_cleanup" << std::endl;
     }
 
-    extern "C" void *mpss_keymgmt_gen_init(
-        [[maybe_unused]] void *provctx, int selection, const OSSL_PARAM params[])
+    extern "C" void *mpss_keymgmt_gen_init([[maybe_unused]] void *provctx, int selection, const OSSL_PARAM params[])
     {
         // NOTE: We must allow params to be nullptr here.
 
@@ -303,8 +290,7 @@ namespace {
         genctx->selection = selection;
 
         if (1 != mpss_keymgmt_gen_set_params(genctx, params)) {
-            std::cout << "LOG: mpss_keymgmt_gen_init (failed to set params) -> nullptr"
-                      << std::endl;
+            std::cout << "LOG: mpss_keymgmt_gen_init (failed to set params) -> nullptr" << std::endl;
             mpss_keymgmt_gen_cleanup(genctx);
             genctx = nullptr;
         }
@@ -321,8 +307,7 @@ namespace {
         mpss_delete<false>(static_cast<mpss_key *>(provkey));
     }
 
-    extern "C" void *mpss_keymgmt_gen(
-        void *genctx, [[maybe_unused]] OSSL_CALLBACK *cb, [[maybe_unused]] void *cbarg)
+    extern "C" void *mpss_keymgmt_gen(void *genctx, [[maybe_unused]] OSSL_CALLBACK *cb, [[maybe_unused]] void *cbarg)
     {
         using namespace mpss;
 
@@ -360,8 +345,8 @@ namespace {
         }
 
         // Key generation succeeded.
-        std::cout << "LOG: mpss_keymgmt_gen (" << pkey->name.value() << " / "
-                  << pkey->mpss_algorithm.value() << ")" << std::endl;
+        std::cout << "LOG: mpss_keymgmt_gen (" << pkey->name.value() << " / " << pkey->mpss_algorithm.value() << ")"
+                  << std::endl;
         return pkey;
     }
 
@@ -394,33 +379,24 @@ namespace {
     }
 
     const OSSL_DISPATCH mpss_ecdsa_keymgmt_functions[] = {
-        { OSSL_FUNC_KEYMGMT_EXPORT, reinterpret_cast<void (*)(void)>(mpss_keymgmt_export) },
-        { OSSL_FUNC_KEYMGMT_EXPORT_TYPES,
-          reinterpret_cast<void (*)(void)>(mpss_keymgmt_export_types) },
-        { OSSL_FUNC_KEYMGMT_GEN_SETTABLE_PARAMS,
-          reinterpret_cast<void (*)(void)>(mpss_keymgmt_gen_settable_params) },
-        { OSSL_FUNC_KEYMGMT_GEN_SET_PARAMS,
-          reinterpret_cast<void (*)(void)>(mpss_keymgmt_gen_set_params) },
-        { OSSL_FUNC_KEYMGMT_GETTABLE_PARAMS,
-          reinterpret_cast<void (*)(void)>(mpss_keymgmt_gettable_params) },
-        { OSSL_FUNC_KEYMGMT_GET_PARAMS, reinterpret_cast<void (*)(void)>(mpss_keymgmt_get_params) },
-        { OSSL_FUNC_KEYMGMT_GEN_CLEANUP,
-          reinterpret_cast<void (*)(void)>(mpss_keymgmt_gen_cleanup) },
-        { OSSL_FUNC_KEYMGMT_GEN_INIT, reinterpret_cast<void (*)(void)>(mpss_keymgmt_gen_init) },
-        { OSSL_FUNC_KEYMGMT_FREE, reinterpret_cast<void (*)(void)>(mpss_keymgmt_free) },
-        { OSSL_FUNC_KEYMGMT_GEN, reinterpret_cast<void (*)(void)>(mpss_keymgmt_gen) },
-        { OSSL_FUNC_KEYMGMT_HAS, reinterpret_cast<void (*)(void)>(mpss_keymgmt_has) },
-        { OSSL_FUNC_KEYMGMT_QUERY_OPERATION_NAME,
-          reinterpret_cast<void (*)(void)>(mpss_keymgmt_query_operation_name) },
-        OSSL_DISPATCH_END
-    };
+        {OSSL_FUNC_KEYMGMT_EXPORT, reinterpret_cast<void (*)(void)>(mpss_keymgmt_export)},
+        {OSSL_FUNC_KEYMGMT_EXPORT_TYPES, reinterpret_cast<void (*)(void)>(mpss_keymgmt_export_types)},
+        {OSSL_FUNC_KEYMGMT_GEN_SETTABLE_PARAMS, reinterpret_cast<void (*)(void)>(mpss_keymgmt_gen_settable_params)},
+        {OSSL_FUNC_KEYMGMT_GEN_SET_PARAMS, reinterpret_cast<void (*)(void)>(mpss_keymgmt_gen_set_params)},
+        {OSSL_FUNC_KEYMGMT_GETTABLE_PARAMS, reinterpret_cast<void (*)(void)>(mpss_keymgmt_gettable_params)},
+        {OSSL_FUNC_KEYMGMT_GET_PARAMS, reinterpret_cast<void (*)(void)>(mpss_keymgmt_get_params)},
+        {OSSL_FUNC_KEYMGMT_GEN_CLEANUP, reinterpret_cast<void (*)(void)>(mpss_keymgmt_gen_cleanup)},
+        {OSSL_FUNC_KEYMGMT_GEN_INIT, reinterpret_cast<void (*)(void)>(mpss_keymgmt_gen_init)},
+        {OSSL_FUNC_KEYMGMT_FREE, reinterpret_cast<void (*)(void)>(mpss_keymgmt_free)},
+        {OSSL_FUNC_KEYMGMT_GEN, reinterpret_cast<void (*)(void)>(mpss_keymgmt_gen)},
+        {OSSL_FUNC_KEYMGMT_HAS, reinterpret_cast<void (*)(void)>(mpss_keymgmt_has)},
+        {OSSL_FUNC_KEYMGMT_QUERY_OPERATION_NAME, reinterpret_cast<void (*)(void)>(mpss_keymgmt_query_operation_name)},
+        OSSL_DISPATCH_END};
 } // namespace
 
 namespace mpss_openssl::provider {
     const OSSL_ALGORITHM mpss_keymgmt_algorithms[] = {
-        { ec_key_names, "provider=mpss", mpss_ecdsa_keymgmt_functions },
-        { nullptr, nullptr, nullptr }
-    };
+        {ec_key_names, "provider=mpss", mpss_ecdsa_keymgmt_functions}, {nullptr, nullptr, nullptr}};
 
     int mpss_keymgmt_export(void *keydata, int selection, OSSL_CALLBACK *param_cb, void *cbarg)
     {

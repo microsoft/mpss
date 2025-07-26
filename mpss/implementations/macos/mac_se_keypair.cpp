@@ -27,8 +27,7 @@ namespace mpss {
             return true;
         }
 
-        std::size_t MacSEKeyPair::do_sign_hash(
-            gsl::span<const std::byte> hash, gsl::span<std::byte> sig) const
+        std::size_t MacSEKeyPair::do_sign_hash(gsl::span<const std::byte> hash, gsl::span<std::byte> sig) const
         {
             std::size_t signature_size = sig.size();
 
@@ -47,8 +46,7 @@ namespace mpss {
             return signature_size;
         }
 
-        bool MacSEKeyPair::do_verify(
-            gsl::span<const std::byte> hash, gsl::span<const std::byte> sig) const
+        bool MacSEKeyPair::do_verify(gsl::span<const std::byte> hash, gsl::span<const std::byte> sig) const
         {
             bool result = MPSS_SE_VerifySignature(
                 name().c_str(),
@@ -69,12 +67,11 @@ namespace mpss {
         {
             std::size_t pk_size = public_key.size();
 
-            bool result = MPSS_SE_GetPublicKey(
-                name().c_str(), reinterpret_cast<std::uint8_t *>(public_key.data()), &pk_size);
+            bool result =
+                MPSS_SE_GetPublicKey(name().c_str(), reinterpret_cast<std::uint8_t *>(public_key.data()), &pk_size);
             if (!result) {
                 std::stringstream ss;
-                ss << "Failed to retrieve public key: "
-                   << mpss::impl::utils::MPSS_SE_GetLastError();
+                ss << "Failed to retrieve public key: " << mpss::impl::utils::MPSS_SE_GetLastError();
                 mpss::utils::set_error(ss.str());
                 return 0;
             }

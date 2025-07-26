@@ -3,14 +3,14 @@
 
 #pragma once
 
-#include <memory>
-#include <mpss/mpss.h>
+#include "mpss-openssl/utils/utils.h"
 #include <openssl/core.h>
 #include <openssl/types.h>
+#include <memory>
+#include <mpss/mpss.h>
 #include <optional>
 #include <string>
 #include <string_view>
-#include "mpss-openssl/utils/utils.h"
 
 namespace mpss_openssl::provider {
     struct mpss_key {

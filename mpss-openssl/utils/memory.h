@@ -3,12 +3,12 @@
 
 #pragma once
 
+#include <openssl/crypto.h>
 #include <cstddef>
 #include <limits>
 #include <memory>
 #include <mpss/mpss.h>
 #include <new>
-#include <openssl/crypto.h>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -85,15 +85,13 @@ namespace mpss_openssl::utils {
     };
 
     template <typename T, typename U>
-    [[nodiscard]] inline bool operator==(
-        const NeatAllocator<T> &, const NeatAllocator<U> &) noexcept
+    [[nodiscard]] inline bool operator==(const NeatAllocator<T> &, const NeatAllocator<U> &) noexcept
     {
         return false;
     }
 
     template <typename T>
-    [[nodiscard]] inline bool operator==(
-        const NeatAllocator<T> &, const NeatAllocator<T> &) noexcept
+    [[nodiscard]] inline bool operator==(const NeatAllocator<T> &, const NeatAllocator<T> &) noexcept
     {
         return true;
     }
@@ -148,22 +146,19 @@ namespace mpss_openssl::utils {
     };
 
     template <typename T, typename U>
-    [[nodiscard]] inline bool operator==(
-        const CommonAllocator<T> &, const CommonAllocator<U> &) noexcept
+    [[nodiscard]] inline bool operator==(const CommonAllocator<T> &, const CommonAllocator<U> &) noexcept
     {
         return false;
     }
 
     template <typename T>
-    [[nodiscard]] inline bool operator==(
-        const CommonAllocator<T> &, const CommonAllocator<T> &) noexcept
+    [[nodiscard]] inline bool operator==(const CommonAllocator<T> &, const CommonAllocator<T> &) noexcept
     {
         return true;
     }
 
     template <typename T, typename U>
-    [[nodiscard]] inline bool operator!=(
-        const CommonAllocator<T> &lhs, const CommonAllocator<U> &rhs) noexcept
+    [[nodiscard]] inline bool operator!=(const CommonAllocator<T> &lhs, const CommonAllocator<U> &rhs) noexcept
     {
         return !operator==(lhs, rhs);
     }

@@ -43,7 +43,7 @@ namespace mpss::utils {
             std::stringstream ss;
             ss << "Narrowing error: " << e.what() << " (in value: " << in << ")";
             utils::set_error(ss.str());
-            out = Out{ 0 };
+            out = Out{0};
         }
         return out;
     }

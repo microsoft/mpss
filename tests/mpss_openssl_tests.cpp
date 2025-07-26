@@ -2,13 +2,14 @@
 // Licensed under the MIT license.
 
 #include <gtest/gtest.h>
-#include <iostream>
+#include "mpss-openssl/api.h"
 #include <openssl/core.h>
 #include <openssl/encoder.h>
 #include <openssl/evp.h>
 #include <openssl/provider.h>
 #include <openssl/x509v3.h>
-#include "mpss-openssl/api.h"
+#include <algorithm>
+#include <iostream>
 
 namespace {
     int add_ca_extensions(X509 *cert)
@@ -106,7 +107,7 @@ namespace mpss_openssl::tests {
         }
 
         ASSERT_EQ(mpss_digest_len, default_digest_len);
-        ASSERT_EQ(0, std::memcmp(mpss_digest, default_digest, mpss_digest_len));
+        ASSERT_EQ(0, std::equal(mpss_digest, mpss_digest + mpss_digest_len, default_digest));
 
         EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_from_name(mpss_libctx, "EC", "provider=mpss");
         ASSERT_NE(nullptr, ctx);
@@ -116,10 +117,8 @@ namespace mpss_openssl::tests {
         // Now set the parameters to use ECDSA-P256-SHA256.
         OSSL_PARAM params[] = {
             OSSL_PARAM_construct_utf8_string("key_name", const_cast<char *>(key_name), 0),
-            OSSL_PARAM_construct_utf8_string(
-                "mpss_algorithm", const_cast<char *>("ecdsa_secp256r1_sha256"), 0),
-            OSSL_PARAM_END
-        };
+            OSSL_PARAM_construct_utf8_string("mpss_algorithm", const_cast<char *>("ecdsa_secp256r1_sha256"), 0),
+            OSSL_PARAM_END};
         ASSERT_EQ(1, EVP_PKEY_CTX_set_params(ctx, params));
 
         // Generate the key.
@@ -163,8 +162,8 @@ namespace mpss_openssl::tests {
         ASSERT_EQ(public_key_len, 65);
 
         // Set up the encoder for SPKI/DER.
-        OSSL_ENCODER_CTX *ectx = OSSL_ENCODER_CTX_new_for_pkey(
-            pkey, EVP_PKEY_PUBLIC_KEY, "DER", "SubjectPublicKeyInfo", "provider=mpss");
+        OSSL_ENCODER_CTX *ectx =
+            OSSL_ENCODER_CTX_new_for_pkey(pkey, EVP_PKEY_PUBLIC_KEY, "DER", "SubjectPublicKeyInfo", "provider=mpss");
         ASSERT_NE(nullptr, ectx);
 
         // We should have just one encoder.
@@ -189,12 +188,9 @@ namespace mpss_openssl::tests {
 
         // Set the subject name.
         X509_NAME *sname = X509_get_subject_name(cert);
-        X509_NAME_add_entry_by_txt(
-            sname, "C", MBSTRING_ASC, (const unsigned char *)"US", -1, -1, 0);
-        X509_NAME_add_entry_by_txt(
-            sname, "O", MBSTRING_ASC, (const unsigned char *)"Test", -1, -1, 0);
-        X509_NAME_add_entry_by_txt(
-            sname, "CN", MBSTRING_ASC, (const unsigned char *)"Test", -1, -1, 0);
+        X509_NAME_add_entry_by_txt(sname, "C", MBSTRING_ASC, (const unsigned char *)"US", -1, -1, 0);
+        X509_NAME_add_entry_by_txt(sname, "O", MBSTRING_ASC, (const unsigned char *)"Test", -1, -1, 0);
+        X509_NAME_add_entry_by_txt(sname, "CN", MBSTRING_ASC, (const unsigned char *)"Test", -1, -1, 0);
         ASSERT_NE(0, X509_set_issuer_name(cert, sname));
 
         // Make this a CA cert.
@@ -228,12 +224,9 @@ namespace mpss_openssl::tests {
         X509_gmtime_adj(X509_get_notAfter(sub_cert), 31536000L);
         ASSERT_NE(0, X509_set_pubkey(sub_cert, rsa_pkey));
         X509_NAME *sname2 = X509_get_subject_name(sub_cert);
-        X509_NAME_add_entry_by_txt(
-            sname2, "C", MBSTRING_ASC, (const unsigned char *)"US", -1, -1, 0);
-        X509_NAME_add_entry_by_txt(
-            sname2, "O", MBSTRING_ASC, (const unsigned char *)"Test RSA", -1, -1, 0);
-        X509_NAME_add_entry_by_txt(
-            sname2, "CN", MBSTRING_ASC, (const unsigned char *)"Test RSA", -1, -1, 0);
+        X509_NAME_add_entry_by_txt(sname2, "C", MBSTRING_ASC, (const unsigned char *)"US", -1, -1, 0);
+        X509_NAME_add_entry_by_txt(sname2, "O", MBSTRING_ASC, (const unsigned char *)"Test RSA", -1, -1, 0);
+        X509_NAME_add_entry_by_txt(sname2, "CN", MBSTRING_ASC, (const unsigned char *)"Test RSA", -1, -1, 0);
         ASSERT_NE(0, X509_set_issuer_name(sub_cert, sname));
 
         // Sign with our cert.

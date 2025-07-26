@@ -10,7 +10,5 @@ namespace mpss::impl::utils {
     crypto_params const *const get_crypto_params(Algorithm algorithm) noexcept;
 
     std::size_t decode_raw_signature(
-        gsl::span<const std::byte> der_sig,
-        Algorithm algorithm,
-        gsl::span<std::byte> raw_sig) noexcept;
+        gsl::span<const std::byte> der_sig, Algorithm algorithm, gsl::span<std::byte> raw_sig) noexcept;
 } // namespace mpss::impl::utils

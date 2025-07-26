@@ -50,13 +50,13 @@ BreakConstructorInitializersBeforeComma: false
 BreakConstructorInitializers: BeforeColon
 BreakAfterJavaFieldAnnotations: false
 BreakStringLiterals: true
-ColumnLimit:     100
+ColumnLimit:     120
 CommentPragmas:  '^ IWYU pragma:'
 CompactNamespaces: false
 ConstructorInitializerAllOnOneLineOrOnePerLine: false # \todo rethink
 ConstructorInitializerIndentWidth: 4
 ContinuationIndentWidth: 4
-Cpp11BracedListStyle: false
+Cpp11BracedListStyle: true
 DerivePointerAlignment: false
 DisableFormat:   false
 ExperimentalAutoDetectBinPacking: false
@@ -67,16 +67,24 @@ ForEachMacros:
   - BOOST_FOREACH
 IncludeBlocks:   Merge
 IncludeCategories:
+  - Regex:           '<gtest/.*>'
+    Priority:        -7
+  - Regex:           '<gsl/.*>'
+    Priority:        -1
+  - Regex:           '<openssl/.*>'
+    Priority:        -2
   - Regex:           '<windows.h>'
     Priority:        1
   - Regex:           '<.*>'
     Priority:        2
   - Regex:           '"mpss/implementations/.*"'
-    Priority:        -1
-  - Regex:           '"mpss/utils/.*"'
-    Priority:        -2
-  - Regex:           '"mpss/.*"'
     Priority:        -3
+  - Regex:           '"mpss/utils/.*"'
+    Priority:        -4
+  - Regex:           '"mpss/.*"'
+    Priority:        -5
+  - Regex:           '"mpss-openssl/.*"'
+    Priority:        -6
 IncludeIsMainRegex: '(Test)?$'
 IndentCaseLabels: false
 IndentPPDirectives: None

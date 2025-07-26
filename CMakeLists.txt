@@ -6,8 +6,9 @@ cmake_minimum_required(VERSION 3.21)
 # Enable Hot Reload for MSVC compilers if supported.
 if(POLICY CMP0141)
     cmake_policy(SET CMP0141 NEW)
-    set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT
-        "$<IF:$<AND:$<C_COMPILER_ID:MSVC>,$<CXX_COMPILER_ID:MSVC>>,$<$<CONFIG:Debug,RelWithDebInfo>:EditAndContinue>,$<$<CONFIG:Debug,RelWithDebInfo>:ProgramDatabase>>")
+    if(MSVC)
+        set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "$<$<CONFIG:Debug,RelWithDebInfo>:EditAndContinue>")
+    endif()
 endif()
 
 # Setting up our options. The library types (static/shared) are mutually exclusive.
@@ -22,12 +23,12 @@ if(MPSS_BUILD_MPSS_CORE_STATIC AND MPSS_BUILD_MPSS_CORE_SHARED)
     message(FATAL_ERROR
         "Cannot build both static and shared mpss core libraries.")
 elseif(NOT MPSS_BUILD_MPSS_CORE_STATIC AND NOT MPSS_BUILD_MPSS_CORE_SHARED)
-    message(STATUS "Neither STATIC nor SHARED selected. Defaulting to STATIC.")
+    message(STATUS "Neither STATIC nor SHARED build selected. Defaulting to STATIC.")
     set(MPSS_BUILD_MPSS_CORE_STATIC ON CACHE BOOL "Build the mpss core static library." FORCE)
 endif()
 
 if(MPSS_BUILD_MPSS_OPENSSL_STATIC AND MPSS_BUILD_MPSS_OPENSSL_SHARED)
-    message(FATAL_ERROR "Cannot build both static and shared mpss OpenSSL provider libraries.")
+    message(FATAL_ERROR "Cannot build both static and shared mpss-openssl libraries.")
 endif()
 
 # Check that we have at least one library to build.

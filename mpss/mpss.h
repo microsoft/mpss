@@ -4,12 +4,12 @@
 #pragma once
 
 #include "mpss/algorithm.h"
-#include "mpss/key_info.h"
 #include "mpss/defines.h"
+#include "mpss/key_info.h"
+#include <gsl/span>
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <gsl/span>
 #include <map>
 #include <memory>
 #include <optional>
@@ -93,8 +93,7 @@ namespace mpss {
          * @note The name must be unique. If a key pair with the same name already exists, the
          * function will fail.
          */
-        [[nodiscard]] static std::unique_ptr<KeyPair> Create(
-            std::string_view name, Algorithm algorithm);
+        [[nodiscard]] static std::unique_ptr<KeyPair> Create(std::string_view name, Algorithm algorithm);
 
         /**
          * @brief Opens the key pair with the given name.
@@ -119,8 +118,7 @@ namespace mpss {
          * signature. Otherwise, returns the number of bytes written to sig. Returns 0 if the
          * operation failed.
          */
-        virtual std::size_t sign_hash(
-            gsl::span<const std::byte> hash, gsl::span<std::byte> sig) const = 0;
+        virtual std::size_t sign_hash(gsl::span<const std::byte> hash, gsl::span<std::byte> sig) const = 0;
 
         /**
          * @brief A convenience method to return the maximum signature buffer size.
@@ -136,8 +134,7 @@ namespace mpss {
          * @param[in] sig The signature to verify.
          * @return True if the data was verified successfully, false otherwise.
          */
-        [[nodiscard]] virtual bool verify(
-            gsl::span<const std::byte> hash, gsl::span<const std::byte> sig) const = 0;
+        [[nodiscard]] virtual bool verify(gsl::span<const std::byte> hash, gsl::span<const std::byte> sig) const = 0;
 
         /**
          * @brief Retrieves the public (verification) key.

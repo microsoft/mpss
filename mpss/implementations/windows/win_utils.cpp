@@ -30,9 +30,7 @@ namespace mpss::impl::utils {
     }
 
     std::size_t decode_raw_signature(
-        gsl::span<const std::byte> der_sig,
-        Algorithm algorithm,
-        gsl::span<std::byte> raw_sig) noexcept
+        gsl::span<const std::byte> der_sig, Algorithm algorithm, gsl::span<std::byte> raw_sig) noexcept
     {
         // Check for obvious problems.
         if (der_sig.empty()) {
@@ -68,8 +66,7 @@ namespace mpss::impl::utils {
                 /* pvStructInfo */ nullptr,
                 &ecc_sig_buffer_size)) {
             std::stringstream ss;
-            ss << "CryptDecodeObjectEx failed with error code "
-               << mpss::utils::to_hex(::GetLastError());
+            ss << "CryptDecodeObjectEx failed with error code " << mpss::utils::to_hex(::GetLastError());
             mpss::utils::set_error(ss.str());
             return false;
         }
@@ -95,8 +92,7 @@ namespace mpss::impl::utils {
                 ecc_sig_buffer.get(),
                 &ecc_sig_buffer_size)) {
             std::stringstream ss;
-            ss << "CryptDecodeObjectEx failed with error code "
-               << mpss::utils::to_hex(::GetLastError());
+            ss << "CryptDecodeObjectEx failed with error code " << mpss::utils::to_hex(::GetLastError());
             mpss::utils::set_error(ss.str());
             return false;
         }
@@ -106,8 +102,8 @@ namespace mpss::impl::utils {
         // Copy raw signature
         if (raw_sig.size() < raw_sig_size) {
             std::stringstream ss;
-            ss << "Raw signature buffer is too small. Expected " << raw_sig_size << " bytes, got "
-               << raw_sig.size() << " bytes.";
+            ss << "Raw signature buffer is too small. Expected " << raw_sig_size << " bytes, got " << raw_sig.size()
+               << " bytes.";
             mpss::utils::set_error(ss.str());
             return 0;
         }
@@ -115,15 +111,13 @@ namespace mpss::impl::utils {
         // Copy the raw signature data to the output buffer.
         ::SecureZeroMemory(raw_sig.data(), raw_sig.size());
 
+        std::transform(ecc_sig->r.pbData, ecc_sig->r.pbData + ecc_sig->r.cbData, raw_sig.begin(), [](auto in) {
+            return static_cast<std::byte>(in);
+        });
         std::transform(
-            ecc_sig->r.pbData, ecc_sig->r.pbData + ecc_sig->r.cbData, raw_sig.begin(), [](auto in) {
+            ecc_sig->s.pbData, ecc_sig->s.pbData + ecc_sig->s.cbData, raw_sig.begin() + field_size, [](auto in) {
                 return static_cast<std::byte>(in);
             });
-        std::transform(
-            ecc_sig->s.pbData,
-            ecc_sig->s.pbData + ecc_sig->s.cbData,
-            raw_sig.begin() + field_size,
-            [](auto in) { return static_cast<std::byte>(in); });
 
         return raw_sig_size;
     }
