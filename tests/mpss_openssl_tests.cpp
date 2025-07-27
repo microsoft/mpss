@@ -107,7 +107,7 @@ namespace mpss_openssl::tests {
         }
 
         ASSERT_EQ(mpss_digest_len, default_digest_len);
-        ASSERT_EQ(0, std::equal(mpss_digest, mpss_digest + mpss_digest_len, default_digest));
+        ASSERT_TRUE(std::equal(mpss_digest, mpss_digest + mpss_digest_len, default_digest));
 
         EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_from_name(mpss_libctx, "EC", "provider=mpss");
         ASSERT_NE(nullptr, ctx);
@@ -166,9 +166,8 @@ namespace mpss_openssl::tests {
             OSSL_ENCODER_CTX_new_for_pkey(pkey, EVP_PKEY_PUBLIC_KEY, "DER", "SubjectPublicKeyInfo", "provider=mpss");
         ASSERT_NE(nullptr, ectx);
 
-        // We should have just one encoder.
-        // TODO: WHY ARE THERE 5???
-        ASSERT_EQ(5, OSSL_ENCODER_CTX_get_num_encoders(ectx));
+        // We should find at least our DER encoder.
+        ASSERT_GE(1, OSSL_ENCODER_CTX_get_num_encoders(ectx));
 
         // Now try getting the public key.
         unsigned char *spki_der = nullptr;

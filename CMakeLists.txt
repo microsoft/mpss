@@ -24,7 +24,7 @@ if(MPSS_BUILD_MPSS_CORE_STATIC AND MPSS_BUILD_MPSS_CORE_SHARED)
         "Cannot build both static and shared mpss core libraries.")
 elseif(NOT MPSS_BUILD_MPSS_CORE_STATIC AND NOT MPSS_BUILD_MPSS_CORE_SHARED)
     message(STATUS "Neither STATIC nor SHARED build selected. Defaulting to STATIC.")
-    set(MPSS_BUILD_MPSS_CORE_STATIC ON CACHE BOOL "Build the mpss core static library." FORCE)
+    set(MPSS_BUILD_MPSS_CORE_STATIC ON CACHE BOOL "Build the static mpss core library." FORCE)
 endif()
 
 if(MPSS_BUILD_MPSS_OPENSSL_STATIC AND MPSS_BUILD_MPSS_OPENSSL_SHARED)

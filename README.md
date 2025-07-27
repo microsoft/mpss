@@ -25,7 +25,7 @@ MPSS provides the relevant dependencies file ([vcpkg.json](vcpkg.json)) for [vcp
 When configuring with CMake, simply provide the path to the `vcpkg` toolchain file, as follows:
 
 ```cmd
-cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake
+cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake"
 ```
 
 ### macOS
@@ -33,7 +33,7 @@ cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcp
 As for Windows, when configuring with CMake, you only need to provide the path to the `vcpkg` toolchain file:
 
 ```bash
-cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
+cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
 ```
 
 ### iOS
@@ -41,7 +41,7 @@ Generating an Xcode project is recommended for iOS. After generating the project
 The command to generate an Xcode project is the following:
 
 ```bash
-cmake -S . -B build -GXcode -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_DEPLOYMENT_TARGET=$IPHONE_SDK_VERSION -DCMAKE_XCODE_ATTRIBUTE_ONLY_ACTIVE_ARCH=NO -DCMAKE_IOS_INSTALL_COMBINED=YES
+cmake -S . -B build -GXcode -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_DEPLOYMENT_TARGET=$IPHONE_SDK_VERSION -DCMAKE_XCODE_ATTRIBUTE_ONLY_ACTIVE_ARCH=NO -DCMAKE_IOS_INSTALL_COMBINED=YES
 ```
 
 In order to find out what iPhone SDKs are installed, you can run the following command:
@@ -57,13 +57,13 @@ This will show all installed SDKs. If the SDK appears as `iOS 18.4`, for example
 Generate Ninja build files for cross compiling to the x64 Android simulator. The vcpkg toolchain file is specified to satisfy build dependencies of MPSS.
 
 ```cmd
-cmake -S . -B buildX64 -DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-android -DCMAKE_SYSTEM_NAME=Android -DCMAKE_SYSTEM_VERSION=%ANDROID_API_VERSION% -DCMAKE_ANDROID_ARCH_ABI=x86_64 -GNinja -DCMAKE_MAKE_PROGRAM=%NINJA_ROOT%\ninja.exe -DCMAKE_ANDROID_NDK=%ANDROID_NDK_HOME%
+cmake -S . -B buildX64 -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-android -DCMAKE_SYSTEM_NAME=Android -DCMAKE_SYSTEM_VERSION=%ANDROID_API_VERSION% -DCMAKE_ANDROID_ARCH_ABI=x86_64 -GNinja -DCMAKE_MAKE_PROGRAM=%NINJA_ROOT%\ninja.exe -DCMAKE_ANDROID_NDK=%ANDROID_NDK_HOME%
 ```
 
 Generate Ninja build files for cross compiling to Arm64.
 
 ```cmd
-cmake -S . -B buildArm -DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake -DVCPKG_TARGET_TRIPLET=arm64-android -DCMAKE_SYSTEM_NAME=Android -DCMAKE_SYSTEM_VERSION=%ANDROID_API_VERSION% -DCMAKE_ANDROID_ARCH_ABI=arm64-v8a -GNinja -DCMAKE_MAKE_PROGRAM=%NINJA_ROOT%\ninja.exe -DCMAKE_ANDROID_NDK=%ANDROID_NDK_HOME%
+cmake -S . -B buildArm -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=arm64-android -DCMAKE_SYSTEM_NAME=Android -DCMAKE_SYSTEM_VERSION=%ANDROID_API_VERSION% -DCMAKE_ANDROID_ARCH_ABI=arm64-v8a -GNinja -DCMAKE_MAKE_PROGRAM=%NINJA_ROOT%\ninja.exe -DCMAKE_ANDROID_NDK=%ANDROID_NDK_HOME%
 ```
 
 **Note**: You will need to also set the following environment variables:
@@ -79,10 +79,16 @@ cmake -S . -B buildArm -DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\
 %ANDROID_HOME%\platforms\android-%CMAKE_SYSTEM_VERSION%\android.jar
 ```
 
+### Tests
+
+Configure the CMake project with `-DMPSS_BUILD_TESTS=ON` to build the test suite.
+The tests show an example use of the core API.
+
 ## OpenSSL Provider (mpss-openssl)
 
 To build the OpenSSL provider, configure the CMake project with `-DMPSS_BUILD_MPSS_OPENSSL_STATIC=ON` (for a static library build) or `-DMPSS_BUILD_MPSS_OPENSSL_SHARED=ON` (for a shared library build).
 Examples for using the OpenSSL provider can be found in [tests/mpss_openssl_tests.cpp](tests/mpss_openssl_tests.cpp).
+These are built when `-DMPSS_BUILD_TESTS=ON` is set, as long as the mpss-openssl is built as well.
 
 ## Contributing to MPSS
 
