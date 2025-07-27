@@ -4,7 +4,7 @@
 #pragma once
 
 #include "mpss/implementations/mpss_impl.h"
-#include "JNIHelper.h"
+#include "mpss/implementations/android/JNIHelper.h"
 
 namespace mpss {
     namespace impl {

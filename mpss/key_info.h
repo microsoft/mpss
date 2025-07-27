@@ -18,7 +18,7 @@ namespace mpss {
         /**
          * @brief Indicates if the key is backed by hardware
          */
-        bool is_hardware_backed;
+        const bool is_hardware_backed;
 
         /**
          * @brief Description of the storage where the key is stored.

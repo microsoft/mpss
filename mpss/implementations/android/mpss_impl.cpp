@@ -3,10 +3,10 @@
 
 #include "mpss/utils/utilities.h"
 #include "mpss/implementations/mpss_impl.h"
-#include "JNIHelper.h"
-#include "JNIObject.h"
-#include "android_keypair.h"
-#include "android_utils.h"
+#include "mpss/implementations/android/JNIHelper.h"
+#include "mpss/implementations/android/JNIObject.h"
+#include "mpss/implementations/android/android_keypair.h"
+#include "mpss/implementations/android/android_utils.h"
 
 using jni_class = mpss::impl::utils::JNIObj<jclass>;
 using jni_string = mpss::impl::utils::JNIObj<jstring>;

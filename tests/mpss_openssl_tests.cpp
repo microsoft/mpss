@@ -54,12 +54,8 @@ namespace mpss_openssl::tests {
     {
         const char *key_name = "test_key";
         if (mpss_is_valid_key(key_name)) {
-            std::cout << "LOG: Key named " << key_name << " already exists!" << std::endl;
             bool ret = mpss_delete_key(key_name);
-            std::cout << "LOG: deletion succeeded: " << ret << std::endl;
             ASSERT_EQ(1, ret);
-        } else {
-            std::cout << "LOG: Key named " << key_name << " does not exist. Good." << std::endl;
         }
 
         OSSL_LIB_CTX *mpss_libctx = OSSL_LIB_CTX_new();
@@ -167,7 +163,7 @@ namespace mpss_openssl::tests {
         ASSERT_NE(nullptr, ectx);
 
         // We should find at least our DER encoder.
-        ASSERT_GE(1, OSSL_ENCODER_CTX_get_num_encoders(ectx));
+        ASSERT_GE(OSSL_ENCODER_CTX_get_num_encoders(ectx), 1);
 
         // Now try getting the public key.
         unsigned char *spki_der = nullptr;

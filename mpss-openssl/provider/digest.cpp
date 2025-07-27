@@ -60,7 +60,6 @@ namespace {
         mpss_digest_ctx *dctx = mpss_new<mpss_digest_ctx>();                         \
         dctx->libctx = pctx->libctx;                                                 \
         dctx->md_name = #digest;                                                     \
-        std::cout << "LOG: mpss_digest_newctx_digest (" << dctx << ")" << std::endl; \
         return dctx;                                                                 \
     }
 
@@ -70,14 +69,12 @@ namespace {
 
     extern "C" void mpss_digest_freectx(void *ctx)
     {
-        std::cout << "LOG: mpss_digest_freectx (" << ctx << ")" << std::endl;
         mpss_digest_ctx *dctx = static_cast<mpss_digest_ctx *>(ctx);
         mpss_delete<false>(dctx);
     }
 
     extern "C" void *mpss_digest_dupctx(void *ctx)
     {
-        std::cout << "LOG: mpss_digest_dupctx (" << ctx << ")" << std::endl;
         mpss_digest_ctx *dctx = static_cast<mpss_digest_ctx *>(ctx);
         if (!dctx) {
             return nullptr;
@@ -105,21 +102,17 @@ namespace {
             // We leave the md and evp_dctx pointers alone since they can be reused, but we
             // need to clear the state of evp_dctx.
             EVP_MD_CTX_reset(dctx->evp_dctx);
-
-            std::cout << "LOG: mpss_signature_digest_sign_init (cleared state)" << std::endl;
         } else {
             dctx->state = digest_state::uninitialized;
 
             // Try to obtain the digest and initialize the EVP digest context.
             EVP_MD *md = EVP_MD_fetch(dctx->libctx, dctx->md_name, nullptr);
             if (!md) {
-                std::cout << "LOG: mpss_signature_digest_sign_init (failed to create digest context)" << std::endl;
                 return 0;
             }
 
             EVP_MD_CTX *evp_dctx = EVP_MD_CTX_new();
             if (!evp_dctx) {
-                std::cout << "LOG: mpss_signature_digest_sign_init (failed to create digest context)" << std::endl;
                 EVP_MD_free(md);
                 return 0;
             }
@@ -129,14 +122,12 @@ namespace {
         }
 
         if (1 != EVP_DigestInit_ex(dctx->evp_dctx, dctx->evp_md, nullptr)) {
-            std::cout << "LOG: mpss_signature_digest_sign_init (failed to initialize digest context)" << std::endl;
             return 0;
         }
 
         // In any case, now we are ready to digest.
         dctx->state = digest_state::digesting;
 
-        std::cout << "LOG: mpss_digest_init" << std::endl;
         return 1;
     }
 
@@ -157,11 +148,9 @@ namespace {
 
         // Otherwise, start digesting.
         if (1 != EVP_DigestUpdate(dctx->evp_dctx, in, inl)) {
-            std::cout << "LOG: mpss_digest_update (failed to update digest)" << std::endl;
             return 0;
         }
 
-        std::cout << "LOG: mpss_digest_update" << std::endl;
         return 1;
     }
 
@@ -186,7 +175,6 @@ namespace {
             unsigned int bytes_written = 0;
             unsigned char *digest_ptr = reinterpret_cast<unsigned char *>(digest.data());
             if (1 != EVP_DigestFinal_ex(dctx->evp_dctx, digest_ptr, &bytes_written)) {
-                std::cout << "LOG: mpss_digest_final (failed to finalize digest)" << std::endl;
                 return 0;
             }
 
@@ -204,7 +192,6 @@ namespace {
 
             // Sanity check: we should not have exceeded outsz.
             if (outsz < digest_bytes) {
-                std::cout << "LOG: mpss_digest_final (output buffer too small)" << std::endl;
                 dctx->state = digest_state::error;
                 return 0;
             }
@@ -221,7 +208,6 @@ namespace {
             dctx->digest.begin(), dctx->digest.end(), out, [](std::byte b) { return static_cast<unsigned char>(b); });
         *outl = dctx->digest.size();
 
-        std::cout << "LOG: mpss_digest_final" << std::endl;
         return 1;
     }
 
@@ -255,7 +241,6 @@ namespace {
             OSSL_PARAM_size_t(OSSL_DIGEST_PARAM_SIZE, nullptr),
             OSSL_PARAM_END};
 
-        std::cout << "LOG: mpss_digest_gettable_params" << std::endl;
         return ret;
     }
 
@@ -269,7 +254,6 @@ namespace {
         if ((p = OSSL_PARAM_locate(params, OSSL_DIGEST_PARAM_SIZE)) && !OSSL_PARAM_set_size_t(p, digestsz / 8)) {      \
             return 0;                                                                                                  \
         }                                                                                                              \
-        std::cout << "LOG: mpss_digest_get_params" << std::endl;                                                       \
         return 1;                                                                                                      \
     }
 
@@ -318,7 +302,6 @@ namespace mpss_openssl::provider {
         } else if (std::string_view(mdname) == OSSL_DIGEST_NAME_SHA2_512) {
             return ::mpss_digest_newctx_SHA512(provctx);
         } else {
-            std::cout << "LOG: mpss_digest_newctx (unsupported digest name: " << mdname << ")" << std::endl;
             return nullptr;
         }
     }

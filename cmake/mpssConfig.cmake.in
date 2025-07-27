@@ -10,6 +10,7 @@
 #   - MPSS_OPENSSL_FOUND : Literally, MPSS_OPENSSL_SHARED_FOUND OR MPSS_OPENSSL_STATIC_FOUND.
 #   - MPSS_INCLUDES_DIR : Directory where the mpss include files are.
 #   - MPSS_CONFIG_DIR : Directory where the mpss config files are.
+#   - MPSS_AVAILABLE_TARGETS : Contains a list of available MPSS targets.
 
 @PACKAGE_INIT@
 
@@ -27,15 +28,20 @@ set_and_check(MPSS_CONFIG_DIR "@PACKAGE_mpss_CONFIG_INSTALL_DIR@")
 # access to all of our installed helper modules.
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}")
 
+# Initialize MPSS_AVAILABLE_TARGETS
+set(MPSS_AVAILABLE_TARGETS "")
+
 # Create the targets.
 include(${CMAKE_CURRENT_LIST_DIR}/mpssTargets.cmake)
 
 # Check which targets were created.
 if(TARGET mpss::mpss_static)
     set(MPSS_CORE_STATIC_FOUND YES)
+    list(APPEND MPSS_AVAILABLE_TARGETS "mpss::mpss_static")
 endif()
 if(TARGET mpss::mpss)
     set(MPSS_CORE_SHARED_FOUND YES)
+    list(APPEND MPSS_AVAILABLE_TARGETS "mpss::mpss")
 endif()
 if(MPSS_CORE_SHARED_FOUND OR MPSS_CORE_STATIC_FOUND)
     set(MPSS_CORE_FOUND YES)
@@ -44,11 +50,20 @@ endif()
 # Same for mpss-openssl.
 if(TARGET mpss::mpss_openssl_static)
     set(MPSS_OPENSSL_STATIC_FOUND YES)
+    list(APPEND MPSS_AVAILABLE_TARGETS "mpss::mpss_openssl_static")
 endif()
 if(TARGET mpss::mpss_openssl)
     set(MPSS_OPENSSL_SHARED_FOUND YES)
+    list(APPEND MPSS_AVAILABLE_TARGETS "mpss::mpss_openssl")
 endif()
 if(MPSS_OPENSSL_SHARED_FOUND OR MPSS_OPENSSL_STATIC_FOUND)
     set(MPSS_OPENSSL_FOUND YES)
 endif()
+
+# Print information about available targets and directories.
+if(MPSS_CORE_FOUND OR MPSS_OPENSSL_FOUND)
+    message(STATUS "Found mpss. Available targets:")
+    foreach(target ${MPSS_AVAILABLE_TARGETS})
+        message(STATUS "  - ${target}")
+    endforeach()
 endif()

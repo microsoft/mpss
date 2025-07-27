@@ -5,11 +5,11 @@
 #include "mpss/utils/scope_guard.h"
 #include "mpss/utils/utilities.h"
 #include "mpss/implementations/mpss_impl.h"
-#include "mac_api_wrapper.h"
-#include "mac_keypair.h"
-#include "mac_se_keypair.h"
-#include "mac_se_wrapper.h"
-#include "mac_utils.h"
+#include "mpss/implementations/macos/mac_api_wrapper.h"
+#include "mpss/implementations/macos/mac_keypair.h"
+#include "mpss/implementations/macos/mac_se_keypair.h"
+#include "mpss/implementations/macos/mac_se_wrapper.h"
+#include "mpss/implementations/macos/mac_utils.h"
 
 namespace mpss {
     namespace impl {

@@ -18,17 +18,14 @@ extern "C" bool mpss_delete_key(const char *key_name)
     // Try to open the key.
     std::unique_ptr<mpss::KeyPair> key_pair = mpss::KeyPair::Open(key_name);
     if (!key_pair) {
-        std::cout << "LOG: mpss_delete_key (failed to open key)" << std::endl;
         return false;
     }
 
     // Delete the key.
     if (!key_pair->delete_key()) {
-        std::cout << "LOG: mpss_delete_key (failed to delete key)" << std::endl;
         return false;
     }
 
-    std::cout << "LOG: mpss_delete_key (mpss::delete_key " << key_name << " succeeded)" << std::endl;
     return true;
 }
 

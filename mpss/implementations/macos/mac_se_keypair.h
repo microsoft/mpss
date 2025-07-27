@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "mac_keypair.h"
+#include "mpss/implementations/macos/mac_keypair.h"
 
 namespace mpss {
     namespace impl {

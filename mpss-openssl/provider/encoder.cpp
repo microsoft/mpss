@@ -33,13 +33,11 @@ namespace {
         ectx->handle = pctx->handle;
         ectx->libctx = pctx->libctx;
 
-        std::cout << "LOG: mpss_encoder_newctx (" << ectx << ")" << std::endl;
         return ectx;
     }
 
     extern "C" void mpss_encoder_freectx(void *ctx)
     {
-        std::cout << "LOG: mpss_encoder_freectx (" << ctx << ")" << std::endl;
         mpss_encoder_ctx *ectx = static_cast<mpss_encoder_ctx *>(ctx);
         mpss_delete<false>(ectx);
     }
@@ -51,7 +49,6 @@ namespace {
             OSSL_PARAM_utf8_string("structure", nullptr, 0),
             OSSL_PARAM_END};
 
-        std::cout << "LOG: mpss_encoder_gettable_params" << std::endl;
         return ret;
     }
 
@@ -69,7 +66,6 @@ namespace {
             return 0;
         }
 
-        std::cout << "LOG: mpss_encoder_get_params" << std::endl;
         return 1;
     }
 

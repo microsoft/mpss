@@ -1,7 +1,7 @@
 // Copyright(c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#include "JNIHelper.h"
+#include "mpss/implementations/android/JNIHelper.h"
 #include <mutex>
 
 extern "C" JNIEXPORT jint JNI_OnLoad(JavaVM *vm, void *reserved)

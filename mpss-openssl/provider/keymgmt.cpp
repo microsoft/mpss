@@ -29,7 +29,6 @@ namespace mpss_openssl::provider {
             // If mpss_algorithm is empty, just try to open the key.
             key_pair = mpss::KeyPair::Open(key_name);
             if (key_pair) {
-                std::cout << "LOG: mpss_key constructor (opened existing key)" << std::endl;
                 // Write the algorithm string into the mpss_algorithm.
                 mpss_algorithm = key_pair->algorithm_info().type_str;
             }
@@ -38,9 +37,6 @@ namespace mpss_openssl::provider {
             mpss::Algorithm algorithm = mpss::algorithm_from_str(mpss_algorithm.value());
             if (algorithm != mpss::Algorithm::unsupported) {
                 key_pair = mpss::KeyPair::Create(key_name, algorithm);
-                if (key_pair) {
-                    std::cout << "LOG: mpss_key constructor (created new key)" << std::endl;
-                }
             }
         }
 
@@ -51,20 +47,12 @@ namespace mpss_openssl::provider {
         hash_name = utils::try_get_hash_func(key_pair);
         alg_name = utils::try_get_algorithm_name(key_pair);
         this->mpss_algorithm = mpss_algorithm;
-
-        if (has_valid_key()) {
-            std::cout << "LOG: mpss_key constructor (acquired valid key: " << key_name << ")" << std::endl;
-        } else {
-            std::cout << "LOG: mpss_key constructor (failed to acquire valid key: " << key_name << ")" << std::endl;
-        }
     }
 
     mpss_key::~mpss_key()
     {
-        std::cout << "LOG: mpss_key destructor (key: " << name.value_or("unnamed") << ")" << std::endl;
         key_pair.release();
         key_pair = nullptr;
-        std::cout << "LOG: mpss_key destructor (key released)" << std::endl;
     }
 
     [[nodiscard]] bool mpss_key::has_valid_key() const noexcept
@@ -122,11 +110,9 @@ namespace {
 
         // Call the callback with this and cbarg.
         if (1 != param_cb(params, cbarg)) {
-            std::cout << "LOG: mpss_keymgmt_export (param_cb failed) -> 0" << std::endl;
             return 0;
         }
 
-        std::cout << "LOG: mpss_keymgmt_export" << std::endl;
         return 1;
     }
 
@@ -155,7 +141,6 @@ namespace {
             types_idx += 1;
         }
 
-        std::cout << "LOG: mpss_keymgmt_export_types (empty)" << std::endl;
         return types_array[types_idx];
     }
 
@@ -196,7 +181,6 @@ namespace {
             ctx->mpss_algorithm = value_str;
         }
 
-        std::cout << "LOG: mpss_keymgmt_gen_set_params" << std::endl;
         return 1;
     }
 
@@ -212,7 +196,6 @@ namespace {
             OSSL_PARAM_utf8_string(OSSL_PKEY_PARAM_DEFAULT_DIGEST, nullptr, 0),
             OSSL_PARAM_END};
 
-        std::cout << "LOG: mpss_keymgmt_gettable_params" << std::endl;
         return ret;
     }
 
@@ -266,7 +249,6 @@ namespace {
             return 0;
         }
 
-        std::cout << "LOG: mpss_keymgmt_get_params" << std::endl;
         return 1;
     }
 
@@ -274,8 +256,6 @@ namespace {
     {
         // Delete the context. No need to clear it.
         mpss_delete<false>(static_cast<mpss_keymgmt_gen_ctx *>(genctx));
-
-        std::cout << "LOG: mpss_keymgmt_gen_cleanup" << std::endl;
     }
 
     extern "C" void *mpss_keymgmt_gen_init([[maybe_unused]] void *provctx, int selection, const OSSL_PARAM params[])
@@ -290,19 +270,15 @@ namespace {
         genctx->selection = selection;
 
         if (1 != mpss_keymgmt_gen_set_params(genctx, params)) {
-            std::cout << "LOG: mpss_keymgmt_gen_init (failed to set params) -> nullptr" << std::endl;
             mpss_keymgmt_gen_cleanup(genctx);
             genctx = nullptr;
         }
 
-        std::cout << "LOG: mpss_keymgmt_gen_init (" << genctx << ")" << std::endl;
         return genctx;
     }
 
     extern "C" void mpss_keymgmt_free(void *provkey)
     {
-        std::cout << "LOG: mpss_keymgmt_free (" << provkey << ")" << std::endl;
-
         // Delete the key. No need to clear it.
         mpss_delete<false>(static_cast<mpss_key *>(provkey));
     }
@@ -318,7 +294,6 @@ namespace {
 
         // Check that we are generating a key pair.
         if (!(ctx->selection & OSSL_KEYMGMT_SELECT_KEYPAIR)) {
-            std::cout << "LOG: mpss_keymgmt_gen (unsupported selection) -> nullptr" << std::endl;
             return nullptr;
         }
 
@@ -331,7 +306,6 @@ namespace {
 
         // Check that everything went well.
         if (!pkey->has_valid_key()) {
-            std::cout << "LOG: mpss_keymgmt_gen (failed to create key) -> nullptr" << std::endl;
             mpss_delete<false>(pkey);
             return nullptr;
         }
@@ -339,14 +313,11 @@ namespace {
         // If a key already existed, mpss_algorithm now has the algorithm type that was loaded.
         // This has to be the same as the one that was requested, otherwise return nullptr.
         if (mpss_algorithm.value() != ctx->mpss_algorithm) {
-            std::cout << "LOG: mpss_keymgmt_gen (algorithm type mismatch) -> nullptr" << std::endl;
             mpss_delete<false>(pkey);
             return nullptr;
         }
 
         // Key generation succeeded.
-        std::cout << "LOG: mpss_keymgmt_gen (" << pkey->name.value() << " / " << pkey->mpss_algorithm.value() << ")"
-                  << std::endl;
         return pkey;
     }
 

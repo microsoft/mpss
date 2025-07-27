@@ -79,16 +79,21 @@ cmake -S . -B buildArm -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%\scripts\buildsystems
 %ANDROID_HOME%\platforms\android-%CMAKE_SYSTEM_VERSION%\android.jar
 ```
 
-### Tests
+### Common Build Options
 
-Configure the CMake project with `-DMPSS_BUILD_TESTS=ON` to build the test suite.
-The tests show an example use of the core API.
+The following table outlines the common CMake configuration options recognized by the build system:
 
-## OpenSSL Provider (mpss-openssl)
+| Option | When set to `ON` |
+|--------|-------------|
+| `MPSS_BUILD_TESTS` | Build the test suite. |
+| `MPSS_BUILD_MPSS_CORE_STATIC` | Build the core library as a static library. |
+| `MPSS_BUILD_MPSS_CORE_SHARED` | Build the core library as a shared library. |
+| `MPSS_BUILD_MPSS_OPENSSL_STATIC` | Build the OpenSSL provider as a static library. |
+| `MPSS_BUILD_MPSS_OPENSSL_SHARED` | Build the OpenSSL provider as a shared library. |
+| `BUILD_SHARED_LIBS` | Build all targets as shared libraries. |
 
-To build the OpenSSL provider, configure the CMake project with `-DMPSS_BUILD_MPSS_OPENSSL_STATIC=ON` (for a static library build) or `-DMPSS_BUILD_MPSS_OPENSSL_SHARED=ON` (for a shared library build).
-Examples for using the OpenSSL provider can be found in [tests/mpss_openssl_tests.cpp](tests/mpss_openssl_tests.cpp).
-These are built when `-DMPSS_BUILD_TESTS=ON` is set, as long as the mpss-openssl is built as well.
+Static targets are named `mpss::mpss_static` and `mpss::mpss_openssl_static`, whereas shared targets are `mpss::mpss` and `mpss::mpss_openssl`.
+As usual, you can set `CMAKE_BUILD_TYPE` to set the build type (`Release`, `Debug`, etc.) when using a single-configuration generator.
 
 ## Contributing to MPSS
 

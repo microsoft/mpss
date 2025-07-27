@@ -1,8 +1,8 @@
 // Copyright(c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#include "mac_utils.h"
-#include "mac_se_wrapper.h"
+#include "mpss/implementations/macos/mac_utils.h"
+#include "mpss/implementations/macos/mac_se_wrapper.h"
 
 namespace mpss::impl::utils {
     std::string MPSS_SE_GetLastError()

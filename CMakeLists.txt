@@ -143,6 +143,10 @@ if(MPSS_BUILD_MPSS_CORE_STATIC OR MPSS_BUILD_MPSS_CORE_SHARED)
         endif()
     elseif(mpss_LIBRARY_TYPE STREQUAL "SHARED")
         message(STATUS "[mpss] Building shared library")
+
+        # This variable is used in the config.h.in file.
+        set(MPSS_CORE_IS_SHARED ON)
+
         set(mpss_TARGET mpss)
         add_library(${mpss_TARGET} ${mpss_LIBRARY_TYPE} ${mpss_SOURCE_FILES})
     else()
@@ -157,6 +161,10 @@ if(MPSS_BUILD_MPSS_OPENSSL_STATIC OR MPSS_BUILD_MPSS_OPENSSL_SHARED)
         add_library(${mpss_openssl_TARGET} ${mpss_openssl_LIBRARY_TYPE} ${mpss_openssl_SOURCE_FILES})
     elseif(mpss_openssl_LIBRARY_TYPE STREQUAL "SHARED")
         message(STATUS "[mpss-openssl] Building shared library")
+
+        # This variable is used in the config.h.in file.
+        set(MPSS_OPENSSL_IS_SHARED ON)
+
         set(mpss_openssl_TARGET mpss_openssl)
         add_library(${mpss_openssl_TARGET} ${mpss_openssl_LIBRARY_TYPE} ${mpss_openssl_SOURCE_FILES})
     else()
@@ -306,9 +314,6 @@ if(TARGET ${mpss_openssl_TARGET})
             RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
         )
 
-        # THERE IS A REMAINING PROBLEM: ON WINDOWS THE SOME DIRECTORIES ARE BEING
-        # NUMBERED WITH VERSION, SO IT MAY NOT BE CLEAR TO THE USER THAT THERE IS
-        # JUST ONE LIBRARY ACTUALLY INSTALLED IN THIS CASE. THIS NEEDS TO BE FIXED.
         if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
             target_compile_definitions(${mpss_openssl_TARGET} PRIVATE
                 MPSS_OPENSSL_EXPORTS

@@ -3,8 +3,8 @@
 
 #pragma once
 
+#include "mpss-openssl/defines.h"
 #include <openssl/core.h>
-#include "defines.h"
 
 extern "C" MPSS_OPENSSL_DECOR bool mpss_delete_key(const char *key_name);
 

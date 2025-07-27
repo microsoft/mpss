@@ -62,7 +62,6 @@ extern "C" int OSSL_provider_init(
     // Create a new library context from the provider dispatch table.
     OSSL_LIB_CTX *libctx = OSSL_LIB_CTX_new_from_dispatch(handle, in);
     if (!libctx) {
-        std::cout << "LOG: Failed to create library context." << std::endl;
         return 0;
     }
     ctx->libctx = libctx;
@@ -70,6 +69,5 @@ extern "C" int OSSL_provider_init(
     *provctx = ctx;
     *out = mpss_provider_functions;
 
-    std::cout << "LOG: mpss provider initialized (" << ctx << ")" << std::endl;
     return 1;
 }

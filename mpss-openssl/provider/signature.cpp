@@ -53,14 +53,12 @@ namespace {
         mpss_signature_ctx *sctx = mpss_new<mpss_signature_ctx>();
         sctx->provctx = ctx;
 
-        std::cout << "LOG: mpss_sig_newctx (" << sctx << ")" << std::endl;
         return sctx;
     }
 
     extern "C" void mpss_signature_freectx(void *ctx)
     {
         mpss_delete<false>(static_cast<mpss_signature_ctx *>(ctx));
-        std::cout << "LOG: mpss_sig_newctx (" << ctx << ")" << std::endl;
     }
 
     extern "C" void *mpss_signature_dupctx(void *ctx)
@@ -83,7 +81,6 @@ namespace {
         new_sctx->provctx = sctx->provctx;
         new_sctx->pkey = sctx->pkey;
 
-        std::cout << "LOG: mpss_sig_dupctx (" << new_sctx << ")" << std::endl;
         return new_sctx;
     }
 
@@ -122,8 +119,6 @@ namespace {
         // Get the algorithm ID from the name string we constructed above.
         ASN1_OBJECT *obj = OBJ_txt2obj(sctx->pkey->alg_name->c_str(), 0);
         if (!obj) {
-            std::cout << "LOG: mpss_signature_get_ctx_params (failed to create ASN1_OBJECT from "
-                      << sctx->pkey->alg_name->c_str() << ")" << std::endl;
             return 0;
         }
 
@@ -147,7 +142,6 @@ namespace {
         OPENSSL_free(alg_der);
         X509_ALGOR_free(alg);
 
-        std::cout << "LOG: mpss_signature_get_ctx_params" << std::endl;
         return 1;
     }
 
@@ -166,7 +160,6 @@ namespace {
         }
         sctx->pkey = pkey;
 
-        std::cout << "LOG: mpss_signature_sign_init" << std::endl;
         return 1;
     }
 
@@ -226,7 +219,6 @@ namespace {
         // siglen must be set to the actual number of bytes written.
         *siglen = bytes_written;
 
-        std::cout << "LOG: mpss_signature_sign" << std::endl;
         return 1;
     }
 
@@ -240,12 +232,10 @@ namespace {
         // Set the key object.
         mpss_key *pkey = static_cast<mpss_key *>(provkey);
         if (!pkey || !pkey->has_valid_key()) {
-            std::cout << "LOG: mpss_signature_verify_init (invalid key)" << std::endl;
             return 0;
         }
         sctx->pkey = pkey;
 
-        std::cout << "LOG: mpss_signature_verify_init" << std::endl;
         return 1;
     }
 
@@ -276,7 +266,6 @@ namespace {
 
         mpss_key *pkey = static_cast<mpss_key *>(provkey);
         if (!pkey || !pkey->has_valid_key()) {
-            std::cout << "LOG: mpss_signature_digest_sign_init (invalid key)" << std::endl;
             return 0;
         }
 
@@ -289,8 +278,6 @@ namespace {
 
         // Check that mdname matches the key type.
         if (!are_same_hash(std::string_view(mdname), hash_name)) {
-            std::cout << "LOG: mpss_signature_digest_sign_init (mdname " << mdname << " is not supported) -> 0"
-                      << std::endl;
             return 0;
         }
 
@@ -298,7 +285,6 @@ namespace {
         mpss_digest_ctx *dctx = static_cast<mpss_digest_ctx *>(mpss_digest_newctx(sctx->provctx, hash_name.c_str()));
 
         if (1 != mpss_digest_init(dctx, nullptr)) {
-            std::cout << "LOG: mpss_signature_digest_sign_init (failed to initialize digest context)" << std::endl;
             mpss_delete<false>(dctx);
             return 0;
         }
@@ -314,7 +300,6 @@ namespace {
         sctx->pkey = pkey;
         sctx->dctx = dctx;
 
-        std::cout << "LOG: mpss_signature_digest_sign_init" << std::endl;
         return 1;
     }
 
@@ -326,11 +311,9 @@ namespace {
         }
 
         if (1 != mpss_digest_update(sctx->dctx, data, datalen)) {
-            std::cout << "LOG: mpss_signature_digest_sign_update (failed to update digest)" << std::endl;
             return 0;
         }
 
-        std::cout << "LOG: mpss_signature_digest_sign_update" << std::endl;
         return 1;
     }
 
@@ -345,7 +328,6 @@ namespace {
         std::size_t tbslen = 0;
         unsigned char *digest_ptr = reinterpret_cast<unsigned char *>(tbs.data());
         if (1 != mpss_digest_final(sctx->dctx, digest_ptr, &tbslen, EVP_MAX_MD_SIZE)) {
-            std::cout << "LOG: mpss_signature_digest_sign_final (failed to finalize digest)" << std::endl;
             return 0;
         }
 
@@ -371,7 +353,6 @@ namespace {
             return 0;
         }
 
-        std::cout << "LOG: mpss_signature_digest_sign" << std::endl;
         return 1;
     }
 
@@ -396,7 +377,6 @@ namespace {
         }
 
         if (!sctx->dctx) {
-            std::cout << "LOG: mpss_signature_digest_verify_final (no digest context)" << std::endl;
             return 0;
         }
 
@@ -414,7 +394,6 @@ namespace {
             unsigned int bytes_written = 0;
             unsigned char *digest_ptr = reinterpret_cast<unsigned char *>(digest.data());
             if (1 != EVP_DigestFinal_ex(sctx->dctx->evp_dctx, digest_ptr, &bytes_written)) {
-                std::cout << "LOG: mpss_signature_digest_verify_final (failed to finalize digest)" << std::endl;
                 return 0;
             }
 
@@ -433,7 +412,6 @@ namespace {
             // Sanity check: does digest_bytes match the expected size?
             std::size_t expected_bytes = sctx->pkey->key_pair->algorithm_info().hash_bits / 8;
             if (digest_bytes != expected_bytes) {
-                std::cout << "LOG: mpss_signature_digest_verify_final (digest size mismatch)" << std::endl;
                 sctx->dctx->state = digest_state::error;
                 return 0;
             }
@@ -459,7 +437,6 @@ namespace {
             return 0;
         }
 
-        std::cout << "LOG: mpss_signature_digest_verify" << std::endl;
         return 1;
     }
 
