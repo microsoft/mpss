@@ -5,14 +5,18 @@
 
 #include <openssl/core_names.h>
 #include <openssl/obj_mac.h>
+#include <openssl/types.h>
 #include <array>
 #include <memory>
 #include <mpss/mpss.h>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace mpss_openssl::utils {
+    using byte_vector = std::vector<std::byte>;
+
     inline constexpr const char *ec_encoder_names = "EC";
 
     inline constexpr const char *ec_key_names = "EC:id_ecPublicKey:1.2.840.10045.2.1";

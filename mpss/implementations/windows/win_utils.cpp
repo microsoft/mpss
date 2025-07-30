@@ -42,7 +42,7 @@ namespace mpss::impl::utils {
         std::size_t field_size = ((info.key_bits + 7) / 8);
         std::size_t raw_sig_size = field_size * 2;
 
-        // if raw_sig is empty we only want to know the required size
+        // If raw_sig is empty we only want to know the required size
         if (raw_sig.empty()) {
             // Raw signature is two coordinates
             return raw_sig_size;
@@ -61,7 +61,7 @@ namespace mpss::impl::utils {
                 X509_ECC_SIGNATURE,
                 reinterpret_cast<LPCBYTE>(der_sig.data()),
                 encoded_size,
-                /* dwFlags */ 0,
+                0 /* dwFlags */,
                 /* PCRYPT_DECODE_PARA */ nullptr,
                 /* pvStructInfo */ nullptr,
                 &ecc_sig_buffer_size)) {
@@ -87,7 +87,7 @@ namespace mpss::impl::utils {
                 X509_ECC_SIGNATURE,
                 reinterpret_cast<LPCBYTE>(der_sig.data()),
                 encoded_size,
-                /* dwFlags */ 0,
+                0 /* dwFlags */,
                 /* PCRYPT_DECODE_PARA */ nullptr,
                 ecc_sig_buffer.get(),
                 &ecc_sig_buffer_size)) {
@@ -99,7 +99,6 @@ namespace mpss::impl::utils {
 
         CERT_ECC_SIGNATURE *ecc_sig = reinterpret_cast<CERT_ECC_SIGNATURE *>(ecc_sig_buffer.get());
 
-        // Copy raw signature
         if (raw_sig.size() < raw_sig_size) {
             std::stringstream ss;
             ss << "Raw signature buffer is too small. Expected " << raw_sig_size << " bytes, got " << raw_sig.size()
@@ -108,14 +107,11 @@ namespace mpss::impl::utils {
             return 0;
         }
 
-        // Copy the raw signature data to the output buffer.
-        ::SecureZeroMemory(raw_sig.data(), raw_sig.size());
-
-        std::transform(ecc_sig->r.pbData, ecc_sig->r.pbData + ecc_sig->r.cbData, raw_sig.begin(), [](auto in) {
+        // Copy the raw signature data to the output buffer. Reverse the byte order.
+        std::transform(ecc_sig->r.pbData, ecc_sig->r.pbData + ecc_sig->r.cbData, raw_sig.rend() - field_size, [](auto in) {
             return static_cast<std::byte>(in);
         });
-        std::transform(
-            ecc_sig->s.pbData, ecc_sig->s.pbData + ecc_sig->s.cbData, raw_sig.begin() + field_size, [](auto in) {
+        std::transform(ecc_sig->s.pbData, ecc_sig->s.pbData + ecc_sig->s.cbData, raw_sig.rend() - raw_sig_size, [](auto in) {
                 return static_cast<std::byte>(in);
             });
 

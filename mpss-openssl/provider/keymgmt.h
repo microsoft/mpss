@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include "mpss-openssl/utils/utils.h"
 #include <openssl/core.h>
 #include <openssl/types.h>
 #include <memory>
@@ -15,7 +14,7 @@
 namespace mpss_openssl::provider {
     struct mpss_key {
         std::unique_ptr<mpss::KeyPair> key_pair = nullptr;
-        std::optional<::mpss_openssl::utils::neat_string> name = std::nullopt;
+        std::optional<std::string> name = std::nullopt;
         std::optional<std::string> mpss_algorithm = std::nullopt;
         std::optional<std::string> alg_name = std::nullopt;
         std::optional<std::string> sig_name = std::nullopt;

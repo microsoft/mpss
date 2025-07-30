@@ -1,7 +1,6 @@
 // Copyright(c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#include "mpss-openssl/utils/memory.h"
 #include "mpss-openssl/utils/names.h"
 #include <openssl/bn.h>
 #include <openssl/crypto.h>
@@ -69,7 +68,7 @@ namespace mpss_openssl::utils {
         return res;
     }
 
-    [[nodiscard]] common_byte_vector mpss_vk_params_to_spki(OSSL_LIB_CTX *libctx, const OSSL_PARAM *params)
+    [[nodiscard]] byte_vector mpss_vk_params_to_spki(OSSL_LIB_CTX *libctx, const OSSL_PARAM *params)
     {
         if (!params) {
             return {};
@@ -105,7 +104,7 @@ namespace mpss_openssl::utils {
             EVP_PKEY_free(pkey);
             return {};
         }
-        common_byte_vector der_data(der_size);
+        byte_vector der_data(der_size);
         std::transform(
             der_buf, der_buf + der_size, der_data.begin(), [](unsigned char c) { return static_cast<std::byte>(c); });
 

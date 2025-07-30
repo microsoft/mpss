@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include "mpss-openssl/utils/memory.h"
 #include "mpss-openssl/utils/names.h"
 #include <gsl/span>
 #include <cstddef>
@@ -12,8 +11,21 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 
 namespace mpss_openssl::utils {
+    template <typename T, typename... Args>
+    [[nodiscard]] inline T *mpss_new(Args &&...args)
+    {
+        return new T{std::forward<Args>(args)...};
+    }
+
+    template <typename T>
+    inline void mpss_delete(T *obj)
+    {
+        delete obj;
+    }
+
     std::size_t mpss_sign_as_der(
         const std::unique_ptr<mpss::KeyPair> &key_pair, gsl::span<const std::byte> hash_tbs, gsl::span<std::byte> out);
 
@@ -22,7 +34,7 @@ namespace mpss_openssl::utils {
         gsl::span<const std::byte> hash_tbs,
         gsl::span<const std::byte> der_sig);
 
-    [[nodiscard]] common_byte_vector mpss_vk_params_to_spki(OSSL_LIB_CTX *libctx, const OSSL_PARAM *params);
+    [[nodiscard]] byte_vector mpss_vk_params_to_spki(OSSL_LIB_CTX *libctx, const OSSL_PARAM *params);
 
     [[nodiscard]] std::string_view get_canonical_hash_name(std::string_view name);
     [[nodiscard]] std::string_view get_canonical_sig_name(std::string_view name);

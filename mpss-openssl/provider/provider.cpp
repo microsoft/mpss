@@ -18,7 +18,7 @@ namespace {
     {
         mpss_provider_ctx *ctx = static_cast<mpss_provider_ctx *>(provctx);
         OSSL_LIB_CTX_free(ctx->libctx);
-        mpss_delete<false>(ctx);
+        mpss_delete(ctx);
     }
 
     extern "C" const OSSL_ALGORITHM *mpss_provider_query_operation(

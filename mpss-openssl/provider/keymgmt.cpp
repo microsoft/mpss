@@ -14,7 +14,7 @@ namespace mpss_openssl::provider {
     using namespace ::mpss_openssl::utils;
 
     struct mpss_keymgmt_gen_ctx {
-        neat_string key_name;
+        std::string key_name;
         std::string mpss_algorithm;
         int selection;
     };
@@ -79,12 +79,12 @@ namespace {
         mpss::AlgorithmInfo info = pkey->key_pair->algorithm_info();
         std::string_view type_str = info.type_str;
 
-        OSSL_PARAM params[3];
+        OSSL_PARAM params[3]{};
         OSSL_PARAM *p = params;
 
         // The public key is written in this. It needs to stay alive until the call to
         // param_cb finishes, since it holds the public key buffer.
-        common_byte_vector vk;
+        byte_vector vk;
 
         // For a parameter export, we just return the group type string.
         if (selection & OSSL_KEYMGMT_SELECT_ALL_PARAMETERS) {
@@ -213,7 +213,7 @@ namespace {
             return 1;
         }
 
-        neat_string key_name = key->name.value_or("");
+        std::string key_name = key->name.value_or("");
         std::string mpss_algorithm = key->mpss_algorithm.value_or("");
         std::int32_t bits = 0;
         std::int32_t security_bits = 0;
@@ -254,8 +254,8 @@ namespace {
 
     extern "C" void mpss_keymgmt_gen_cleanup(void *genctx)
     {
-        // Delete the context. No need to clear it.
-        mpss_delete<false>(static_cast<mpss_keymgmt_gen_ctx *>(genctx));
+        // Delete the context.
+        mpss_delete(static_cast<mpss_keymgmt_gen_ctx *>(genctx));
     }
 
     extern "C" void *mpss_keymgmt_gen_init([[maybe_unused]] void *provctx, int selection, const OSSL_PARAM params[])
@@ -279,8 +279,8 @@ namespace {
 
     extern "C" void mpss_keymgmt_free(void *provkey)
     {
-        // Delete the key. No need to clear it.
-        mpss_delete<false>(static_cast<mpss_key *>(provkey));
+        // Delete the (public) key.
+        mpss_delete(static_cast<mpss_key *>(provkey));
     }
 
     extern "C" void *mpss_keymgmt_gen(void *genctx, [[maybe_unused]] OSSL_CALLBACK *cb, [[maybe_unused]] void *cbarg)
@@ -306,14 +306,14 @@ namespace {
 
         // Check that everything went well.
         if (!pkey->has_valid_key()) {
-            mpss_delete<false>(pkey);
+            mpss_delete(pkey);
             return nullptr;
         }
 
         // If a key already existed, mpss_algorithm now has the algorithm type that was loaded.
         // This has to be the same as the one that was requested, otherwise return nullptr.
         if (mpss_algorithm.value() != ctx->mpss_algorithm) {
-            mpss_delete<false>(pkey);
+            mpss_delete(pkey);
             return nullptr;
         }
 

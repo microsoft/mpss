@@ -39,7 +39,7 @@ namespace {
     extern "C" void mpss_encoder_freectx(void *ctx)
     {
         mpss_encoder_ctx *ectx = static_cast<mpss_encoder_ctx *>(ctx);
-        mpss_delete<false>(ectx);
+        mpss_delete(ectx);
     }
 
     extern "C" const OSSL_PARAM *mpss_encoder_gettable_params([[maybe_unused]] void *provctx)
@@ -95,10 +95,10 @@ namespace {
 
         struct param_cb_data_t {
             OSSL_LIB_CTX *libctx;
-            common_byte_vector spki;
+            byte_vector spki;
         } cb_data;
         cb_data.libctx = ectx->libctx;
-        cb_data.spki = common_byte_vector{};
+        cb_data.spki = byte_vector{};
 
         // This callback reads the key data from a returned OSSL_PARAM into vk.
         OSSL_CALLBACK *param_cb = [](const OSSL_PARAM params[], void *arg) -> int {

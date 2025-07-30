@@ -70,7 +70,7 @@ namespace {
     extern "C" void mpss_digest_freectx(void *ctx)
     {
         mpss_digest_ctx *dctx = static_cast<mpss_digest_ctx *>(ctx);
-        mpss_delete<false>(dctx);
+        mpss_delete(dctx);
     }
 
     extern "C" void *mpss_digest_dupctx(void *ctx)
@@ -169,7 +169,7 @@ namespace {
         }
 
         if (state != digest_state::finalized) {
-            common_byte_vector digest(EVP_MAX_MD_SIZE);
+            byte_vector digest(EVP_MAX_MD_SIZE);
 
             // First, we try to finalize the digest.
             unsigned int bytes_written = 0;

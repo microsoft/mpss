@@ -21,7 +21,7 @@ namespace mpss_openssl::provider {
         EVP_MD_CTX *evp_dctx = nullptr;
 
         // This is only meaningful if state == digest_state::finalized.
-        mpss_openssl::utils::common_byte_vector digest = {};
+        mpss_openssl::utils::byte_vector digest = {};
 
         mpss_digest_ctx() = default;
 

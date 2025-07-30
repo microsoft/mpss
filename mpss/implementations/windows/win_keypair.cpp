@@ -89,13 +89,23 @@ namespace mpss::impl {
             return 0;
         }
 
+        // Check that the signature size is exactly what we expect.
+        AlgorithmInfo info = get_algorithm_info(algorithm());
+        std::size_t field_size = ((info.key_bits + 7) / 8);
+        if (sig_size_dw != 2 * field_size) {
+            std::stringstream ss;
+            ss << "NCryptSignHash returned unexpected signature size " << sig_size_dw
+               << ". Expected " << 2 * field_size << ".";
+            mpss::utils::set_error(ss.str());
+            return 0;
+        }
+
         // Get the buffer for the signature
         std::unique_ptr<BYTE[]> signature_buffer = std::make_unique<BYTE[]>(sig_size_dw);
         if (!signature_buffer) {
             mpss::utils::set_error("Failed to allocate signature buffer.");
             return 0;
         }
-
         SCOPE_GUARD({
             // Zero out the signature buffer.
             ::SecureZeroMemory(signature_buffer.get(), sig_size_dw);
@@ -119,12 +129,29 @@ namespace mpss::impl {
             return 0;
         }
 
-        CERT_ECC_SIGNATURE eccSig;
-        DWORD field_size = signed_size / 2;
+        // We need to reverse the signature bytes.
+        std::unique_ptr<BYTE[]> reversed_signature_buffer = std::make_unique<BYTE[]>(sig_size_dw);
+        if (!reversed_signature_buffer) {
+            mpss::utils::set_error("Failed to allocate reversed signature buffer.");
+            return 0;
+        }
+        SCOPE_GUARD({
+            // Zero out the reversed signature buffer.
+            ::SecureZeroMemory(reversed_signature_buffer.get(), sig_size_dw);
+        });
+
+        // Reverse the signature bytes.
+        gsl::span<BYTE> reversed_signature_span(reversed_signature_buffer.get(), sig_size_dw);
+        std::copy(
+            signature_buffer.get(), signature_buffer.get() + field_size, reversed_signature_span.rbegin() + field_size);
+        std::copy(
+            signature_buffer.get() + field_size, signature_buffer.get() + sig_size_dw, reversed_signature_span.rbegin());
+
+        CERT_ECC_SIGNATURE eccSig{};
         eccSig.r.cbData = field_size;
-        eccSig.r.pbData = signature_buffer.get();
+        eccSig.r.pbData = reversed_signature_buffer.get();
         eccSig.s.cbData = field_size;
-        eccSig.s.pbData = (signature_buffer.get() + field_size);
+        eccSig.s.pbData = (reversed_signature_buffer.get() + field_size);
 
         DWORD encoded_size = 0;
 
@@ -133,7 +160,7 @@ namespace mpss::impl {
                 X509_ASN_ENCODING,
                 X509_ECC_SIGNATURE,
                 &eccSig,
-                /* dwFlags */ 0,
+                0 /* dwFlags */,
                 /* PCRYPT_ENCODE_PARA */ nullptr,
                 /* pvEncoded */ nullptr,
                 &encoded_size)) {
@@ -162,7 +189,7 @@ namespace mpss::impl {
                 X509_ASN_ENCODING,
                 X509_ECC_SIGNATURE,
                 &eccSig,
-                /* dwFlags */ 0,
+                0 /* dwFlags */,
                 /* PCRYPT_ENCODE_PARA */ nullptr,
                 sig.data(),
                 &encoded_size)) {

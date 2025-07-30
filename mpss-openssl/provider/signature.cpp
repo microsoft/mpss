@@ -33,10 +33,10 @@ namespace {
 
     mpss_signature_ctx::~mpss_signature_ctx()
     {
-        mpss_delete<false>(dctx);
-        dctx = nullptr;
+        // Releasing dctx.
+        mpss_delete(dctx);
 
-        // NOTE: We are *not* supposed to release any of these. They are
+        // NOTE: We are *not* supposed to release the memory for any of these. They are
         // managed elsewhere.
         pkey = nullptr;
         provctx = nullptr;
@@ -58,7 +58,7 @@ namespace {
 
     extern "C" void mpss_signature_freectx(void *ctx)
     {
-        mpss_delete<false>(static_cast<mpss_signature_ctx *>(ctx));
+        mpss_delete(static_cast<mpss_signature_ctx *>(ctx));
     }
 
     extern "C" void *mpss_signature_dupctx(void *ctx)
@@ -196,11 +196,11 @@ namespace {
             return 1;
         }
 
-        // Sign the data. An empty common_byte_vector indicates failure to sign.
-        common_byte_vector tbs_bytes(tbslen);
+        // Sign the data. An empty byte_vector indicates failure to sign.
+        byte_vector tbs_bytes(tbslen);
         std::transform(tbs, tbs + tbslen, tbs_bytes.begin(), [](unsigned char c) { return static_cast<std::byte>(c); });
 
-        common_byte_vector der_sig(max_sig_size);
+        byte_vector der_sig(max_sig_size);
         std::size_t bytes_written = mpss_sign_as_der(sctx->pkey->key_pair, tbs_bytes, der_sig);
         if (0 == bytes_written) {
             return 0;
@@ -247,10 +247,10 @@ namespace {
             return 0;
         }
 
-        common_byte_vector tbs_bytes(tbslen);
+        byte_vector tbs_bytes(tbslen);
         std::transform(tbs, tbs + tbslen, tbs_bytes.begin(), [](unsigned char c) { return static_cast<std::byte>(c); });
 
-        common_byte_vector sig_bytes(siglen);
+        byte_vector sig_bytes(siglen);
         std::transform(sig, sig + siglen, sig_bytes.begin(), [](unsigned char c) { return static_cast<std::byte>(c); });
 
         return verify_der(sctx->pkey->key_pair, tbs_bytes, sig_bytes);
@@ -285,14 +285,14 @@ namespace {
         mpss_digest_ctx *dctx = static_cast<mpss_digest_ctx *>(mpss_digest_newctx(sctx->provctx, hash_name.c_str()));
 
         if (1 != mpss_digest_init(dctx, nullptr)) {
-            mpss_delete<false>(dctx);
+            mpss_delete(dctx);
             return 0;
         }
 
         // We are mostly ready to go. Still need to check if we have
         // an existing provider digest context. If so, we'll delete it.
         if (sctx->dctx) {
-            mpss_delete<false>(sctx->dctx);
+            mpss_delete(sctx->dctx);
             sctx->dctx = nullptr;
         }
 
@@ -324,7 +324,7 @@ namespace {
             return 0;
         }
 
-        common_byte_vector tbs(EVP_MAX_MD_SIZE);
+        byte_vector tbs(EVP_MAX_MD_SIZE);
         std::size_t tbslen = 0;
         unsigned char *digest_ptr = reinterpret_cast<unsigned char *>(tbs.data());
         if (1 != mpss_digest_final(sctx->dctx, digest_ptr, &tbslen, EVP_MAX_MD_SIZE)) {
@@ -388,7 +388,7 @@ namespace {
         }
 
         if (state != digest_state::finalized) {
-            common_byte_vector digest(EVP_MAX_MD_SIZE);
+            byte_vector digest(EVP_MAX_MD_SIZE);
 
             // First, we try to finalize the digest.
             unsigned int bytes_written = 0;

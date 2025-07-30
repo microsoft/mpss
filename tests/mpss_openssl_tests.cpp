@@ -11,10 +11,77 @@
 #include <openssl/provider.h>
 #include <openssl/x509v3.h>
 #include <algorithm>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <random>
 
 namespace {
+    class MPSSDigest : public ::testing::Test {
+    protected:
+        OSSL_LIB_CTX *mpss_libctx = nullptr;
+        OSSL_PROVIDER *mpss_prov = nullptr;
+        OSSL_PROVIDER *default_prov = nullptr;
+
+        void SetUp() override
+        {
+            mpss_libctx = OSSL_LIB_CTX_new();
+            ASSERT_NE(nullptr, mpss_libctx);
+
+            ASSERT_NE(0, OSSL_PROVIDER_add_builtin(mpss_libctx, "mpss", OSSL_provider_init));
+            mpss_prov = OSSL_PROVIDER_load(mpss_libctx, "mpss");
+            ASSERT_NE(nullptr, mpss_prov);
+            default_prov = OSSL_PROVIDER_load(mpss_libctx, "default");
+            ASSERT_NE(nullptr, default_prov);
+        }
+
+        void TearDown() override
+        {
+            if (mpss_prov) {
+                ASSERT_NE(0, OSSL_PROVIDER_unload(mpss_prov));
+                mpss_prov = nullptr;
+            }
+            if (default_prov) {
+                ASSERT_NE(0, OSSL_PROVIDER_unload(default_prov));
+                default_prov = nullptr;
+            }
+            if (mpss_libctx) {
+                OSSL_LIB_CTX_free(mpss_libctx);
+                mpss_libctx = nullptr;
+            }
+        }
+
+        void TestDigest(const char *hash_name, const EVP_MD *(*evp_md_func)(), std::string_view in)
+        {
+            unsigned char mpss_digest[EVP_MAX_MD_SIZE], default_digest[EVP_MAX_MD_SIZE];
+            unsigned int mpss_digest_len = 0, default_digest_len = 0;
+
+            EVP_MD *md = EVP_MD_fetch(mpss_libctx, hash_name, "provider=mpss");
+            ASSERT_NE(nullptr, md);
+            EVP_MD_CTX *mdctx = EVP_MD_CTX_new();
+            ASSERT_NE(nullptr, mdctx);
+            ASSERT_EQ(1, EVP_DigestInit(mdctx, md));
+            ASSERT_EQ(1, EVP_DigestUpdate(mdctx, in.data(), in.size()));
+            unsigned int digest_len = 0;
+            ASSERT_EQ(1, EVP_DigestFinal(mdctx, mpss_digest, &digest_len));
+            mpss_digest_len = digest_len;
+            EVP_MD_CTX_free(mdctx);
+            EVP_MD_free(md);
+
+            const EVP_MD *default_md = evp_md_func();
+            ASSERT_NE(nullptr, default_md);
+            mdctx = EVP_MD_CTX_new();
+            ASSERT_NE(nullptr, mdctx);
+            ASSERT_EQ(1, EVP_DigestInit(mdctx, default_md));
+            ASSERT_EQ(1, EVP_DigestUpdate(mdctx, in.data(), in.size()));
+            ASSERT_EQ(1, EVP_DigestFinal(mdctx, default_digest, &default_digest_len));
+            EVP_MD_CTX_free(mdctx);
+
+            ASSERT_EQ(mpss_digest_len, default_digest_len);
+            ASSERT_TRUE(std::equal(mpss_digest, mpss_digest + mpss_digest_len, default_digest));
+        }
+    };
+
     int add_ca_extensions(X509 *cert)
     {
         X509V3_CTX ctx;
@@ -53,6 +120,111 @@ namespace {
 } // namespace
 
 namespace mpss_openssl::tests {
+
+
+    TEST_F(MPSSDigest, SHA256)
+    {
+        std::random_device rd;
+        for (int i = 0; i < 50; i++) {
+            std::size_t size = rd() % (1024 * 1024);
+            std::string input_data(size, '\0');
+            std::generate(input_data.begin(), input_data.end(), [&rd]() { return static_cast<char>(rd() % 256); });
+            TestDigest("SHA256", EVP_sha256, input_data);
+        }
+    }
+
+    TEST_F(MPSSDigest, SHA384)
+    {
+        std::random_device rd;
+        for (int i = 0; i < 50; i++) {
+            std::size_t size = rd() % (1024 * 1024);
+            std::string input_data(size, '\0');
+            std::generate(input_data.begin(), input_data.end(), [&rd]() { return static_cast<char>(rd() % 256); });
+            TestDigest("SHA384", EVP_sha384, input_data);
+        }
+    }
+
+    TEST_F(MPSSDigest, SHA512)
+    {
+        std::random_device rd;
+        for (int i = 0; i < 50; i++) {
+            std::size_t size = rd() % (1024 * 1024);
+            std::string input_data(size, '\0');
+            std::generate(input_data.begin(), input_data.end(), [&rd]() { return static_cast<char>(rd() % 256); });
+            TestDigest("SHA512", EVP_sha512, input_data);
+        }
+    }
+
+    //TEST(MPSS_OPENSSL, DigestTest)
+    //{
+    //    OSSL_LIB_CTX *mpss_libctx = OSSL_LIB_CTX_new();
+    //    ASSERT_NE(nullptr, mpss_libctx);
+
+    //    // Register and load the mpss provider and default provider.
+    //    ASSERT_NE(0, OSSL_PROVIDER_add_builtin(mpss_libctx, "mpss", OSSL_provider_init));
+    //    OSSL_PROVIDER *mpss_prov = OSSL_PROVIDER_load(mpss_libctx, "mpss");
+    //    ASSERT_NE(nullptr, mpss_prov);
+    //    OSSL_PROVIDER *default_prov = OSSL_PROVIDER_load(mpss_libctx, "default");
+    //    ASSERT_NE(nullptr, default_prov);
+
+    //    // Check if our digest function works. This is a lambda that takes the hash function
+    //    // name (e.g., "SHA256") and the OpenSSL EVP method that returns an EVP_MD pointer.
+    //    // It hashes a bunch of random input and checks that both hash functions give the
+    //    // same output.
+    //    auto test_digest = [&](const char *hash_name, const EVP_MD *(*evp_md_func)(), std::string_view in) {
+    //        unsigned char mpss_digest[EVP_MAX_MD_SIZE], default_digest[EVP_MAX_MD_SIZE];
+    //        unsigned int mpss_digest_len = 0, default_digest_len = 0;
+
+    //        EVP_MD *md = EVP_MD_fetch(mpss_libctx, hash_name, "provider=mpss");
+    //        ASSERT_NE(nullptr, md);
+    //        EVP_MD_CTX *mdctx = EVP_MD_CTX_new();
+    //        ASSERT_NE(nullptr, mdctx);
+    //        ASSERT_EQ(1, EVP_DigestInit(mdctx, md));
+    //        ASSERT_EQ(1, EVP_DigestUpdate(mdctx, in.data(), in.size()));
+    //        unsigned int digest_len = 0;
+    //        ASSERT_EQ(1, EVP_DigestFinal(mdctx, mpss_digest, &digest_len));
+    //        mpss_digest_len = digest_len;
+    //        EVP_MD_CTX_free(mdctx);
+    //        mdctx = nullptr;
+    //        EVP_MD_free(md);
+    //        md = nullptr;
+
+    //        const EVP_MD *default_md = evp_md_func();
+    //        ASSERT_NE(nullptr, default_md);
+    //        mdctx = EVP_MD_CTX_new();
+    //        ASSERT_NE(nullptr, mdctx);
+    //        ASSERT_EQ(1, EVP_DigestInit(mdctx, default_md));
+    //        ASSERT_EQ(1, EVP_DigestUpdate(mdctx, in.data(), in.size()));
+    //        ASSERT_EQ(1, EVP_DigestFinal(mdctx, default_digest, &default_digest_len));
+    //        EVP_MD_CTX_free(mdctx);
+    //        mdctx = nullptr;
+
+    //        // Check equality.
+    //        ASSERT_EQ(mpss_digest_len, default_digest_len);
+    //        ASSERT_TRUE(std::equal(mpss_digest, mpss_digest + mpss_digest_len, default_digest));
+    //    };
+
+    //    std::random_device rd;
+
+    //    // Test the digest functions with different random inputs.
+    //    for (int i = 0; i < 50; i++) {
+    //        // Choose a random size up to 1MB.
+    //        std::size_t size = rd() % (1024 * 1024);
+
+    //        // Generate random input data.
+    //        std::string input_data(size, '\0');
+    //        std::generate(input_data.begin(), input_data.end(), [&rd]() { return static_cast<char>(rd() % 256); });
+    //        test_digest("SHA256", EVP_sha256, input_data);
+    //        test_digest("SHA384", EVP_sha384, input_data);
+    //        test_digest("SHA512", EVP_sha512, input_data);
+    //    }
+
+    //    // Unload the providers and the library context.
+    //    ASSERT_NE(0, OSSL_PROVIDER_unload(mpss_prov));
+    //    ASSERT_NE(0, OSSL_PROVIDER_unload(default_prov));
+    //    OSSL_LIB_CTX_free(mpss_libctx);
+    //}
+
     TEST(MPSS_OPENSSL, OSSLTest)
     {
         const char *key_name = "test_key";
@@ -74,39 +246,6 @@ namespace mpss_openssl::tests {
         // Load our provider.
         OSSL_PROVIDER *mpss_prov = OSSL_PROVIDER_load(mpss_libctx, "mpss");
         ASSERT_NE(nullptr, mpss_prov);
-
-        // Check if our digest function works.
-        unsigned char mpss_digest[EVP_MAX_MD_SIZE], default_digest[EVP_MAX_MD_SIZE];
-        unsigned int mpss_digest_len = 0, default_digest_len = 0;
-        std::string_view sample_data = "Hello world!";
-        {
-            EVP_MD *md = EVP_MD_fetch(mpss_libctx, "SHA256", "provider=mpss");
-            ASSERT_NE(nullptr, md);
-
-            EVP_MD_CTX *mdctx = EVP_MD_CTX_new();
-            ASSERT_NE(nullptr, mdctx);
-
-            ASSERT_EQ(1, EVP_DigestInit(mdctx, md));
-            ASSERT_EQ(1, EVP_DigestUpdate(mdctx, sample_data.data(), sample_data.size()));
-            ASSERT_EQ(1, EVP_DigestFinal(mdctx, mpss_digest, &mpss_digest_len));
-
-            EVP_MD_CTX_free(mdctx);
-            EVP_MD_free(md);
-        }
-        {
-            const EVP_MD *md = EVP_sha256();
-            ASSERT_NE(nullptr, md);
-
-            EVP_MD_CTX *mdctx = EVP_MD_CTX_new();
-            ASSERT_NE(nullptr, mdctx);
-
-            ASSERT_EQ(1, EVP_DigestInit(mdctx, md));
-            ASSERT_EQ(1, EVP_DigestUpdate(mdctx, sample_data.data(), sample_data.size()));
-            ASSERT_EQ(1, EVP_DigestFinal(mdctx, default_digest, &default_digest_len));
-        }
-
-        ASSERT_EQ(mpss_digest_len, default_digest_len);
-        ASSERT_TRUE(std::equal(mpss_digest, mpss_digest + mpss_digest_len, default_digest));
 
         EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_from_name(mpss_libctx, "EC", "provider=mpss");
         ASSERT_NE(nullptr, ctx);
@@ -404,35 +543,8 @@ namespace mpss_openssl::tests {
 
         BIO *pubkey_file = BIO_new_file("test_ca_pubkey.pem", "w");
         ASSERT_NE(nullptr, pubkey_file);
-        //ASSERT_EQ(1, PEM_write_bio_PUBKEY_ex(pubkey_file, ca_pkey, mpss_libctx, "provider=mpss"));
-        OSSL_ENCODER_CTX *ectx =
-            OSSL_ENCODER_CTX_new_for_pkey(ca_pkey, EVP_PKEY_PUBLIC_KEY, "DER", "SubjectPublicKeyInfo", "provider=mpss");
-        ASSERT_NE(nullptr, ectx);
-        OSSL_ENCODER_to_bio(ectx, pubkey_file);
-        OSSL_ENCODER_CTX_free(ectx);
+        ASSERT_EQ(1, PEM_write_bio_PUBKEY_ex(pubkey_file, ca_pkey, mpss_libctx, "provider=mpss"));
         BIO_free(pubkey_file);
-
-
-        // OSSL_ENCODER_CTX *ectx =
-        //     OSSL_ENCODER_CTX_new_for_pkey(
-        //         ca_pkey,
-        //         EVP_PKEY_PUBLIC_KEY,
-        //         "DER",                     // binary
-        //         "SubjectPublicKeyInfo",    // ASN.1 wrapper for public keys
-        //         "provider=mpss");                  // propq – use the key’s provider
-        // ASSERT_NE(nullptr, ectx);
-
-        // unsigned char *spki_der   = nullptr;
-        // size_t         spki_len   = 0;
-
-        // if (OSSL_ENCODER_to_data(ectx, &spki_der, &spki_len) != 1)
-        //     throw std::runtime_error("SPKI export failed");
-
-        // std::ofstream("spki.der", std::ios::binary)
-        //         .write(reinterpret_cast<char*>(spki_der), spki_len);
-
-        // OSSL_ENCODER_CTX_free(ectx);
-        // OPENSSL_free(spki_der);
 
         // -------------------------------------------------------------------------
         // 8.  Reload the PEM objects back into memory (default provider unless
@@ -452,14 +564,8 @@ namespace mpss_openssl::tests {
 
         BIO *pubkey_load_bio = BIO_new_file("test_ca_pubkey.pem", "r");
         ASSERT_NE(nullptr, pubkey_load_bio);
-        EVP_PKEY *loaded_pubkey = nullptr;
-        OSSL_DECODER_CTX *dctx = OSSL_DECODER_CTX_new_for_pkey(
-            &loaded_pubkey, "DER", "SubjectPublicKeyInfo", "EC", EVP_PKEY_PUBLIC_KEY, mpss_libctx, "provider=mpss");
-        ASSERT_NE(nullptr, dctx);
-        ASSERT_EQ(1, OSSL_DECODER_from_bio(dctx, pubkey_load_bio));
-        //EVP_PKEY *loaded_pubkey = PEM_read_bio_PUBKEY(pubkey_load_bio, nullptr, nullptr, nullptr);
+        EVP_PKEY *loaded_pubkey = PEM_read_bio_PUBKEY(pubkey_load_bio, nullptr, nullptr, nullptr);
         ASSERT_NE(nullptr, loaded_pubkey);
-        OSSL_DECODER_CTX_free(dctx);
         BIO_free(pubkey_load_bio);
 
         // -------------------------------------------------------------------------
@@ -467,15 +573,16 @@ namespace mpss_openssl::tests {
         //     (Note: if the CA key was provider‑specific, this may fail unless the
         //     key is imported back into the same provider.)
         // -------------------------------------------------------------------------
+
         ASSERT_EQ(1, X509_verify(loaded_ca_cert, loaded_pubkey));
         ASSERT_EQ(1, X509_verify(loaded_end_cert, loaded_pubkey));
 
         // -------------------------------------------------------------------------
         // 10. House‑keeping: delete temporary files and free all OpenSSL objects.
         // -------------------------------------------------------------------------
-        remove("test_ca.pem");
-        remove("test_end_cert.pem");
-        remove("test_ca_pubkey.pem");
+        ASSERT_TRUE(std::filesystem::remove("test_ca.pem"));
+        ASSERT_TRUE(std::filesystem::remove("test_end_cert.pem"));
+        ASSERT_TRUE(std::filesystem::remove("test_ca_pubkey.pem"));
 
         X509_free(ca_cert);
         X509_free(end_cert);
