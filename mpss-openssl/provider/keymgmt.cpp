@@ -29,15 +29,27 @@ namespace mpss_openssl::provider {
             // If mpss_algorithm is empty, just try to open the key.
             key_pair = mpss::KeyPair::Open(key_name);
             if (key_pair) {
-                // Write the algorithm string into the mpss_algorithm.
-                mpss_algorithm = key_pair->algorithm_info().type_str;
+                // Read the algorithm name from the opened key.
+                std::string mpss_alg_str = key_pair->algorithm_info().type_str;
+
+                // Try to get the canonical name instead.
+                mpss_algorithm = utils::try_get_algorithm_name(mpss_alg_str);
+
+                // Save the algorithm also in a local variable.
+                this->mpss_algorithm = mpss_algorithm;
             }
         } else {
             // If mpss_algorithm is not empty, try to create the key.
-            mpss::Algorithm algorithm = mpss::algorithm_from_str(mpss_algorithm.value());
+            // First, try to get the mpss algorithm.
+            mpss::Algorithm algorithm = try_get_mpss_algorithm(mpss_algorithm.value());
+
+            // Now try to create the key and save the algorithm in a local variable.
             if (algorithm != mpss::Algorithm::unsupported) {
                 key_pair = mpss::KeyPair::Create(key_name, algorithm);
             }
+
+            // Finally, save the canonical algorithm name in a local variable.
+            this->mpss_algorithm = try_get_algorithm_name(mpss::get_algorithm_info(algorithm).type_str);
         }
 
         // Try to read the algorithm, group, and hash names from the key.
@@ -46,7 +58,6 @@ namespace mpss_openssl::provider {
         group_name = utils::try_get_ec_group(key_pair);
         hash_name = utils::try_get_hash_func(key_pair);
         alg_name = utils::try_get_algorithm_name(key_pair);
-        this->mpss_algorithm = mpss_algorithm;
     }
 
     mpss_key::~mpss_key()
@@ -190,6 +201,8 @@ namespace {
         static constexpr OSSL_PARAM ret[] = {
             OSSL_PARAM_utf8_string("key_name", nullptr, 0),
             OSSL_PARAM_utf8_string("mpss_algorithm", nullptr, 0),
+            OSSL_PARAM_int("is_hardware_backed", nullptr),
+            OSSL_PARAM_utf8_string("storage_description", nullptr, 0),
             OSSL_PARAM_int32(OSSL_PKEY_PARAM_BITS, nullptr),
             OSSL_PARAM_int32(OSSL_PKEY_PARAM_SECURITY_BITS, nullptr),
             OSSL_PARAM_utf8_string(OSSL_PKEY_PARAM_MANDATORY_DIGEST, nullptr, 0),
@@ -232,6 +245,14 @@ namespace {
         }
         if ((p = OSSL_PARAM_locate(params, "mpss_algorithm")) &&
             !OSSL_PARAM_set_utf8_string(p, mpss_algorithm.data())) {
+            return 0;
+        }
+        if ((p = OSSL_PARAM_locate(params, "is_hardware_backed")) &&
+            !OSSL_PARAM_set_int(p, key->key_pair->key_info().is_hardware_backed ? 1 : 0)) {
+            return 0;
+        }
+        if ((p = OSSL_PARAM_locate(params, "storage_description")) &&
+            !OSSL_PARAM_set_utf8_string(p, key->key_pair->key_info().storage_description)) {
             return 0;
         }
         if ((p = OSSL_PARAM_locate(params, OSSL_PKEY_PARAM_BITS)) && !OSSL_PARAM_set_int32(p, bits)) {

@@ -56,4 +56,5 @@ namespace mpss_openssl::utils {
     [[nodiscard]] std::optional<std::string> try_get_hash_func(const std::unique_ptr<mpss::KeyPair> &key_pair);
     [[nodiscard]] std::optional<std::string> try_get_signature_scheme(const std::unique_ptr<mpss::KeyPair> &key_pair);
     [[nodiscard]] std::optional<std::string> try_get_algorithm_name(const std::unique_ptr<mpss::KeyPair> &key_pair);
+    [[nodiscard]] mpss::Algorithm try_get_mpss_algorithm(std::string_view str);
 } // namespace mpss_openssl::utils

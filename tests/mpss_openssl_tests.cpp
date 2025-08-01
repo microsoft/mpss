@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 #include "mpss-openssl/api.h"
+#include "mpss-openssl/utils/names.h"
 #include <openssl/core.h>
 #include <openssl/decoder.h>
 #include <openssl/encoder.h>
@@ -155,169 +156,9 @@ namespace mpss_openssl::tests {
         }
     }
 
-    TEST(MPSS_OPENSSL, OSSLTest)
-    {
-        const char *key_name = "test_key";
-        if (mpss_is_valid_key(key_name)) {
-            bool ret = mpss_delete_key(key_name);
-            ASSERT_EQ(1, ret);
-        }
-
-        OSSL_LIB_CTX *mpss_libctx = OSSL_LIB_CTX_new();
-        ASSERT_NE(nullptr, mpss_libctx);
-
-        // We also need the default provider for RSA.
-        OSSL_PROVIDER *default_prov = OSSL_PROVIDER_load(mpss_libctx, "default");
-        ASSERT_NE(nullptr, default_prov);
-
-        // Register the mpss provider.
-        ASSERT_NE(0, OSSL_PROVIDER_add_builtin(mpss_libctx, "mpss", OSSL_provider_init));
-
-        // Load our provider.
-        OSSL_PROVIDER *mpss_prov = OSSL_PROVIDER_load(mpss_libctx, "mpss");
-        ASSERT_NE(nullptr, mpss_prov);
-
-        EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_from_name(mpss_libctx, "EC", "provider=mpss");
-        ASSERT_NE(nullptr, ctx);
-
-        ASSERT_EQ(1, EVP_PKEY_keygen_init(ctx));
-
-        // Now set the parameters to use ECDSA-P256-SHA256.
-        OSSL_PARAM params[] = {
-            OSSL_PARAM_construct_utf8_string("key_name", const_cast<char *>(key_name), 0),
-            OSSL_PARAM_construct_utf8_string("mpss_algorithm", const_cast<char *>("ecdsa_secp256r1_sha256"), 0),
-            OSSL_PARAM_END};
-        ASSERT_EQ(1, EVP_PKEY_CTX_set_params(ctx, params));
-
-        // Generate the key.
-        EVP_PKEY *pkey = nullptr;
-        ASSERT_EQ(1, EVP_PKEY_generate(ctx, &pkey));
-
-        // We can free the ctx now before creating a context for signing.
-        EVP_PKEY_CTX_free(ctx);
-
-        ctx = EVP_PKEY_CTX_new_from_pkey(mpss_libctx, pkey, "provider=mpss");
-        ASSERT_NE(nullptr, ctx);
-        ASSERT_EQ(1, EVP_PKEY_sign_init(ctx));
-
-        // Set a fixed  buffer that is 256 characters long. All repeated 'A'.
-        std::vector<unsigned char> tbs(256 / 8, 'A');
-        std::size_t tbs_len = tbs.size();
-        std::vector<unsigned char> signature;
-        std::size_t signature_len = 0;
-
-        // This obtains the size bound on the signature.
-        ASSERT_EQ(1, EVP_PKEY_sign(ctx, nullptr, &signature_len, tbs.data(), tbs_len));
-        signature.resize(signature_len);
-
-        // Actually sign.
-        ASSERT_EQ(1, EVP_PKEY_sign(ctx, signature.data(), &signature_len, tbs.data(), tbs_len));
-        signature.resize(signature_len);
-
-        // Next we set up the context to verify.
-        EVP_PKEY_CTX_free(ctx);
-        ctx = EVP_PKEY_CTX_new_from_pkey(mpss_libctx, pkey, "provider=mpss");
-        ASSERT_NE(nullptr, ctx);
-        ASSERT_EQ(1, EVP_PKEY_verify_init(ctx));
-        ASSERT_EQ(1, EVP_PKEY_verify(ctx, signature.data(), signature_len, tbs.data(), tbs_len));
-
-        // Next try to extract the public key from EVP_PKEY.
-        std::vector<unsigned char> public_key;
-        std::size_t public_key_len = 1024;
-        public_key.resize(public_key_len);
-        ASSERT_EQ(1, EVP_PKEY_get_raw_public_key(pkey, public_key.data(), &public_key_len));
-        public_key.resize(public_key_len);
-        ASSERT_EQ(public_key_len, 65);
-
-        // Set up the encoder for SPKI/DER.
-        OSSL_ENCODER_CTX *ectx =
-            OSSL_ENCODER_CTX_new_for_pkey(pkey, EVP_PKEY_PUBLIC_KEY, "DER", "SubjectPublicKeyInfo", "provider=mpss");
-        ASSERT_NE(nullptr, ectx);
-
-        // We should find at least our DER encoder.
-        ASSERT_GE(OSSL_ENCODER_CTX_get_num_encoders(ectx), 1);
-
-        // Now try getting the public key.
-        unsigned char *spki_der = nullptr;
-        std::size_t spki_der_len = 0;
-        ASSERT_EQ(1, OSSL_ENCODER_to_data(ectx, &spki_der, &spki_der_len));
-
-        // Create X509 cert.
-        X509 *cert = X509_new_ex(mpss_libctx, "provider=mpss");
-        ASSERT_NE(nullptr, cert);
-
-        // Set properties and the public key.
-        X509_set_version(cert, 2);
-        ASN1_INTEGER_set(X509_get_serialNumber(cert), 1);
-        X509_gmtime_adj(X509_get_notBefore(cert), 0);
-        X509_gmtime_adj(X509_get_notAfter(cert), 31536000L);
-        ASSERT_NE(0, X509_set_pubkey(cert, pkey));
-
-        // Set the subject name.
-        X509_NAME *sname = X509_get_subject_name(cert);
-        X509_NAME_add_entry_by_txt(sname, "C", MBSTRING_ASC, (const unsigned char *)"US", -1, -1, 0);
-        X509_NAME_add_entry_by_txt(sname, "O", MBSTRING_ASC, (const unsigned char *)"Test", -1, -1, 0);
-        X509_NAME_add_entry_by_txt(sname, "CN", MBSTRING_ASC, (const unsigned char *)"Test", -1, -1, 0);
-        ASSERT_NE(0, X509_set_issuer_name(cert, sname));
-
-        // Make this a CA cert.
-        add_ca_extensions(cert);
-
-        // Sign the cert with the private key.
-        int sigsize = X509_sign(cert, pkey, EVP_sha256());
-        ASSERT_GT(sigsize, 0);
-
-        // Verify the cert.
-        ASSERT_EQ(1, X509_verify(cert, pkey));
-
-        // Now, create another random RSA key and a certificate, and sign it with our cert.
-
-        // Set up RSA key.
-        EVP_PKEY_CTX *pctx = nullptr;
-        pctx = EVP_PKEY_CTX_new_from_name(mpss_libctx, "RSA", nullptr);
-        ASSERT_NE(nullptr, pctx);
-        ASSERT_EQ(1, EVP_PKEY_keygen_init(pctx));
-        ASSERT_EQ(1, EVP_PKEY_CTX_set_rsa_keygen_bits(pctx, 3072));
-        EVP_PKEY *rsa_pkey = nullptr;
-        ASSERT_EQ(1, EVP_PKEY_keygen(pctx, &rsa_pkey));
-        EVP_PKEY_CTX_free(pctx);
-
-        // Create the sub cert.
-        X509 *sub_cert = nullptr;
-        sub_cert = X509_new_ex(mpss_libctx, "provider=mpss");
-        X509_set_version(sub_cert, 2);
-        ASN1_INTEGER_set(X509_get_serialNumber(sub_cert), 1);
-        X509_gmtime_adj(X509_get_notBefore(sub_cert), 0);
-        X509_gmtime_adj(X509_get_notAfter(sub_cert), 31536000L);
-        ASSERT_NE(0, X509_set_pubkey(sub_cert, rsa_pkey));
-        X509_NAME *sname2 = X509_get_subject_name(sub_cert);
-        X509_NAME_add_entry_by_txt(sname2, "C", MBSTRING_ASC, (const unsigned char *)"US", -1, -1, 0);
-        X509_NAME_add_entry_by_txt(sname2, "O", MBSTRING_ASC, (const unsigned char *)"Test RSA", -1, -1, 0);
-        X509_NAME_add_entry_by_txt(sname2, "CN", MBSTRING_ASC, (const unsigned char *)"Test RSA", -1, -1, 0);
-        ASSERT_NE(0, X509_set_issuer_name(sub_cert, sname));
-
-        // Sign with our cert.
-        ASSERT_GT(X509_sign(sub_cert, pkey, EVP_sha256()), 0);
-
-        // Verify that the cert is valid.
-        ASSERT_EQ(1, X509_verify(sub_cert, pkey));
-
-        // Clean up.
-        X509_free(cert);
-        X509_free(sub_cert);
-        EVP_PKEY_free(pkey);
-        OSSL_ENCODER_CTX_free(ectx);
-        EVP_PKEY_CTX_free(ctx);
-
-        // Unload the provider.
-        ASSERT_NE(0, OSSL_PROVIDER_unload(mpss_prov));
-
-        // Unload the default provider.
-        ASSERT_NE(0, OSSL_PROVIDER_unload(default_prov));
-
-        // Unload the library context.
-        OSSL_LIB_CTX_free(mpss_libctx);
-    }
+    // -----------------------------------------------------------------------------
+    // Parameterized fixture for CertificateChainSerialization
+    class CertificateChainSerializationTest : public ::testing::TestWithParam<const char*> {};
 
     // -----------------------------------------------------------------------------
     // This test exercises a complete “generate → sign → serialize → reload → verify”
@@ -338,24 +179,18 @@ namespace mpss_openssl::tests {
     // cryptographic validity.
     // -----------------------------------------------------------------------------
 
-    TEST(MPSS_OPENSSL, CertificateChainSerialization)
+    TEST_P(CertificateChainSerializationTest, CertificateChainSerialization)
     {
-        // -------------------------------------------------------------------------
-        // 0.  Make sure we start with a clean slate in the mpss provider’s storage
-        //     (the provider may persist keys under a human‑readable name).
-        // -------------------------------------------------------------------------
-        const char *ca_key_name = "test_ca_key";
+        const char* mpss_algorithm = GetParam();
+        std::string ca_key_name = std::string("test_ca_key_") + mpss_algorithm;
 
-        if (mpss_is_valid_key(ca_key_name)) {        // If a key with that
-            bool ret = mpss_delete_key(ca_key_name); // name already exists,
-            ASSERT_EQ(1, ret);                       // delete it.
+        if (mpss_is_valid_key(ca_key_name.c_str())) {
+            bool ret = mpss_delete_key(ca_key_name.c_str());
+            ASSERT_EQ(1, ret);
         }
 
-        // -------------------------------------------------------------------------
-        // 1.  Create an explicit OpenSSL library context and load providers.
-        // -------------------------------------------------------------------------
-        OSSL_LIB_CTX *mpss_libctx = OSSL_LIB_CTX_new(); // Independent “world”
-        ASSERT_NE(nullptr, mpss_libctx);                // for this test.
+        OSSL_LIB_CTX *mpss_libctx = OSSL_LIB_CTX_new();
+        ASSERT_NE(nullptr, mpss_libctx);
 
         // Built‑in algorithms (ASN.1 encoder/decoder, RSA, etc.)
         OSSL_PROVIDER *default_prov = OSSL_PROVIDER_load(mpss_libctx, "default");
@@ -380,8 +215,8 @@ namespace mpss_openssl::tests {
         // Pass provider‑specific parameters: give the key a persistent name and
         // tell the provider what concrete algorithm suite we want.
         OSSL_PARAM ca_params[] = {
-            OSSL_PARAM_construct_utf8_string("key_name", const_cast<char *>(ca_key_name), 0),
-            OSSL_PARAM_construct_utf8_string("mpss_algorithm", const_cast<char *>("ecdsa_secp256r1_sha256"), 0),
+            OSSL_PARAM_construct_utf8_string("key_name", const_cast<char *>(ca_key_name.c_str()), 0),
+            OSSL_PARAM_construct_utf8_string("mpss_algorithm", const_cast<char *>(mpss_algorithm), 0),
             OSSL_PARAM_END};
         ASSERT_EQ(1, EVP_PKEY_CTX_set_params(ca_ctx, ca_params));
 
@@ -414,7 +249,10 @@ namespace mpss_openssl::tests {
         add_ca_extensions(ca_cert);
 
         // Sign with the CA key (provider chooses ECDSA+SHA‑256).
-        ASSERT_GT(X509_sign(ca_cert, ca_pkey, EVP_sha256()), 0);
+        // Use internal API here to get the correct hash function for this test.
+        std::string_view hash_name = mpss_openssl::utils::get_canonical_hash_name(mpss_algorithm);
+        const EVP_MD *hash_func = EVP_get_digestbyname(hash_name.data());
+        ASSERT_GT(X509_sign(ca_cert, ca_pkey, hash_func), 0);
 
         // -------------------------------------------------------------------------
         // 4.  Generate an RSA‑3072 key (default provider) for the end‑entity.
@@ -450,7 +288,7 @@ namespace mpss_openssl::tests {
         ASSERT_NE(0, X509_set_issuer_name(end_cert, ca_name));
 
         // Sign with CA key.
-        ASSERT_GT(X509_sign(end_cert, ca_pkey, EVP_sha256()), 0);
+        ASSERT_GT(X509_sign(end_cert, ca_pkey, hash_func), 0);
 
         // -------------------------------------------------------------------------
         // 6.  Quick in‑memory verification before we serialize anything.
@@ -530,4 +368,108 @@ namespace mpss_openssl::tests {
         // Destroy the library context.
         OSSL_LIB_CTX_free(mpss_libctx);
     }
+
+    INSTANTIATE_TEST_SUITE_P(
+        MPSSCertChain,
+        CertificateChainSerializationTest,
+        ::testing::Values(
+            "ecdsa_secp256r1_sha256",
+            "ecdsa_secp384r1_sha384",
+            "ecdsa_secp521r1_sha512"
+        )
+    );
+
+    TEST(MPSS_OPENSSL, GetKeyDescriptors)
+    {
+        const char *key_name = "test_key_params";
+        if (mpss_is_valid_key(key_name)) {
+            bool ret = mpss_delete_key(key_name);
+            ASSERT_EQ(1, ret);
+        }
+
+        OSSL_LIB_CTX *mpss_libctx = OSSL_LIB_CTX_new();
+        ASSERT_NE(nullptr, mpss_libctx);
+        ASSERT_NE(0, OSSL_PROVIDER_add_builtin(mpss_libctx, "mpss", OSSL_provider_init));
+        OSSL_PROVIDER *mpss_prov = OSSL_PROVIDER_load(mpss_libctx, "mpss");
+        ASSERT_NE(nullptr, mpss_prov);
+
+        EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_from_name(mpss_libctx, "EC", "provider=mpss");
+        ASSERT_NE(nullptr, ctx);
+        ASSERT_EQ(1, EVP_PKEY_keygen_init(ctx));
+        OSSL_PARAM params[] = {
+            OSSL_PARAM_construct_utf8_string("key_name", const_cast<char *>(key_name), 0),
+
+            // There is a lot of flexibility in the algorithm name we pass here. For example,
+            // this works just fine.
+            OSSL_PARAM_construct_utf8_string("mpss_algorithm", const_cast<char *>("ecdsa with p256 and sha256"), 0),
+            OSSL_PARAM_END};
+        ASSERT_EQ(1, EVP_PKEY_CTX_set_params(ctx, params));
+        EVP_PKEY *pkey = nullptr;
+        ASSERT_EQ(1, EVP_PKEY_generate(ctx, &pkey));
+        EVP_PKEY_CTX_free(ctx);
+
+        // Query gettable parameters
+        OSSL_PARAM get_params[4];
+        int is_hw = -1;
+        char storage_desc[256] = {0};
+        get_params[0] = OSSL_PARAM_construct_int("is_hardware_backed", &is_hw);
+        get_params[1] = OSSL_PARAM_construct_utf8_string("storage_description", storage_desc, sizeof(storage_desc));
+        get_params[2] = OSSL_PARAM_END;
+
+        ASSERT_EQ(1, EVP_PKEY_get_params(pkey, get_params));
+        // is_hardware_backed should be 0 or 1
+        ASSERT_TRUE(is_hw == 0 || is_hw == 1);
+        // storage_description should not be empty
+        ASSERT_GT(strlen(storage_desc), 0);
+
+        EVP_PKEY_free(pkey);
+        ASSERT_NE(0, OSSL_PROVIDER_unload(mpss_prov));
+        OSSL_LIB_CTX_free(mpss_libctx);
+    }
+
+    class CreateAndDeleteKeyTest : public ::testing::TestWithParam<const char*> {};
+
+    TEST_P(CreateAndDeleteKeyTest, CreateAndDeleteKey)
+    {
+        const char *mpss_algorithm = GetParam();
+        const char *key_name = "test_create_delete_key";
+        if (mpss_is_valid_key(key_name)) {
+            bool ret = mpss_delete_key(key_name);
+            ASSERT_EQ(1, ret);
+        }
+
+        OSSL_LIB_CTX *mpss_libctx = OSSL_LIB_CTX_new();
+        ASSERT_NE(nullptr, mpss_libctx);
+        ASSERT_NE(0, OSSL_PROVIDER_add_builtin(mpss_libctx, "mpss", OSSL_provider_init));
+        OSSL_PROVIDER *mpss_prov = OSSL_PROVIDER_load(mpss_libctx, "mpss");
+        ASSERT_NE(nullptr, mpss_prov);
+
+        EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_from_name(mpss_libctx, "EC", "provider=mpss");
+        ASSERT_NE(nullptr, ctx);
+        ASSERT_EQ(1, EVP_PKEY_keygen_init(ctx));
+        OSSL_PARAM params[] = {
+            OSSL_PARAM_construct_utf8_string("key_name", const_cast<char *>(key_name), 0),
+            OSSL_PARAM_construct_utf8_string("mpss_algorithm", const_cast<char *>(mpss_algorithm), 0),
+            OSSL_PARAM_END};
+        ASSERT_EQ(1, EVP_PKEY_CTX_set_params(ctx, params));
+        EVP_PKEY *pkey = nullptr;
+        ASSERT_EQ(1, EVP_PKEY_generate(ctx, &pkey));
+        EVP_PKEY_CTX_free(ctx);
+        EVP_PKEY_free(pkey);
+
+        // Now delete the key using the API.
+        ASSERT_EQ(1, mpss_delete_key(key_name));
+        ASSERT_NE(0, OSSL_PROVIDER_unload(mpss_prov));
+        OSSL_LIB_CTX_free(mpss_libctx);
+    }
+
+    INSTANTIATE_TEST_SUITE_P(
+        MPSSCreateDelete,
+        CreateAndDeleteKeyTest,
+        ::testing::Values(
+            "ECDSA with P256 and SHA2-256",
+            "ECDSA with P384 and SHA2-384",
+            "ECDSA with P521 and SHA2-512"
+        )
+    );
 } // namespace mpss_openssl::tests
