@@ -23,9 +23,9 @@ namespace mpss::utils {
     // Create a random string of characters.
     std::string random_string(std::size_t length);
 
-    // Get maximum signature length for a given algorithm.
+    // Get maximum signature size for a given algorithm.
     // We assume that the signature is ASN.1 DER encoded.
-    std::size_t get_max_signature_length(Algorithm algorithm);
+    std::size_t get_max_signature_size(Algorithm algorithm);
 
     // Get public key size for a given algorithm.
     // We assume that the public key is ANSI X9.63 encoded.
@@ -49,5 +49,5 @@ namespace mpss::utils {
     }
 
     // Check the length of the hash buffer
-    bool check_hash_length(gsl::span<const std::byte> hash, Algorithm algorithm) noexcept;
+    bool check_hash_size(gsl::span<const std::byte> hash, Algorithm algorithm) noexcept;
 } // namespace mpss::utils

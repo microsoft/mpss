@@ -41,43 +41,38 @@ namespace mpss::impl {
             return 0;
         }
 
-        // Check hash length
-        if (!mpss::utils::check_hash_length(hash, algorithm())) {
-            mpss::utils::set_error("Invalid hash length for algorithm");
+        // Check hash size.
+        std::size_t hash_bytes = info_.hash_bits / 8;
+        if (!mpss::utils::check_hash_size(hash, algorithm_)) {
+            std::stringstream ss;
+            ss << "Invalid hash size " << hash.size() << " (expected " << hash_bytes << " bytes).";
+            mpss::utils::set_error(ss.str());
+            return 0;
+        }
+
+        DWORD hash_bytes_dw = mpss::utils::narrow_or_error<DWORD>(hash_bytes);
+        if (!hash_bytes_dw) {
             return 0;
         }
 
         if (sig.empty()) {
             // If the signature buffer is empty, we want to return the size of the signature.
-            return mpss::utils::get_max_signature_length(algorithm());
+            return mpss::utils::get_max_signature_size(algorithm_);
         }
 
-        crypto_params const *const crypto = utils::get_crypto_params(algorithm());
+        crypto_params const *const crypto = utils::get_crypto_params(algorithm_);
         if (!crypto) {
             mpss::utils::set_error("Unsupported algorithm.");
             return 0;
         }
 
-        if (hash.size() != info_.hash_bits / 8) {
-            std::stringstream ss;
-            ss << "Invalid hash length " << hash.size() << " (expected " << info_.hash_bits << " bits)";
-            mpss::utils::set_error(ss.str());
-            return 0;
-        }
-
-        // Cast the hash size.
-        DWORD hash_size = mpss::utils::narrow_or_error<DWORD>(hash.size());
-        if (!hash_size) {
-            return 0;
-        }
-
-        // Get the size of the signature.
+        // Get the size of the raw signature.
         DWORD sig_size_dw = 0;
         SECURITY_STATUS status = ::NCryptSignHash(
             key_handle_,
             /* pPaddingInfo */ nullptr,
             reinterpret_cast<PBYTE>(const_cast<std::byte *>(hash.data())),
-            hash_size,
+            hash_bytes_dw,
             /* pbSignature */ nullptr,
             /* cbSignature */ 0,
             &sig_size_dw,
@@ -89,42 +84,35 @@ namespace mpss::impl {
             return 0;
         }
 
-        // Check that the signature size is exactly what we expect.
-        AlgorithmInfo info = get_algorithm_info(algorithm());
-        std::size_t field_size = ((info.key_bits + 7) / 8);
-        if (sig_size_dw != 2 * field_size) {
-            std::stringstream ss;
-            ss << "NCryptSignHash returned unexpected signature size " << sig_size_dw
-               << ". Expected " << 2 * field_size << ".";
-            mpss::utils::set_error(ss.str());
-            return 0;
-        }
-
-        // Get the buffer for the signature
+        // Get the buffer for the signature.
         std::unique_ptr<BYTE[]> signature_buffer = std::make_unique<BYTE[]>(sig_size_dw);
         if (!signature_buffer) {
             mpss::utils::set_error("Failed to allocate signature buffer.");
             return 0;
         }
-        SCOPE_GUARD({
-            // Zero out the signature buffer.
-            ::SecureZeroMemory(signature_buffer.get(), sig_size_dw);
-        });
 
         // Get the actual signature.
-        DWORD signed_size = 0;
         status = ::NCryptSignHash(
             key_handle_,
             /* pPaddingInfo */ nullptr,
             reinterpret_cast<PBYTE>(const_cast<std::byte *>(hash.data())),
-            hash_size,
+            hash_bytes_dw,
             signature_buffer.get(),
             sig_size_dw,
-            &signed_size,
+            &sig_size_dw,
             /* dwFlags */ 0);
         if (ERROR_SUCCESS != status) {
             std::stringstream ss;
             ss << "NCryptSignHash failed with error code " << mpss::utils::to_hex(status);
+            mpss::utils::set_error(ss.str());
+            return 0;
+        }
+
+        // Check that the raw signature has a valid size.
+        std::size_t key_bytes = (info_.key_bits + 7) / 8;
+        if (sig_size_dw != 2 * key_bytes) {
+            std::stringstream ss;
+            ss << "Invalid raw signature size " << sig_size_dw << " (expected " << 2 * key_bytes << " bytes).";
             mpss::utils::set_error(ss.str());
             return 0;
         }
@@ -135,27 +123,23 @@ namespace mpss::impl {
             mpss::utils::set_error("Failed to allocate reversed signature buffer.");
             return 0;
         }
-        SCOPE_GUARD({
-            // Zero out the reversed signature buffer.
-            ::SecureZeroMemory(reversed_signature_buffer.get(), sig_size_dw);
-        });
 
         // Reverse the signature bytes.
         gsl::span<BYTE> reversed_signature_span(reversed_signature_buffer.get(), sig_size_dw);
         std::copy(
-            signature_buffer.get(), signature_buffer.get() + field_size, reversed_signature_span.rbegin() + field_size);
+            signature_buffer.get(), signature_buffer.get() + key_bytes, reversed_signature_span.rbegin() + key_bytes);
         std::copy(
-            signature_buffer.get() + field_size, signature_buffer.get() + sig_size_dw, reversed_signature_span.rbegin());
+            signature_buffer.get() + key_bytes, signature_buffer.get() + sig_size_dw, reversed_signature_span.rbegin());
 
         CERT_ECC_SIGNATURE eccSig{};
-        eccSig.r.cbData = field_size;
+        eccSig.r.cbData = key_bytes;
         eccSig.r.pbData = reversed_signature_buffer.get();
-        eccSig.s.cbData = field_size;
-        eccSig.s.pbData = (reversed_signature_buffer.get() + field_size);
+        eccSig.s.cbData = key_bytes;
+        eccSig.s.pbData = (reversed_signature_buffer.get() + key_bytes);
 
         DWORD encoded_size = 0;
 
-        // Get the size of the encoding
+        // Get the size of the encoding.
         if (!::CryptEncodeObjectEx(
                 X509_ASN_ENCODING,
                 X509_ECC_SIGNATURE,
@@ -178,8 +162,8 @@ namespace mpss::impl {
         // If the signature buffer is too small, return 0.
         if (sig.size() < encoded_size_sz) {
             std::stringstream ss;
-            ss << "Signature buffer is too small. Expected " << encoded_size_sz << " bytes, got " << sig.size()
-               << " bytes.";
+            ss << "Signature buffer is too small. Expected " << encoded_size_sz << " bytes (got " << sig.size()
+               << " bytes).";
             mpss::utils::set_error(ss.str());
             return 0;
         }
@@ -211,14 +195,22 @@ namespace mpss::impl {
             return false;
         }
 
-        // Check hash length
-        if (!mpss::utils::check_hash_length(hash, algorithm())) {
-            mpss::utils::set_error("Invalid hash length for algorithm");
+        // Check hash size.
+        std::size_t hash_bytes = info_.hash_bits / 8;
+        if (!mpss::utils::check_hash_size(hash, algorithm_)) {
+            std::stringstream ss;
+            ss << "Invalid hash size " << hash.size() << " (expected " << hash_bytes << " bytes).";
+            mpss::utils::set_error(ss.str());
+            return 0;
+        }
+
+        DWORD hash_bytes_dw = mpss::utils::narrow_or_error<DWORD>(hash_bytes);
+        if (!hash_bytes_dw) {
             return false;
         }
 
-        // Decode signature
-        std::size_t raw_sig_size = mpss::impl::utils::decode_raw_signature(sig, algorithm(), {});
+        // Decode the signature.
+        std::size_t raw_sig_size = mpss::impl::utils::decode_raw_signature(sig, algorithm_, {});
         if (0 == raw_sig_size) {
             std::stringstream ss;
             ss << "Failed to get raw signature size: " << mpss::utils::get_error();
@@ -226,29 +218,18 @@ namespace mpss::impl {
             return false;
         }
 
-        std::vector<std::byte> raw_sig(raw_sig_size);
-        SCOPE_GUARD({
-            // Zero out the signature buffer.
-            ::SecureZeroMemory(raw_sig.data(), raw_sig.size());
-        });
+        std::unique_ptr<std::byte[]> raw_sig = std::make_unique<std::byte[]>(raw_sig_size);
+        if (!raw_sig) {
+            mpss::utils::set_error("Failed to allocate raw signature buffer.");
+            return false;
+        }
 
-        std::size_t written = mpss::impl::utils::decode_raw_signature(sig, algorithm(), raw_sig);
-        if (written == 0) {
+        gsl::span<std::byte> raw_sig_span(raw_sig.get(), raw_sig_size);
+        raw_sig_size = mpss::impl::utils::decode_raw_signature(sig, algorithm_, raw_sig_span);
+        if (raw_sig_size == 0) {
             std::stringstream ss;
             ss << "Failed to decode signature: " << mpss::utils::get_error();
             mpss::utils::set_error(ss.str());
-            return false;
-        }
-
-        if (hash.size() != info_.hash_bits / 8) {
-            std::stringstream ss;
-            ss << "Invalid hash length " << hash.size() << " (expected " << info_.hash_bits << " bits)";
-            mpss::utils::set_error(ss.str());
-            return false;
-        }
-
-        DWORD hash_size = mpss::utils::narrow_or_error<DWORD>(hash.size());
-        if (!hash_size) {
             return false;
         }
 
@@ -256,8 +237,8 @@ namespace mpss::impl {
             key_handle_,
             /* pPaddingInfo */ nullptr,
             reinterpret_cast<PBYTE>(const_cast<std::byte *>(hash.data())),
-            hash_size,
-            reinterpret_cast<PBYTE>(raw_sig.data()),
+            hash_bytes_dw,
+            reinterpret_cast<PBYTE>(raw_sig_span.data()),
             raw_sig_size,
             /* dwFlags */ 0);
         if (ERROR_SUCCESS != status) {
@@ -274,10 +255,10 @@ namespace mpss::impl {
     {
         // If the public key buffer is empty, return the size of the key.
         if (public_key.empty()) {
-            return mpss::utils::get_public_key_size(algorithm());
+            return mpss::utils::get_public_key_size(algorithm_);
         }
 
-        crypto_params const *const crypto = utils::get_crypto_params(algorithm());
+        crypto_params const *const crypto = utils::get_crypto_params(algorithm_);
 
         // Get the public key size.
         DWORD pk_blob_size = 0;
@@ -311,11 +292,6 @@ namespace mpss::impl {
 
         // Actually get the key.
         auto pk_blob = std::make_unique<BYTE[]>(pk_blob_size);
-        SCOPE_GUARD({
-            // Securely clear the blob, just to be nice, neat, and tidy.
-            ::SecureZeroMemory(pk_blob.get(), pk_blob_size);
-        });
-
         status = ::NCryptExportKey(
             key_handle_,
             /* hExportKey */ 0,

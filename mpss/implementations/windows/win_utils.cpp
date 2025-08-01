@@ -37,18 +37,16 @@ namespace mpss::impl::utils {
             mpss::utils::set_error("Nothing to decode.");
             return 0;
         }
-        // Get the algorithm info.
-        AlgorithmInfo info = get_algorithm_info(algorithm);
-        std::size_t field_size = ((info.key_bits + 7) / 8);
-        std::size_t raw_sig_size = field_size * 2;
 
-        // If raw_sig is empty we only want to know the required size
+        // If raw_sig is empty we only want to know the required size.
+        AlgorithmInfo info = get_algorithm_info(algorithm);
+        std::size_t key_bytes = (info.key_bits + 7) / 8;
+        std::size_t raw_sig_size = 2 * key_bytes;
         if (raw_sig.empty()) {
-            // Raw signature is two coordinates
             return raw_sig_size;
         }
 
-        // Decode signature
+        // Decode signature.
         DWORD encoded_size = mpss::utils::narrow_or_error<DWORD>(der_sig.size());
         if (encoded_size == 0) {
             return 0;
@@ -76,10 +74,6 @@ namespace mpss::impl::utils {
             mpss::utils::set_error("Failed to allocate signature buffer.");
             return false;
         }
-        SCOPE_GUARD({
-            // Zero out the signature buffer.
-            ::SecureZeroMemory(ecc_sig_buffer.get(), ecc_sig_buffer_size);
-        });
 
         // Decode the signature
         if (!::CryptDecodeObjectEx(
@@ -99,19 +93,35 @@ namespace mpss::impl::utils {
 
         CERT_ECC_SIGNATURE *ecc_sig = reinterpret_cast<CERT_ECC_SIGNATURE *>(ecc_sig_buffer.get());
 
-        if (raw_sig.size() < raw_sig_size) {
+        // Check that the raw signature has the right size.
+        if (ecc_sig->r.cbData > key_bytes || ecc_sig->s.cbData > key_bytes) {
             std::stringstream ss;
-            ss << "Raw signature buffer is too small. Expected " << raw_sig_size << " bytes, got " << raw_sig.size()
-               << " bytes.";
+            ss << "Invalid signature size: r=" << ecc_sig->r.cbData << " bytes, s=" << ecc_sig->s.cbData
+               << " bytes (expected <= " << key_bytes << " bytes each).";
             mpss::utils::set_error(ss.str());
             return 0;
         }
 
+        // Check that we have enough space in raw_sig buffer.
+        std::size_t raw_sig_buf_size = raw_sig.size();
+        if (raw_sig_buf_size < raw_sig_size) {
+            std::stringstream ss;
+            ss << "Raw signature buffer is too small. Expected " << raw_sig_size << " bytes (got " << raw_sig_buf_size
+               << " bytes).";
+            mpss::utils::set_error(ss.str());
+            return 0;
+        }
+
+        // Set raw_sig to zeros.
+        std::fill_n(raw_sig.begin(), raw_sig_size, std::byte{});
+
         // Copy the raw signature data to the output buffer. Reverse the byte order.
-        std::transform(ecc_sig->r.pbData, ecc_sig->r.pbData + ecc_sig->r.cbData, raw_sig.rend() - field_size, [](auto in) {
-            return static_cast<std::byte>(in);
-        });
-        std::transform(ecc_sig->s.pbData, ecc_sig->s.pbData + ecc_sig->s.cbData, raw_sig.rend() - raw_sig_size, [](auto in) {
+        std::transform(
+            ecc_sig->r.pbData, ecc_sig->r.pbData + ecc_sig->r.cbData, raw_sig.rend() - key_bytes, [](auto in) {
+                return static_cast<std::byte>(in);
+            });
+        std::transform(
+            ecc_sig->s.pbData, ecc_sig->s.pbData + ecc_sig->s.cbData, raw_sig.rend() - raw_sig_size, [](auto in) {
                 return static_cast<std::byte>(in);
             });
 

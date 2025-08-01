@@ -248,7 +248,7 @@ namespace {
         return static_cast<std::size_t>(dwKeyLength);
     }
 
-    mpss::Algorithm GetAlgorithmFromKeyBits(std::size_t key_bits)
+    mpss::Algorithm GuessAlgorithmFromKeyBits(std::size_t key_bits)
     {
         switch (key_bits) {
         case 256:
@@ -312,17 +312,17 @@ namespace mpss::impl {
         }
 
         SCOPE_GUARD({
-            // Release if algorithm is not set, which means there was an error opening the key
+            // Release if algorithm is not set, which means there was an error opening the key.
             if (algorithm == Algorithm::unsupported) {
                 ::NCryptFreeObject(key_handle);
             }
         });
 
-        // Get the algorithm name to deduce SignatureAlgorithm
+        // Get the algorithm name to deduce SignatureAlgorithm.
         algorithm = GetAlgorithmFromName(key_handle);
         if (algorithm == Algorithm::unsupported) {
-            // Try directly with the key size
-            algorithm = GetAlgorithmFromKeyBits(GetKeyLength(key_handle));
+            // Try directly with the key size.
+            algorithm = GuessAlgorithmFromKeyBits(GetKeyLength(key_handle));
             if (algorithm == Algorithm::unsupported) {
                 return nullptr;
             }
@@ -343,8 +343,8 @@ namespace mpss::impl {
             return false;
         }
 
-        // Check hash length
-        if (!mpss::utils::check_hash_length(hash, algorithm)) {
+        // Check hash size.
+        if (!mpss::utils::check_hash_size(hash, algorithm)) {
             mpss::utils::set_error("Invalid hash length for algorithm");
             return false;
         }
@@ -358,34 +358,29 @@ namespace mpss::impl {
         // Get the algorithm info.
         AlgorithmInfo info = get_algorithm_info(algorithm);
 
-        // Get crypto parameters
+        // Get crypto parameters.
         crypto_params const *const crypto = utils::get_crypto_params(algorithm);
         if (!crypto) {
             mpss::utils::set_error("Unsupported algorithm.");
             return false;
         }
 
-        // Build the key blob
+        // Build the key blob.
         DWORD pk_blob_size = sizeof(crypto_params::key_blob_t) + public_key.size() - 1;
         std::unique_ptr<BYTE[]> key_blob_buffer = std::make_unique<BYTE[]>(pk_blob_size);
         if (!key_blob_buffer) {
             mpss::utils::set_error("Failed to allocate key blob buffer.");
             return false;
         }
-        SCOPE_GUARD({
-            // Zero out the key blob buffer.
-            ::SecureZeroMemory(key_blob_buffer.get(), pk_blob_size);
-        });
 
         crypto_params::key_blob_t *key_blob = reinterpret_cast<crypto_params::key_blob_t *>(key_blob_buffer.get());
         key_blob->dwMagic = crypto->public_key_magic();
-        // Field size, apparently
         key_blob->cbKey = mpss::utils::narrow_or_error<ULONG>((info.key_bits + 7) / 8);
         if (!key_blob->cbKey) {
             return false;
         }
 
-        // Copy public key data to the blob
+        // Copy public key data to the blob.
         std::transform(
             public_key.begin() + 1,
             public_key.end(),
@@ -398,7 +393,7 @@ namespace mpss::impl {
         }
         SCOPE_GUARD(::NCryptFreeObject(provider));
 
-        // Import the public key
+        // Import the public key.
         NCRYPT_KEY_HANDLE key_handle = 0;
         SECURITY_STATUS status = ::NCryptImportKey(
             provider,
@@ -421,7 +416,7 @@ namespace mpss::impl {
         }
         SCOPE_GUARD(::NCryptFreeObject(key_handle));
 
-        // Extract raw signature
+        // Extract the raw signature.
         std::size_t raw_sig_size = mpss::impl::utils::decode_raw_signature(sig, algorithm, {});
         if (raw_sig_size == 0) {
             std::stringstream ss;
@@ -430,12 +425,9 @@ namespace mpss::impl {
             return false;
         }
 
-        std::vector<std::byte> raw_sig(raw_sig_size);
-        SCOPE_GUARD({
-            // Zero out the signature buffer.
-            ::SecureZeroMemory(raw_sig.data(), raw_sig.size());
-        });
-        std::size_t written = mpss::impl::utils::decode_raw_signature(sig, algorithm, raw_sig);
+        std::unique_ptr<std::byte[]> raw_sig = std::make_unique<std::byte[]>(raw_sig_size);
+        gsl::span<std::byte> raw_sig_span(raw_sig.get(), raw_sig_size);
+        raw_sig_size = mpss::impl::utils::decode_raw_signature(sig, algorithm, raw_sig_span);
 
         DWORD hash_size = mpss::utils::narrow_or_error<DWORD>(hash.size());
         if (!hash_size) {
@@ -447,8 +439,8 @@ namespace mpss::impl {
             /* pPaddingInfo */ nullptr,
             reinterpret_cast<PBYTE>(const_cast<std::byte *>(hash.data())),
             hash_size,
-            reinterpret_cast<PBYTE>(raw_sig.data()),
-            raw_sig.size(),
+            reinterpret_cast<PBYTE>(raw_sig.get()),
+            raw_sig_size,
             /* dwFlags */ 0);
         if (ERROR_SUCCESS != status) {
             std::stringstream ss;

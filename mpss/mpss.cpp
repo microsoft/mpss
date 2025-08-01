@@ -76,7 +76,7 @@ namespace mpss {
 
     std::size_t KeyPair::sign_hash_size() const
     {
-        return utils::get_max_signature_length(algorithm());
+        return utils::get_max_signature_size(algorithm());
     }
 
     std::size_t KeyPair::extract_key_size() const
