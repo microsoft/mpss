@@ -47,7 +47,7 @@ namespace mpss {
 
             // If the signature buffer is empty, return the max size of the signature
             if (sig.empty()) {
-                return mpss::utils::get_max_signature_length(algorithm());
+                return mpss::utils::get_max_signature_size(algorithm());
             }
 
             return do_sign_hash(hash, sig);
