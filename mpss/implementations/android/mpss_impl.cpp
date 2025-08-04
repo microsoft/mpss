@@ -288,7 +288,7 @@ namespace mpss::impl {
     {
         JNIEnvGuard guard;
 
-        if (!mpss::utils::check_hash_length(hash, algorithm)) {
+        if (!mpss::utils::check_hash_size(hash, algorithm)) {
             mpss::utils::set_error("Invalid hash length for the specified algorithm");
             return false;
         }
