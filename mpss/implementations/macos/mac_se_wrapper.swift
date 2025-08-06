@@ -16,6 +16,24 @@ nonisolated(unsafe) private let _keyStore = NSMutableDictionary()
 let KeyChainAccountName = "P256Key"
 let ErrorKey = "com.microsoft.mpss.ErrorKey";
 
+extension Digest {
+    static func fromData(_ hash: Data) -> Self? {
+        if hash.count != Self.byteCount {
+            // Invalid hash size
+            setError("Invalid hash size: \(hash.count), expected: \(Self.byteCount)")
+            return nil
+        }
+
+        let data = UnsafeMutableRawBufferPointer.allocate(byteCount: hash.count, alignment: 8)
+        defer {
+            data.deallocate()
+        }
+        // Copy the bytes from the hash into the data buffer
+        data.copyBytes(from: hash)
+        return data.bindMemory(to: Self.self)[0]
+    }
+}
+
 /// Get the current last error
 /// - Returns: The current last error
 private func getError() -> String {
@@ -325,7 +343,12 @@ func sign(_ keyName: UnsafePointer<CChar>, hash: UnsafePointer<UInt8>, hashLengt
     let keyNameString = String(cString: keyName)
     let hashData = Data(bytes: hash, count: Int(hashLength))
     
-    guard let signature = sign(keyName: keyNameString, hash: hashData) else {
+    guard let hashDigest = SHA256Digest.fromData(hashData) else {
+        setError("Invalid hash size: \(hashData.count), expected: \(SHA256Digest.byteCount)")
+        return false
+    }
+    
+    guard let signature = sign(keyName: keyNameString, hash: hashDigest) else {
         return false
     }
 
@@ -346,7 +369,7 @@ func sign(_ keyName: UnsafePointer<CChar>, hash: UnsafePointer<UInt8>, hashLengt
 ///     - keyName: Name that identifies the private key to use
 ///     - hash: The hash to sign
 /// - Returns: Data that contains the signature, or nil if failed to sign
-private func sign(keyName: String, hash: Data) -> Data? {
+private func sign(keyName: String, hash: any Digest) -> Data? {
     do {
         let fullKeyName = getKeyName(keyName)
         
