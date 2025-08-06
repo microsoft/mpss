@@ -402,8 +402,13 @@ func verifySignature(keyName: UnsafePointer<CChar>, hash: UnsafePointer<UInt8>, 
     let keyNameString = String(cString: keyName)
     let hashData = Data(bytes: hash, count: Int(hashLength))
     let signatureData = Data(bytes: signature, count: Int(signatureLength))
-    
-    return verifySignature(keyName: keyNameString, hash: hashData, signature: signatureData)
+
+    guard let hashDigest = SHA256Digest.fromData(hashData) else {
+        setError("Invalid hash size: \(hashData.count), expected: \(SHA256Digest.byteCount)")
+        return false
+    }
+
+    return verifySignature(keyName: keyNameString, hash: hashDigest, signature: signatureData)
 }
 
 /// Verify the given signature of the given hash using the given private key
@@ -412,7 +417,7 @@ func verifySignature(keyName: UnsafePointer<CChar>, hash: UnsafePointer<UInt8>, 
 ///     - hash: Hash to verify
 ///     - signature: Signature to verify
 /// - Returns: True if the signature was verified correctly, False otherwise
-private func verifySignature(keyName: String, hash: Data, signature: Data) -> Bool {
+private func verifySignature(keyName: String, hash: any Digest, signature: Data) -> Bool {
     do {
         let fullKeyName = getKeyName(keyName)
         guard let privateKey = getKey(fullKeyName) else {
@@ -443,8 +448,13 @@ func verifyStandaloneSignature(pk: UnsafePointer<UInt8>, pkLength: UInt, hash: U
     let pkData = Data(bytes: pk, count: Int(pkLength))
     let hashData = Data(bytes: hash, count: Int(hashLength))
     let signatureData = Data(bytes: signature, count: Int(signatureLength))
+
+    guard let hashDigest = SHA256Digest.fromData(hashData) else {
+        setError("Invalid hash size: \(hashData.count), expected: \(SHA256Digest.byteCount)")
+        return false
+    }
     
-    return verifyStandaloneSignature(pk: pkData, hash: hashData, signature: signatureData)
+    return verifyStandaloneSignature(pk: pkData, hash: hashDigest, signature: signatureData)
 }
 
 /// Verify the given signature of the given hash using the given public key
@@ -453,7 +463,7 @@ func verifyStandaloneSignature(pk: UnsafePointer<UInt8>, pkLength: UInt, hash: U
 ///     - hash: Data of the hash to verify
 ///     - signature: Data of the signature to verify
 /// - Returns: True if the signature was verified successfully, False otherwise
-private func verifyStandaloneSignature(pk: Data, hash: Data, signature: Data) -> Bool {
+private func verifyStandaloneSignature(pk: Data, hash: any Digest, signature: Data) -> Bool {
     do {
         // Recreate public key
         let publicKey = try P256.Signing.PublicKey.init(x963Representation: pk)
