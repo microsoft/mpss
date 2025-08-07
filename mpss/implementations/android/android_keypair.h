@@ -3,8 +3,8 @@
 
 #pragma once
 
-#include "mpss/implementations/mpss_impl.h"
 #include "mpss/implementations/android/JNIHelper.h"
+#include "mpss/implementations/mpss_impl.h"
 
 namespace mpss {
     namespace impl {

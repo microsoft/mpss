@@ -5,7 +5,6 @@
 #include "mpss/utils/scope_guard.h"
 #include "mpss/utils/utilities.h"
 #include "mpss/implementations/mpss_impl.h"
-#include <iostream>
 #include <stdexcept>
 
 namespace mpss {

@@ -8,7 +8,6 @@
 #include <openssl/params.h>
 #include <cstddef>
 #include <cstdint>
-#include <iostream>
 
 namespace mpss_openssl::provider {
     using namespace ::mpss_openssl::utils;
@@ -62,8 +61,7 @@ namespace mpss_openssl::provider {
 
     mpss_key::~mpss_key()
     {
-        key_pair.release();
-        key_pair = nullptr;
+        key_pair.reset();
     }
 
     [[nodiscard]] bool mpss_key::has_valid_key() const noexcept

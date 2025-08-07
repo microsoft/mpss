@@ -8,7 +8,6 @@
 #include "mpss-openssl/provider/signature.h"
 #include "mpss-openssl/utils/utils.h"
 #include <openssl/core_dispatch.h>
-#include <iostream>
 
 namespace {
     using namespace mpss_openssl::provider;

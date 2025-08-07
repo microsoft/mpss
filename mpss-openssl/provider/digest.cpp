@@ -8,7 +8,6 @@
 #include <gsl/narrow>
 #include <algorithm>
 #include <cstddef>
-#include <iostream>
 #include <string_view>
 #include <utility>
 
@@ -50,17 +49,17 @@ namespace mpss_openssl::provider {
 namespace {
     using namespace mpss_openssl::provider;
 
-#define MPSS_MAKE_DIGEST_NEWCTX(digest)                                              \
-    extern "C" void *mpss_digest_newctx_##digest(void *provctx)                      \
-    {                                                                                \
-        mpss_provider_ctx *pctx = static_cast<mpss_provider_ctx *>(provctx);         \
-        if (!pctx) {                                                                 \
-            return nullptr;                                                          \
-        }                                                                            \
-        mpss_digest_ctx *dctx = mpss_new<mpss_digest_ctx>();                         \
-        dctx->libctx = pctx->libctx;                                                 \
-        dctx->md_name = #digest;                                                     \
-        return dctx;                                                                 \
+#define MPSS_MAKE_DIGEST_NEWCTX(digest)                                      \
+    extern "C" void *mpss_digest_newctx_##digest(void *provctx)              \
+    {                                                                        \
+        mpss_provider_ctx *pctx = static_cast<mpss_provider_ctx *>(provctx); \
+        if (!pctx) {                                                         \
+            return nullptr;                                                  \
+        }                                                                    \
+        mpss_digest_ctx *dctx = mpss_new<mpss_digest_ctx>();                 \
+        dctx->libctx = pctx->libctx;                                         \
+        dctx->md_name = #digest;                                             \
+        return dctx;                                                         \
     }
 
     MPSS_MAKE_DIGEST_NEWCTX(SHA256)

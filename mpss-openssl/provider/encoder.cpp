@@ -10,7 +10,6 @@
 #include <openssl/evp.h>
 #include <openssl/params.h>
 #include <gsl/narrow>
-#include <iostream>
 
 namespace {
     using namespace ::mpss_openssl::provider;

@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 #include "mpss/implementations/android/JNIHelper.h"
-#include <mutex>
 
 extern "C" JNIEXPORT jint JNI_OnLoad(JavaVM *vm, void *reserved)
 {

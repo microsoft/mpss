@@ -2,8 +2,8 @@
 // Licensed under the MIT license.
 
 #include "mpss/utils/utilities.h"
-#include "mpss/implementations/android/android_keypair.h"
 #include "mpss/implementations/android/JNIObject.h"
+#include "mpss/implementations/android/android_keypair.h"
 #include "mpss/implementations/android/android_utils.h"
 
 namespace mpss::impl {

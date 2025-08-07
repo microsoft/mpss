@@ -16,7 +16,6 @@
 #include <iostream>
 #include <memory>
 #include <mpss/mpss.h>
-#include <string>
 
 namespace mpss_openssl::utils {
     using namespace mpss;

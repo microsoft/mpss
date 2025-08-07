@@ -2,11 +2,11 @@
 // Licensed under the MIT license.
 
 #include "mpss/utils/utilities.h"
-#include "mpss/implementations/mpss_impl.h"
 #include "mpss/implementations/android/JNIHelper.h"
 #include "mpss/implementations/android/JNIObject.h"
 #include "mpss/implementations/android/android_keypair.h"
 #include "mpss/implementations/android/android_utils.h"
+#include "mpss/implementations/mpss_impl.h"
 
 using jni_class = mpss::impl::utils::JNIObj<jclass>;
 using jni_string = mpss::impl::utils::JNIObj<jstring>;

@@ -3,7 +3,6 @@
 
 #include "mpss-openssl/api.h"
 #include "mpss-openssl/provider/keymgmt.h"
-#include <iostream>
 #include <memory>
 #include <mpss/mpss.h>
 #include <optional>
@@ -43,7 +42,8 @@ extern "C" bool mpss_is_valid_key(const char *key_name)
     return key.has_valid_key();
 }
 
-extern "C" MPSS_OPENSSL_DECOR const char* mpss_get_last_error() {
+extern "C" MPSS_OPENSSL_DECOR const char *mpss_get_last_error()
+{
     // Use thread-local storage to hold a copy of the last std::string.
     static thread_local std::string last_error_str;
 

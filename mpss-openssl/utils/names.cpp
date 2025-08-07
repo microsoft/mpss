@@ -250,7 +250,7 @@ namespace mpss_openssl::utils {
         return std::nullopt;
     }
 
-    [[nodiscard]] std::optional<std::string> try_get_algorithm_name(const std::unique_ptr<KeyPair>& key_pair)
+    [[nodiscard]] std::optional<std::string> try_get_algorithm_name(const std::unique_ptr<KeyPair> &key_pair)
     {
         // Fail if no key is present.
         if (!key_pair) {

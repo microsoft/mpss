@@ -13,8 +13,6 @@
 #include <openssl/x509v3.h>
 #include <algorithm>
 #include <filesystem>
-#include <fstream>
-#include <iostream>
 #include <random>
 
 namespace {
@@ -122,7 +120,6 @@ namespace {
 
 namespace mpss_openssl::tests {
 
-
     TEST_F(MPSSDigest, SHA256)
     {
         std::random_device rd;
@@ -158,7 +155,7 @@ namespace mpss_openssl::tests {
 
     // -----------------------------------------------------------------------------
     // Parameterized fixture for CertificateChainSerialization
-    class CertificateChainSerializationTest : public ::testing::TestWithParam<const char*> {};
+    class CertificateChainSerializationTest : public ::testing::TestWithParam<const char *> {};
 
     // -----------------------------------------------------------------------------
     // This test exercises a complete “generate → sign → serialize → reload → verify”
@@ -181,7 +178,7 @@ namespace mpss_openssl::tests {
 
     TEST_P(CertificateChainSerializationTest, CertificateChainSerialization)
     {
-        const char* mpss_algorithm = GetParam();
+        const char *mpss_algorithm = GetParam();
         std::string ca_key_name = std::string("test_ca_key_") + mpss_algorithm;
 
         if (mpss_is_valid_key(ca_key_name.c_str())) {
@@ -372,12 +369,7 @@ namespace mpss_openssl::tests {
     INSTANTIATE_TEST_SUITE_P(
         MPSSCertChain,
         CertificateChainSerializationTest,
-        ::testing::Values(
-            "ecdsa_secp256r1_sha256",
-            "ecdsa_secp384r1_sha384",
-            "ecdsa_secp521r1_sha512"
-        )
-    );
+        ::testing::Values("ecdsa_secp256r1_sha256", "ecdsa_secp384r1_sha384", "ecdsa_secp521r1_sha512"));
 
     TEST(MPSS_OPENSSL, GetKeyDescriptors)
     {
@@ -427,7 +419,7 @@ namespace mpss_openssl::tests {
         OSSL_LIB_CTX_free(mpss_libctx);
     }
 
-    class CreateAndDeleteKeyTest : public ::testing::TestWithParam<const char*> {};
+    class CreateAndDeleteKeyTest : public ::testing::TestWithParam<const char *> {};
 
     TEST_P(CreateAndDeleteKeyTest, CreateAndDeleteKey)
     {
@@ -467,9 +459,5 @@ namespace mpss_openssl::tests {
         MPSSCreateDelete,
         CreateAndDeleteKeyTest,
         ::testing::Values(
-            "ECDSA with P256 and SHA2-256",
-            "ECDSA with P384 and SHA2-384",
-            "ECDSA with P521 and SHA2-512"
-        )
-    );
+            "ECDSA with P256 and SHA2-256", "ECDSA with P384 and SHA2-384", "ECDSA with P521 and SHA2-512"));
 } // namespace mpss_openssl::tests

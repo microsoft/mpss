@@ -2,8 +2,8 @@
 // Licensed under the MIT license.
 
 #include "mpss/utils/utilities.h"
-#include "mpss/implementations/macos/mac_keypair.h"
 #include "mpss/implementations/macos/mac_api_wrapper.h"
+#include "mpss/implementations/macos/mac_keypair.h"
 
 namespace {
     constexpr const char *storage_description = "Keychain";
