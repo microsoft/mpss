@@ -141,7 +141,9 @@ bool is_valid = key_pair->verify(hash, signature);
 // Open an existing key pair
 auto existing_key = KeyPair::Open("my-key");
 if (!existing_key) {
+    std::string error_msg = mpss::get_error();
     // Key doesn't exist or couldn't be opened
+    // ...
     return;
 }
 
@@ -149,7 +151,9 @@ if (!existing_key) {
 std::vector<std::byte> public_key(existing_key->extract_key_size());
 size_t key_len = existing_key->extract_key(public_key);
 if (key_len == 0) {
+    std::string error_msg = mpss::get_error();
     // Handle key extraction failure
+    // ...
     return;
 }
 public_key.resize(key_len);
@@ -160,7 +164,13 @@ Algorithm alg = existing_key->algorithm();
 AlgorithmInfo alg_info = existing_key->algorithm_info();
 
 // Delete the key pair when no longer needed
-existing_key->delete_key();
+bool deleted = existing_key->delete_key();
+if (!deleted) {
+    std::string error_msg = mpss::get_error();
+    // Handle key deletion failure
+    // ...
+    return;
+}
 ```
 
 ### Supported Algorithms
@@ -189,7 +199,7 @@ Use the `get_error()` function to retrieve detailed error information when opera
 ```cpp
 auto key_pair = KeyPair::Create("duplicate-name", Algorithm::ecdsa_secp256r1_sha256);
 if (!key_pair) {
-    std::string error_message = get_error();
+    std::string error_msg = get_error();
     std::cerr << "Key creation failed: " << error_message << std::endl;
 }
 ```
@@ -204,22 +214,21 @@ The OpenSSL provider consists of several key components:
 
 - **Provider Interface ([provider.h](mpss-openssl/provider/provider.h) and [.cpp](mpss-openssl/provider/provider.cpp))** - Main provider registration and dispatch logic
 - **Key Management ([keymgmt.h](mpss-openssl/provider/keymgmt.h) and [.cpp](mpss-openssl/provider/keymgmt.cpp))** - Handles key generation, loading, and management operations
-- **Signature Operations ([signature.h](mpss-openssl/provider/signature.h) and [.cpp](mpss-openssl/provider/signature.cpp))** - Implements ECDSA signing and verification using MPSS keys
+- **Signature Operations ([signature.h](mpss-openssl/provider/signature.h) and [.cpp](mpss-openssl/provider/signature.cpp))** - Implements ECDSA and X.509 certificate signing using MPSS keys
 - **Digest Operations ([digest.h](mpss-openssl/provider/digest.h) and [.cpp](mpss-openssl/provider/digest.cpp))** - Wraps OpenSSL hash algorithm implementations
 - **Encoder ([encoder.h](mpss-openssl/provider/encoder.h) and [.cpp](mpss-openssl/provider/encoder.cpp))** - Handles key encoding and serialization for interoperability
 - **Public API (`api.h`)** - Declaration of the `OSSL_provider_init` function, as well as C APIs for a few key management operations that are outside the purview of OpenSSL
 
 ### Using the OpenSSL Provider
 
-The provider integrates with OpenSSL's standard EVP API. Here are three common usage scenarios:
+The provider integrates with OpenSSL's standard EVP API. Here are a few common usage scenarios:
 
 #### 1. Basic Key Generation and Signing
 
 ```cpp
-// Standard includes not shown here
-
 #include <openssl/provider.h>
 #include <openssl/evp.h>
+// #include ...
 
 // Load the MPSS provider and default provider
 OSSL_LIB_CTX *libctx = OSSL_LIB_CTX_new();
@@ -242,6 +251,11 @@ EVP_PKEY_CTX_set_params(ctx, params);
 
 EVP_PKEY *pkey = nullptr;
 EVP_PKEY_generate(ctx, &pkey);
+if (!pkey) {
+    // You can read errors with mpss_get_error
+    const char *error_msg = mpss_get_error();
+    fprintf(stderr, "Error: %s\n", error_msg);
+}
 EVP_PKEY_CTX_free(ctx);
 
 // Sign data using standard OpenSSL operations
@@ -269,27 +283,23 @@ EVP_PKEY_fromdata(load_ctx, &existing_pkey, EVP_PKEY_KEYPAIR, load_params);
 EVP_PKEY_CTX_free(load_ctx);
 
 // Extract the raw public key
-std::vector<unsigned char> public_key;
 std::size_t public_key_len = 1024;
-public_key.resize(public_key_len);
+std::vector<unsigned char> public_key(public_key_len);
 EVP_PKEY_get_raw_public_key(existing_pkey, public_key.data(), &public_key_len);
 public_key.resize(public_key_len);
 
-// Or get the public key in DER format (SubjectPublicKeyInfo)
-OSSL_ENCODER_CTX *ectx = OSSL_ENCODER_CTX_new_for_pkey(
-    existing_pkey, EVP_PKEY_PUBLIC_KEY, "DER", "SubjectPublicKeyInfo", "provider=mpss");
-unsigned char *spki_der = nullptr;
-std::size_t spki_der_len = 0;
-OSSL_ENCODER_to_data(ectx, &spki_der, &spki_der_len);
-OSSL_ENCODER_CTX_free(ectx);
+// Or directly extract the public key (SPKI) in PEM format.
+BIO *pk_file = BIO_new_file("pk.pem", "w");
+PEM_write_bio_PUBKEY_ex(pk_file, public_key, mpss_libctx, "provider=mpss"));
+BIO_free(pk_file);
 ```
 
 #### 3. Self-Signed Certificate Creation
 
-This example shows how to create a self-signed certificate using an MPSS key:
-
 ```cpp
-// Create a self-signed certificate using the MPSS key
+// Assuming pkey (an EVP_PKEY) holds a key pair in the MPSS provider...
+
+// Create a self-signed certificate using a secret key in the MPSS provider
 X509 *cert = X509_new_ex(libctx, "provider=mpss");
 X509_set_version(cert, 2);  // X.509 v3
 ASN1_INTEGER_set(X509_get_serialNumber(cert), 1);
@@ -304,7 +314,8 @@ X509_NAME_add_entry_by_txt(name, "O", MBSTRING_ASC, (unsigned char*)"My Organiza
 X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC, (unsigned char*)"my-server.example.com", -1, -1, 0);
 X509_set_issuer_name(cert, name);  // Same as subject for self-signed
 
-// Sign the certificate with its own key
+// Sign the certificate with its own key; make sure to use the correct hash
+// function here, corresponding to the MPSS key type.
 X509_sign(cert, pkey, EVP_sha256());
 
 // Verify the self-signed certificate
@@ -313,221 +324,49 @@ X509_verify(cert, pkey);
 
 #### 4. Certificate Authority and Certificate Chain Creation
 
-This example shows how to use an MPSS key as a Certificate Authority to sign certificates for other keys:
+A complete end-to-end example of creating a CA certificate with an MPSS-backed key and signing end-entity certificates with it is shown in [tests/mpss_openssl_e2e_test.cpp](tests/mpss_openssl_e2e_test.cpp).
 
-```cpp
-// Create a CA certificate using the MPSS key
-X509 *ca_cert = X509_new_ex(libctx, "provider=mpss");
-X509_set_version(ca_cert, 2);  // X.509 v3
-ASN1_INTEGER_set(X509_get_serialNumber(ca_cert), 1);
-X509_gmtime_adj(X509_get_notBefore(ca_cert), 0);           // Valid from now
-X509_gmtime_adj(X509_get_notAfter(ca_cert), 31536000L);    // Valid for 1 year
-X509_set_pubkey(ca_cert, pkey);
+#### 5. Secure Key Cleanup
 
-// Set subject and issuer names (same for self-signed CA)
-X509_NAME *ca_name = X509_get_subject_name(ca_cert);
-X509_NAME_add_entry_by_txt(ca_name, "C", MBSTRING_ASC, (unsigned char*)"US", -1, -1, 0);
-X509_NAME_add_entry_by_txt(ca_name, "O", MBSTRING_ASC, (unsigned char*)"My CA", -1, -1, 0);
-X509_NAME_add_entry_by_txt(ca_name, "CN", MBSTRING_ASC, (unsigned char*)"My CA", -1, -1, 0);
-X509_set_issuer_name(ca_cert, ca_name);
-
-// Add CA extensions (required for proper CA certificates)
-X509V3_CTX ext_ctx;
-X509V3_set_ctx(&ext_ctx, ca_cert, ca_cert, nullptr, nullptr, 0);
-
-// Add Basic Constraints: critical, CA:TRUE
-X509_EXTENSION *basic_ext = X509V3_EXT_conf_nid(nullptr, &ext_ctx, NID_basic_constraints, "critical,CA:TRUE");
-X509_add_ext(ca_cert, basic_ext, -1);
-X509_EXTENSION_free(basic_ext);
-
-// Add Key Usage: critical, keyCertSign and cRLSign
-X509_EXTENSION *usage_ext = X509V3_EXT_conf_nid(nullptr, &ext_ctx, NID_key_usage, "critical,keyCertSign,cRLSign");
-X509_add_ext(ca_cert, usage_ext, -1);
-X509_EXTENSION_free(usage_ext);
-
-// Sign the CA certificate
-X509_sign(ca_cert, pkey, EVP_sha256());
-
-// Now create a subordinate certificate for another key and sign it with the MPSS CA
-// Generate an RSA key for the end-entity certificate (using default provider)
-EVP_PKEY_CTX *rsa_ctx = EVP_PKEY_CTX_new_from_name(libctx, "RSA", nullptr);
-EVP_PKEY_keygen_init(rsa_ctx);
-EVP_PKEY_CTX_set_rsa_keygen_bits(rsa_ctx, 3072);
-EVP_PKEY *rsa_pkey = nullptr;
-EVP_PKEY_keygen(rsa_ctx, &rsa_pkey);
-EVP_PKEY_CTX_free(rsa_ctx);
-
-// Create the end-entity certificate
-X509 *end_cert = X509_new_ex(libctx, "provider=mpss");
-X509_set_version(end_cert, 2);
-ASN1_INTEGER_set(X509_get_serialNumber(end_cert), 2);  // Different serial number
-X509_gmtime_adj(X509_get_notBefore(end_cert), 0);
-X509_gmtime_adj(X509_get_notAfter(end_cert), 31536000L);
-X509_set_pubkey(end_cert, rsa_pkey);  // Use the RSA public key
-
-// Set subject (different from CA) but same issuer (the CA)
-X509_NAME *end_name = X509_get_subject_name(end_cert);
-X509_NAME_add_entry_by_txt(end_name, "C", MBSTRING_ASC, (unsigned char*)"US", -1, -1, 0);
-X509_NAME_add_entry_by_txt(end_name, "O", MBSTRING_ASC, (unsigned char*)"End Entity", -1, -1, 0);
-X509_NAME_add_entry_by_txt(end_name, "CN", MBSTRING_ASC, (unsigned char*)"End Entity", -1, -1, 0);
-X509_set_issuer_name(end_cert, ca_name);  // Issued by the CA
-
-// Sign the end-entity certificate with the MPSS CA key
-X509_sign(end_cert, pkey, EVP_sha256());  // pkey is the MPSS CA key
-
-// Verify the certificate chain
-X509_verify(end_cert, pkey);  // Verify end cert was signed by CA
-
-// Serialize the certificate chain and public key to files
-// Save CA certificate
-BIO *ca_file = BIO_new_file("ca.pem", "w");
-PEM_write_bio_X509(ca_file, ca_cert);
-BIO_free(ca_file);
-
-// Save end-entity certificate
-BIO *end_file = BIO_new_file("end_cert.pem", "w");
-PEM_write_bio_X509(end_file, end_cert);
-BIO_free(end_file);
-
-// Save the MPSS CA public key (used to verify the root CA certificate)
-BIO *pubkey_file = BIO_new_file("ca_pubkey.pem", "w");
-PEM_write_bio_PUBKEY(pubkey_file, pkey);
-BIO_free(pubkey_file);
-
-// Clean up
-X509_free(ca_cert);
-X509_free(end_cert);
-EVP_PKEY_free(rsa_pkey);
-```
-
-#### Certificate Chain Verification with Serialized Keys
-
-Once you have serialized certificates and public keys, you can verify them independently:
-
-```cpp
-// Load CA certificate from file
-BIO *ca_load_bio = BIO_new_file("ca.pem", "r");
-X509 *loaded_ca_cert = PEM_read_bio_X509(ca_load_bio, nullptr, nullptr, nullptr);
-BIO_free(ca_load_bio);
-
-// Load end-entity certificate from file
-BIO *end_load_bio = BIO_new_file("end_cert.pem", "r");
-X509 *loaded_end_cert = PEM_read_bio_X509(end_load_bio, nullptr, nullptr, nullptr);
-BIO_free(end_load_bio);
-
-// Load the MPSS public key from file
-BIO *pubkey_load_bio = BIO_new_file("ca_pubkey.pem", "r");
-EVP_PKEY *loaded_pubkey = PEM_read_bio_PUBKEY(pubkey_load_bio, nullptr, nullptr, nullptr);
-BIO_free(pubkey_load_bio);
-
-// Verify the CA certificate is self-signed using the MPSS public key
-X509_verify(loaded_ca_cert, loaded_pubkey);
-
-// Verify the end-entity certificate was signed by the CA
-X509_verify(loaded_end_cert, loaded_pubkey);
-
-// Clean up
-X509_free(loaded_ca_cert);
-X509_free(loaded_end_cert);
-EVP_PKEY_free(loaded_pubkey);
-```
-
-#### Command Line Verification with OpenSSL
-
-The above code creates three files that can be verified using the standard OpenSSL command-line tool:
-
-- `ca.pem` - The self-signed CA certificate (signed with the MPSS private key)
-- `end_cert.pem` - The end-entity certificate (signed by the MPSS CA key)
-- `ca_pubkey.pem` - The MPSS CA public key (extracted from the hardware-backed private key)
-
-```bash
-# Verify the self-signed CA certificate using the exported public key
-openssl verify -CAfile ca.pem -check_ss_sig ca.pem
-
-# Verify the end-entity certificate against the CA
-openssl verify -CAfile ca.pem end_cert.pem
-
-# Extract public key from the CA certificate and compare with our exported key
-openssl x509 -in ca.pem -pubkey -noout > extracted_pubkey.pem
-diff ca_pubkey.pem extracted_pubkey.pem
-
-# Display certificate chain information
-openssl x509 -in ca.pem -text -noout -subject -issuer
-openssl x509 -in end_cert.pem -text -noout -subject -issuer
-
-# Verify with verbose output
-openssl verify -verbose -CAfile ca.pem end_cert.pem
-```
-
-On Windows PowerShell:
-
-```powershell
-# Verify certificates
-openssl verify -CAfile ca.pem -check_ss_sig ca.pem
-openssl verify -CAfile ca.pem end_cert.pem
-
-# Compare public keys to ensure they match
-openssl x509 -in ca.pem -pubkey -noout | Out-File -Encoding ascii extracted_pubkey.pem
-Compare-Object (Get-Content ca_pubkey.pem) (Get-Content extracted_pubkey.pem)
-```
-
-#### Secure Key Cleanup
-
-When the MPSS secret key is no longer needed, it can be securely deleted from hardware storage as follows:
+When an MPSS secret key is no longer needed, it can be securely deleted from the secure environment as follows:
 
 ```cpp
 #include "mpss-openssl/api.h"
 
-// Check if the key exists before attempting deletion
-const char *ca_key_name = "my-ca-key";
-if (mpss_is_valid_key(ca_key_name)) {
-    // Delete the MPSS private key from secure storage
-    bool deletion_success = mpss_delete_key(ca_key_name);
-    if (deletion_success) {
-        printf("MPSS CA key '%s' successfully deleted from secure storage\n", ca_key_name);
-    } else {
-        printf("Failed to delete MPSS CA key '%s'\n", ca_key_name);
-    }
+const char *ca_key_name = "my-old-key";
+bool deletion_success = mpss_delete_key(ca_key_name);
+if (deletion_success) {
+    printf("MPSS CA key '%s' successfully deleted from secure storage\n", ca_key_name);
 } else {
-    printf("MPSS CA key '%s' not found in secure storage\n", ca_key_name);
+    const char *error_msg = mpss_get_error();
+    printf("Failed to delete MPSS key '%s': %s\n", ca_key_name, error_msg);
 }
-
-// The certificates and public key files remain valid for verification
-// but the private key is permanently removed from hardware storage
 ```
 
-**Important Security Notes:**
-- Once deleted, the MPSS private key cannot be recovered
-- Existing certificates remain valid and can still be verified using the public key
-- The certificates can continue to be used for verification purposes
-- Only delete keys when you're certain they're no longer needed for signing operations
-- Consider key rotation policies before permanent deletion
+**Important notes:**
+- Only delete keys when you are certain they are no longer needed for signing operations.
+There is no way to bring back deleted secret keys.
+- Existing certificates remain valid when a secret key deleted and can still be verified using the public key.
+- It may not be easy to list existing keys (or rather, their "names") in the secure environment.
+MPSS does not provide such functionality, but individual operating systems might have APIs for enumerating the storage content identifiers.
 
-### Key Features
+### Building mpss-openssl 
 
-- **Standard OpenSSL API** - No changes required to existing OpenSSL-based applications
-- **Hardware-Backed Storage** - Keys are stored securely using platform-specific secure storage
-- **Certificate Generation** - Support for X.509 certificate creation with MPSS keys
-- **Cross-Platform** - Works on Windows, macOS, iOS, and Android through the same API
-- **Digest Algorithms** - Built-in support for SHA-256, SHA-384, and SHA-512
-
-### Building the Provider
-
-To build the OpenSSL provider, configure the CMake project with:
+To build the OpenSSL provider, configure the CMake project with one of:
 
 - `MPSS_BUILD_MPSS_OPENSSL_STATIC=ON` for a static library build
 - `MPSS_BUILD_MPSS_OPENSSL_SHARED=ON` for a shared library build
 
 ### Examples and Testing
 
-Comprehensive usage examples can be found in [`tests/mpss_openssl_tests.cpp`](tests/mpss_openssl_tests.cpp), which demonstrate:
+Comprehensive usage examples can be found in [`tests/mpss_openssl_tests.cpp`](tests/mpss_openssl_tests.cpp) and especially in [`tests/mpss_openssl_e2e_test.cpp`](tests/mpss_openssl_e2e_test.cpp).
+These demonstrate:
 
 - Provider registration and initialization
 - Key generation with named keys
 - Digital signing and verification operations
 - X.509 certificate creation and validation
-- Digest algorithm usage
-- Integration with OpenSSL's EVP API
+- Key deletion and cleanup
 
 The tests are built automatically when `MPSS_BUILD_TESTS=ON` is set, provided the OpenSSL provider is also being built.
 
@@ -536,3 +375,4 @@ The tests are built automatically when `MPSS_BUILD_TESTS=ON` is set, provided th
 MPSS is released under the MIT license.
 We welcome contributions, including feature additions and bug fixes.
 If you have a feature request or a question about how to use the library, please [submit an issue](https://github.com/microsoft/mpss/issues).
+

@@ -189,7 +189,7 @@ bool MPSS_CreateKey(const char *keyName, int bitSize)
             NULL);
 
 
-        NSLog(@"Creating bit size: %d", keyBitSize);
+        NSLog(@"Creating key with bit size: %d", keyBitSize);
         NSDictionary *keyAttributes = @{
             (id)kSecAttrKeyType: (id)kSecAttrKeyTypeECSECPrimeRandom,
             (id)kSecAttrKeySizeInBits: @(keyBitSize),
@@ -208,7 +208,7 @@ bool MPSS_CreateKey(const char *keyName, int bitSize)
             SetThreadLocalError(error);
             return false;
         } else {
-            NSLog(@"Key generated successfully!");
+            NSLog(@"Key generated successfully");
             StoreKey(keyLabel, keyRef);
         }
 

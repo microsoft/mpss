@@ -32,7 +32,7 @@ namespace mpss_openssl::provider {
                 std::string mpss_alg_str = key_pair->algorithm_info().type_str;
 
                 // Try to get the canonical name instead.
-                mpss_algorithm = utils::try_get_algorithm_name(mpss_alg_str);
+                mpss_algorithm = try_get_mpss_algorithm_name(mpss_alg_str);
 
                 // Save the algorithm also in a local variable.
                 this->mpss_algorithm = mpss_algorithm;
@@ -45,18 +45,21 @@ namespace mpss_openssl::provider {
             // Now try to create the key and save the algorithm in a local variable.
             if (algorithm != mpss::Algorithm::unsupported) {
                 key_pair = mpss::KeyPair::Create(key_name, algorithm);
+                this->mpss_algorithm = mpss::get_algorithm_info(algorithm).type_str;
+            }
+            else {
+                this->mpss_algorithm = std::nullopt; 
             }
 
             // Finally, save the canonical algorithm name in a local variable.
-            this->mpss_algorithm = try_get_algorithm_name(mpss::get_algorithm_info(algorithm).type_str);
         }
 
         // Try to read the algorithm, group, and hash names from the key.
         name = key_name;
-        sig_name = utils::try_get_signature_scheme(key_pair);
-        group_name = utils::try_get_ec_group(key_pair);
-        hash_name = utils::try_get_hash_func(key_pair);
-        alg_name = utils::try_get_algorithm_name(key_pair);
+        sig_name = try_get_signature_scheme(key_pair);
+        group_name = try_get_ec_group(key_pair);
+        hash_name = try_get_hash_func(key_pair);
+        alg_name = try_get_algorithm_name(key_pair);
     }
 
     mpss_key::~mpss_key()

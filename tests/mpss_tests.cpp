@@ -12,7 +12,6 @@
 namespace mpss::tests {
     using namespace mpss;
     using std::operator""s;
-    using std::operator""sv;
 
     class MPSS : public ::testing::Test {
     public:

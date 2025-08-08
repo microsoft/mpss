@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 #include "mpss-openssl/utils/names.h"
+#include "mpss/algorithm.h"
 #include <cstddef>
 #include <memory>
 #include <mpss/mpss.h>
@@ -222,6 +223,8 @@ namespace mpss_openssl::utils {
 
     [[nodiscard]] std::optional<std::string> try_get_algorithm_name(std::string_view str)
     {
+        // Note: The output of this function does *not* indicate curve information!
+
         // First we'll try to extract the signature scheme and hash function.
         std::optional<std::string> sig_scheme = try_get_signature_scheme(str);
         std::optional<std::string> hash_func = try_get_hash_func(str);
@@ -252,6 +255,8 @@ namespace mpss_openssl::utils {
 
     [[nodiscard]] std::optional<std::string> try_get_algorithm_name(const std::unique_ptr<KeyPair> &key_pair)
     {
+        // Note: The output of this function does *not* indicate curve information!
+
         // Fail if no key is present.
         if (!key_pair) {
             return std::nullopt;
@@ -264,6 +269,9 @@ namespace mpss_openssl::utils {
 
     [[nodiscard]] mpss::Algorithm try_get_mpss_algorithm(std::string_view str)
     {
+        // This function tries to retrieve the complete mpss algorithm description,
+        // which includes the signature scheme descriptor, curve, and hash function.
+
         if (str.empty()) {
             return mpss::Algorithm::unsupported;
         }
@@ -274,14 +282,33 @@ namespace mpss_openssl::utils {
             return mpss::Algorithm::unsupported;
         }
 
+        // Next, try to get the curve name.
+        std::optional<std::string> ec_group_name = try_get_ec_group(str);
+        if (!ec_group_name.has_value()) {
+            return mpss::Algorithm::unsupported;
+        }
+
         // For each name in mpss::algorithm_info, find the canonical name and compare it with alg_name.
         for (const auto &alg_info : mpss::algorithm_info) {
             std::string mpss_alg_name = try_get_algorithm_name(alg_info.second.type_str).value_or("unsupported");
-            if (mpss_alg_name == alg_name.value()) {
+            std::string mpss_ec_group_name = try_get_ec_group(alg_info.second.type_str).value_or("unsupported");
+            if (mpss_alg_name == alg_name.value() && mpss_ec_group_name == ec_group_name.value()) {
                 return alg_info.first;
             }
         }
 
         return mpss::Algorithm::unsupported;
+    }
+
+    [[nodiscard]] std::optional<std::string> try_get_mpss_algorithm_name(std::string_view str)
+    {
+        // This function tries to retrieve the complete mpss algorithm description,
+        // which includes the signature scheme descriptor, curve, and hash function.
+        
+        mpss::Algorithm algorithm = try_get_mpss_algorithm(str);
+        if (algorithm != mpss::Algorithm::unsupported) {
+            return mpss::get_algorithm_info(algorithm).type_str;
+        }
+        return std::nullopt;
     }
 } // namespace mpss_openssl::utils

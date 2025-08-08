@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 #include "mpss/algorithm.h"
-#include "mpss/utils/scope_guard.h"
 #include "mpss/utils/utilities.h"
 #include "mpss/implementations/macos/mac_api_wrapper.h"
 #include "mpss/implementations/macos/mac_keypair.h"
