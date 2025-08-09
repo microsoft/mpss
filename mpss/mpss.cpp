@@ -2,10 +2,9 @@
 // Licensed under the MIT license.
 
 #include "mpss/mpss.h"
-#include "mpss/utils/utilities.h"
 #include "mpss/utils/scope_guard.h"
+#include "mpss/utils/utilities.h"
 #include "mpss/implementations/mpss_impl.h"
-#include <iostream>
 #include <stdexcept>
 
 namespace mpss {
@@ -76,7 +75,7 @@ namespace mpss {
 
     std::size_t KeyPair::sign_hash_size() const
     {
-        return utils::get_max_signature_length(algorithm());
+        return utils::get_max_signature_size(algorithm());
     }
 
     std::size_t KeyPair::extract_key_size() const
@@ -85,8 +84,7 @@ namespace mpss {
     }
 
     KeyPair::KeyPair(Algorithm algorithm, bool hardware_backed, const char *storage_description)
-        : algorithm_(algorithm), info_(get_algorithm_info(algorithm)),
-          key_info_(hardware_backed, storage_description)
+        : algorithm_(algorithm), info_(get_algorithm_info(algorithm)), key_info_(hardware_backed, storage_description)
     {
         if (0 == info_.key_bits) {
             throw std::invalid_argument("Unsupported algorithm");

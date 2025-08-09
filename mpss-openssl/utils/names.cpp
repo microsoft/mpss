@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 #include "mpss-openssl/utils/names.h"
+#include "mpss/algorithm.h"
 #include <cstddef>
 #include <memory>
 #include <mpss/mpss.h>
@@ -75,9 +76,7 @@ namespace mpss_openssl::utils {
 
     template <std::size_t N>
     [[nodiscard]] bool are_aliases(
-        std::string_view name1,
-        std::string_view name2,
-        const std::array<const char *, N> &alias_arr)
+        std::string_view name1, std::string_view name2, const std::array<const char *, N> &alias_arr)
     {
         if (name1 == name2) {
             return true;
@@ -108,8 +107,7 @@ namespace mpss_openssl::utils {
 
     namespace unsafe {
         template <std::size_t N>
-        std::string_view try_extract_canonical_name(
-            std::string_view str, const std::array<const char *, N> &alias_arr)
+        std::string_view try_extract_canonical_name(std::string_view str, const std::array<const char *, N> &alias_arr)
         {
             // IMPORTANT NOTE: The std::string_view this function returns IS NOT NULL-TERMINATED!
             // THIS FUNCTION IS DANGEROUS TO USE DIRECTLY.
@@ -166,8 +164,14 @@ namespace mpss_openssl::utils {
         }
     } // namespace unsafe
 
-    [[nodiscard]] std::optional<std::string> try_get_ec_group(
-        const std::unique_ptr<KeyPair> &key_pair)
+    [[nodiscard]] std::optional<std::string> try_get_ec_group(std::string_view str)
+    {
+        // We wrap the result in std::string. This is now guaranteed to be null-terminated.
+        std::string_view group_name = unsafe::try_extract_canonical_name(str, mpss_group_names);
+        return group_name.empty() ? std::nullopt : std::make_optional(std::string(group_name));
+    }
+
+    [[nodiscard]] std::optional<std::string> try_get_ec_group(const std::unique_ptr<KeyPair> &key_pair)
     {
         // Fail if no key is present.
         if (!key_pair) {
@@ -176,13 +180,17 @@ namespace mpss_openssl::utils {
 
         AlgorithmInfo info = key_pair->algorithm_info();
         std::string_view type_str = info.type_str;
-
-        // We wrap the result in std::string. This is now guaranteed to be null-terminated.
-        return std::string(unsafe::try_extract_canonical_name(type_str, mpss_group_names));
+        return try_get_ec_group(type_str);
     }
 
-    [[nodiscard]] std::optional<std::string> try_get_hash_func(
-        const std::unique_ptr<KeyPair> &key_pair)
+    [[nodiscard]] std::optional<std::string> try_get_hash_func(std::string_view str)
+    {
+        // We wrap the result in std::string. This is now guaranteed to be null-terminated.
+        std::string_view hash_name = unsafe::try_extract_canonical_name(str, mpss_hash_names);
+        return hash_name.empty() ? std::nullopt : std::make_optional(std::string(hash_name));
+    }
+
+    [[nodiscard]] std::optional<std::string> try_get_hash_func(const std::unique_ptr<KeyPair> &key_pair)
     {
         // Fail if no key is present.
         if (!key_pair) {
@@ -191,13 +199,17 @@ namespace mpss_openssl::utils {
 
         mpss::AlgorithmInfo info = key_pair->algorithm_info();
         std::string_view type_str = info.type_str;
-
-        // We wrap the result in std::string. This is now guaranteed to be null-terminated.
-        return std::string(unsafe::try_extract_canonical_name(type_str, mpss_hash_names));
+        return try_get_hash_func(type_str);
     }
 
-    [[nodiscard]] std::optional<std::string> try_get_signature_scheme(
-        const std::unique_ptr<KeyPair> &key_pair)
+    [[nodiscard]] std::optional<std::string> try_get_signature_scheme(std::string_view str)
+    {
+        // We wrap the result in std::string. This is now guaranteed to be null-terminated.
+        std::string_view sig_scheme = unsafe::try_extract_canonical_name(str, mpss_sig_names);
+        return sig_scheme.empty() ? std::nullopt : std::make_optional(std::string(sig_scheme));
+    }
+
+    [[nodiscard]] std::optional<std::string> try_get_signature_scheme(const std::unique_ptr<KeyPair> &key_pair)
     {
         // Fail if no key is present.
         if (!key_pair) {
@@ -206,25 +218,16 @@ namespace mpss_openssl::utils {
 
         mpss::AlgorithmInfo info = key_pair->algorithm_info();
         std::string_view type_str = info.type_str;
-
-        // We wrap the result in std::string. This is now guaranteed to be null-terminated.
-        return std::string(unsafe::try_extract_canonical_name(type_str, mpss_sig_names));
+        return try_get_signature_scheme(type_str);
     }
 
-    [[nodiscard]] std::optional<std::string> try_get_algorithm_name(
-        const std::unique_ptr<KeyPair> &key_pair)
+    [[nodiscard]] std::optional<std::string> try_get_algorithm_name(std::string_view str)
     {
-        // Fail if no key is present.
-        if (!key_pair) {
-            return std::nullopt;
-        }
-
-        mpss::AlgorithmInfo info = key_pair->algorithm_info();
-        std::string_view type_str = info.type_str;
+        // Note: The output of this function does *not* indicate curve information!
 
         // First we'll try to extract the signature scheme and hash function.
-        std::optional<std::string> sig_scheme = try_get_signature_scheme(key_pair);
-        std::optional<std::string> hash_func = try_get_hash_func(key_pair);
+        std::optional<std::string> sig_scheme = try_get_signature_scheme(str);
+        std::optional<std::string> hash_func = try_get_hash_func(str);
 
         if (!sig_scheme || !hash_func) {
             return std::nullopt;
@@ -233,14 +236,12 @@ namespace mpss_openssl::utils {
         // Iterate over every algorithm name in the list.
         for (const auto &alg_name : mpss_algorithm_names) {
             // Check that the signature scheme and hash function are in the algorithm name.
-            std::string_view canonical_sig_name =
-                unsafe::try_extract_canonical_name(alg_name, mpss_sig_names);
+            std::string_view canonical_sig_name = unsafe::try_extract_canonical_name(alg_name, mpss_sig_names);
             if (canonical_sig_name.empty() || (canonical_sig_name != sig_scheme.value())) {
                 continue;
             }
 
-            std::string_view canonical_hash_name =
-                unsafe::try_extract_canonical_name(alg_name, mpss_hash_names);
+            std::string_view canonical_hash_name = unsafe::try_extract_canonical_name(alg_name, mpss_hash_names);
             if (canonical_hash_name.empty() || (canonical_hash_name != hash_func.value())) {
                 continue;
             }
@@ -249,6 +250,65 @@ namespace mpss_openssl::utils {
             return alg_name;
         }
 
+        return std::nullopt;
+    }
+
+    [[nodiscard]] std::optional<std::string> try_get_algorithm_name(const std::unique_ptr<KeyPair> &key_pair)
+    {
+        // Note: The output of this function does *not* indicate curve information!
+
+        // Fail if no key is present.
+        if (!key_pair) {
+            return std::nullopt;
+        }
+
+        mpss::AlgorithmInfo info = key_pair->algorithm_info();
+        std::string_view type_str = info.type_str;
+        return try_get_algorithm_name(type_str);
+    }
+
+    [[nodiscard]] mpss::Algorithm try_get_mpss_algorithm(std::string_view str)
+    {
+        // This function tries to retrieve the complete mpss algorithm description,
+        // which includes the signature scheme descriptor, curve, and hash function.
+
+        if (str.empty()) {
+            return mpss::Algorithm::unsupported;
+        }
+
+        // First, try get the canonical name for the algorithm.
+        std::optional<std::string> alg_name = try_get_algorithm_name(str);
+        if (!alg_name.has_value()) {
+            return mpss::Algorithm::unsupported;
+        }
+
+        // Next, try to get the curve name.
+        std::optional<std::string> ec_group_name = try_get_ec_group(str);
+        if (!ec_group_name.has_value()) {
+            return mpss::Algorithm::unsupported;
+        }
+
+        // For each name in mpss::algorithm_info, find the canonical name and compare it with alg_name.
+        for (const auto &alg_info : mpss::algorithm_info) {
+            std::string mpss_alg_name = try_get_algorithm_name(alg_info.second.type_str).value_or("unsupported");
+            std::string mpss_ec_group_name = try_get_ec_group(alg_info.second.type_str).value_or("unsupported");
+            if (mpss_alg_name == alg_name.value() && mpss_ec_group_name == ec_group_name.value()) {
+                return alg_info.first;
+            }
+        }
+
+        return mpss::Algorithm::unsupported;
+    }
+
+    [[nodiscard]] std::optional<std::string> try_get_mpss_algorithm_name(std::string_view str)
+    {
+        // This function tries to retrieve the complete mpss algorithm description,
+        // which includes the signature scheme descriptor, curve, and hash function.
+
+        mpss::Algorithm algorithm = try_get_mpss_algorithm(str);
+        if (algorithm != mpss::Algorithm::unsupported) {
+            return mpss::get_algorithm_info(algorithm).type_str;
+        }
         return std::nullopt;
     }
 } // namespace mpss_openssl::utils

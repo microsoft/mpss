@@ -20,6 +20,7 @@ endif()
 if (TARGET ${mpss_openssl_TARGET})
     set(mpss_TESTS_FILES ${mpss_TESTS_FILES}
         ${CMAKE_CURRENT_LIST_DIR}/mpss_openssl_tests.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/mpss_openssl_e2e_test.cpp
     )
 endif()
 

@@ -2,14 +2,13 @@
 // Licensed under the MIT license.
 
 #include "mpss/algorithm.h"
-#include "mpss/utils/scope_guard.h"
 #include "mpss/utils/utilities.h"
+#include "mpss/implementations/macos/mac_api_wrapper.h"
+#include "mpss/implementations/macos/mac_keypair.h"
+#include "mpss/implementations/macos/mac_se_keypair.h"
+#include "mpss/implementations/macos/mac_se_wrapper.h"
+#include "mpss/implementations/macos/mac_utils.h"
 #include "mpss/implementations/mpss_impl.h"
-#include "mac_api_wrapper.h"
-#include "mac_keypair.h"
-#include "mac_se_keypair.h"
-#include "mac_se_wrapper.h"
-#include "mac_utils.h"
 
 namespace mpss {
     namespace impl {
@@ -28,16 +27,14 @@ namespace mpss {
                 return {};
             }
 
-            if (MPSS_SE_SecureEnclaveIsSupported() &&
-                algorithm == Algorithm::ecdsa_secp256r1_sha256) {
+            if (MPSS_SE_SecureEnclaveIsSupported() && algorithm == Algorithm::ecdsa_secp256r1_sha256) {
                 // Secure Enclave only supports ECDSA P256
                 if (MPSS_SE_CreateKey(key_name.c_str())) {
                     return std::make_unique<MacSEKeyPair>(name, algorithm);
                 }
 
                 std::stringstream ss;
-                ss << "Failed to create key in Secure Enclave: "
-                   << mpss::impl::utils::MPSS_SE_GetLastError();
+                ss << "Failed to create key in Secure Enclave: " << mpss::impl::utils::MPSS_SE_GetLastError();
                 mpss::utils::set_error(ss.str());
                 return {};
             }
@@ -106,13 +103,12 @@ namespace mpss {
             }
 
             // Check hash length
-            if (!mpss::utils::check_hash_length(hash, algorithm)) {
+            if (!mpss::utils::check_hash_size(hash, algorithm)) {
                 mpss::utils::set_error("Invalid hash length for algorithm");
                 return false;
             }
 
-            if (MPSS_SE_SecureEnclaveIsSupported() &&
-                algorithm == Algorithm::ecdsa_secp256r1_sha256) {
+            if (MPSS_SE_SecureEnclaveIsSupported() && algorithm == Algorithm::ecdsa_secp256r1_sha256) {
                 // Secure Enclave only supports ECDSA P256
                 bool result = MPSS_SE_VerifyStandaloneSignature(
                     reinterpret_cast<const std::uint8_t *>(public_key.data()),
@@ -123,8 +119,7 @@ namespace mpss {
                     sig.size());
                 if (!result) {
                     std::stringstream ss;
-                    ss << "Failed to verify standalone signature: "
-                       << mpss::impl::utils::MPSS_SE_GetLastError();
+                    ss << "Failed to verify standalone signature: " << mpss::impl::utils::MPSS_SE_GetLastError();
                     mpss::utils::set_error(ss.str());
                 }
 

@@ -3,10 +3,10 @@
 
 #pragma once
 
+#include "mpss/defines.h"
 #include <array>
 #include <string_view>
 #include <utility>
-#include "mpss/defines.h"
 
 namespace mpss {
     /**
@@ -33,17 +33,10 @@ namespace mpss {
      * @brief A map describing @ref AlgorithmInfo for each supported algorithm.
      */
     constexpr std::array<std::pair<Algorithm, AlgorithmInfo>, 4> algorithm_info = {
-        std::make_pair(Algorithm::unsupported, AlgorithmInfo{ 0, 0, 0, "unsupported" }),
-        std::make_pair(
-            Algorithm::ecdsa_secp256r1_sha256,
-            AlgorithmInfo{ 256, 128, 256, "ecdsa_secp256r1_sha256" }),
-        std::make_pair(
-            Algorithm::ecdsa_secp384r1_sha384,
-            AlgorithmInfo{ 384, 192, 384, "ecdsa_secp384r1_sha384" }),
-        std::make_pair(
-            Algorithm::ecdsa_secp521r1_sha512,
-            AlgorithmInfo{ 521, 256, 512, "ecdsa_secp521r1_sha512" })
-    };
+        std::make_pair(Algorithm::unsupported, AlgorithmInfo{0, 0, 0, "unsupported"}),
+        std::make_pair(Algorithm::ecdsa_secp256r1_sha256, AlgorithmInfo{256, 128, 256, "ecdsa_secp256r1_sha256"}),
+        std::make_pair(Algorithm::ecdsa_secp384r1_sha384, AlgorithmInfo{384, 192, 384, "ecdsa_secp384r1_sha384"}),
+        std::make_pair(Algorithm::ecdsa_secp521r1_sha512, AlgorithmInfo{521, 256, 512, "ecdsa_secp521r1_sha512"})};
 
     /**
      * @brief Retrieve the @ref AlgorithmInfo for a given @ref Algorithm.
@@ -55,7 +48,7 @@ namespace mpss {
                 return info;
             }
         }
-        return AlgorithmInfo{ 0, 0, 0 };
+        return algorithm_info[0].second;
     }
 
     /**

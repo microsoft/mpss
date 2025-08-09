@@ -3,7 +3,5 @@
 
 #pragma once
 
-#cmakedefine MPSS_BUILD_MPSS_CORE_STATIC
-#cmakedefine MPSS_BUILD_MPSS_CORE_SHARED
-#cmakedefine MPSS_BUILD_MPSS_OPENSSL_STATIC
-#cmakedefine MPSS_BUILD_MPSS_OPENSSL_SHARED
+#cmakedefine MPSS_CORE_IS_SHARED
+#cmakedefine MPSS_OPENSSL_IS_SHARED

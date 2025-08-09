@@ -11,10 +11,7 @@ namespace mpss::impl {
     class WindowsKeyPair : public mpss::KeyPair {
     public:
         WindowsKeyPair(
-            mpss::Algorithm algorithm,
-            NCRYPT_KEY_HANDLE handle,
-            bool hardware_backed,
-            const char *storage_description)
+            mpss::Algorithm algorithm, NCRYPT_KEY_HANDLE handle, bool hardware_backed, const char *storage_description)
             : mpss::KeyPair(algorithm, hardware_backed, storage_description), key_handle_(handle)
         {}
 
@@ -25,8 +22,7 @@ namespace mpss::impl {
 
         bool delete_key() override;
 
-        std::size_t sign_hash(
-            gsl::span<const std::byte> hash, gsl::span<std::byte> sig) const override;
+        std::size_t sign_hash(gsl::span<const std::byte> hash, gsl::span<std::byte> sig) const override;
 
         bool verify(gsl::span<const std::byte> hash, gsl::span<const std::byte> sig) const override;
 

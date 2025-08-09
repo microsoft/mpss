@@ -1,13 +1,7 @@
 // Copyright(c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#include <algorithm>
-#include <cstddef>
-#include <gsl/narrow>
-#include <gsl/span>
-#include <iostream>
-#include <memory>
-#include <mpss/mpss.h>
+#include "mpss-openssl/utils/names.h"
 #include <openssl/bn.h>
 #include <openssl/crypto.h>
 #include <openssl/ecdsa.h>
@@ -15,17 +9,19 @@
 #include <openssl/objects.h>
 #include <openssl/params.h>
 #include <openssl/x509v3.h>
-#include <string>
-#include "mpss-openssl/utils/memory.h"
-#include "mpss-openssl/utils/names.h"
+#include <gsl/narrow>
+#include <gsl/span>
+#include <algorithm>
+#include <cstddef>
+#include <iostream>
+#include <memory>
+#include <mpss/mpss.h>
 
 namespace mpss_openssl::utils {
     using namespace mpss;
 
     std::size_t mpss_sign_as_der(
-        const std::unique_ptr<KeyPair> &key_pair,
-        gsl::span<const std::byte> hash_tbs,
-        gsl::span<std::byte> out)
+        const std::unique_ptr<KeyPair> &key_pair, gsl::span<const std::byte> hash_tbs, gsl::span<std::byte> out)
     {
         // Check for obvious problems.
         if (!key_pair || (key_pair->algorithm() == mpss::Algorithm::unsupported)) {
@@ -71,8 +67,7 @@ namespace mpss_openssl::utils {
         return res;
     }
 
-    [[nodiscard]] common_byte_vector mpss_vk_params_to_spki(
-        OSSL_LIB_CTX *libctx, const OSSL_PARAM *params)
+    [[nodiscard]] byte_vector mpss_vk_params_to_spki(OSSL_LIB_CTX *libctx, const OSSL_PARAM *params)
     {
         if (!params) {
             return {};
@@ -87,7 +82,7 @@ namespace mpss_openssl::utils {
 
         // Set up our own clone of the parameters to ensure nothing unexpected is passed
         // to the EVP_PKEY_fromdata function.
-        OSSL_PARAM params_clone[3]{ *group, *pub, OSSL_PARAM_END };
+        OSSL_PARAM params_clone[3]{*group, *pub, OSSL_PARAM_END};
 
         // Create a new EVP_PKEY from the parameters.
         EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_from_name(libctx, "EC", "provider=default");
@@ -96,8 +91,7 @@ namespace mpss_openssl::utils {
             return {};
         }
         EVP_PKEY *pkey = nullptr;
-        if (1 != EVP_PKEY_fromdata(
-                     ctx, &pkey, EVP_PKEY_KEY_PARAMETERS | EVP_PKEY_PUBLIC_KEY, params_clone)) {
+        if (1 != EVP_PKEY_fromdata(ctx, &pkey, EVP_PKEY_KEY_PARAMETERS | EVP_PKEY_PUBLIC_KEY, params_clone)) {
             EVP_PKEY_CTX_free(ctx);
             return {};
         }
@@ -109,10 +103,9 @@ namespace mpss_openssl::utils {
             EVP_PKEY_free(pkey);
             return {};
         }
-        common_byte_vector der_data(der_size);
-        std::transform(der_buf, der_buf + der_size, der_data.begin(), [](unsigned char c) {
-            return static_cast<std::byte>(c);
-        });
+        byte_vector der_data(static_cast<std::size_t>(der_size));
+        std::transform(
+            der_buf, der_buf + der_size, der_data.begin(), [](unsigned char c) { return static_cast<std::byte>(c); });
 
         // Clean up.
         OPENSSL_free(der_buf);

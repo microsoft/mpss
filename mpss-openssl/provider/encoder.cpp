@@ -2,15 +2,14 @@
 // Licensed under the MIT license.
 
 #include "mpss-openssl/provider/encoder.h"
-#include <gsl/narrow>
-#include <iostream>
+#include "mpss-openssl/provider/keymgmt.h"
+#include "mpss-openssl/provider/provider.h"
+#include "mpss-openssl/utils/utils.h"
 #include <openssl/bio.h>
 #include <openssl/core_dispatch.h>
 #include <openssl/evp.h>
 #include <openssl/params.h>
-#include "mpss-openssl/provider/keymgmt.h"
-#include "mpss-openssl/provider/provider.h"
-#include "mpss-openssl/utils/utils.h"
+#include <gsl/narrow>
 
 namespace {
     using namespace ::mpss_openssl::provider;
@@ -33,24 +32,22 @@ namespace {
         ectx->handle = pctx->handle;
         ectx->libctx = pctx->libctx;
 
-        std::cout << "LOG: mpss_encoder_newctx (" << ectx << ")" << std::endl;
         return ectx;
     }
 
     extern "C" void mpss_encoder_freectx(void *ctx)
     {
-        std::cout << "LOG: mpss_encoder_freectx (" << ctx << ")" << std::endl;
         mpss_encoder_ctx *ectx = static_cast<mpss_encoder_ctx *>(ctx);
-        mpss_delete<false>(ectx);
+        mpss_delete(ectx);
     }
 
     extern "C" const OSSL_PARAM *mpss_encoder_gettable_params([[maybe_unused]] void *provctx)
     {
-        static constexpr OSSL_PARAM ret[] = { OSSL_PARAM_utf8_string("output", nullptr, 0),
-                                              OSSL_PARAM_utf8_string("structure", nullptr, 0),
-                                              OSSL_PARAM_END };
+        static constexpr OSSL_PARAM ret[] = {
+            OSSL_PARAM_utf8_string("output", nullptr, 0),
+            OSSL_PARAM_utf8_string("structure", nullptr, 0),
+            OSSL_PARAM_END};
 
-        std::cout << "LOG: mpss_encoder_gettable_params" << std::endl;
         return ret;
     }
 
@@ -64,12 +61,10 @@ namespace {
         if ((p = OSSL_PARAM_locate(params, "output")) && !OSSL_PARAM_set_utf8_string(p, "DER")) {
             return 0;
         }
-        if ((p = OSSL_PARAM_locate(params, "structure")) &&
-            !OSSL_PARAM_set_utf8_string(p, "SubjectPublicKeyInfo")) {
+        if ((p = OSSL_PARAM_locate(params, "structure")) && !OSSL_PARAM_set_utf8_string(p, "SubjectPublicKeyInfo")) {
             return 0;
         }
 
-        std::cout << "LOG: mpss_encoder_get_params" << std::endl;
         return 1;
     }
 
@@ -87,22 +82,26 @@ namespace {
         [[maybe_unused]] void *ctx,
         OSSL_CORE_BIO *cout,
         const void *obj_raw,
-        const OSSL_PARAM obj_abstract[],
+        [[maybe_unused]] const OSSL_PARAM obj_abstract[],
         int selection,
-        OSSL_PASSPHRASE_CALLBACK *cb,
-        void *cbarg)
+        [[maybe_unused]] OSSL_PASSPHRASE_CALLBACK *cb,
+        [[maybe_unused]] void *cbarg)
     {
         mpss_encoder_ctx *ectx = static_cast<mpss_encoder_ctx *>(ctx);
         if (!ectx) {
             return 0;
         }
 
+        if (selection != EVP_PKEY_PUBLIC_KEY) {
+            return 0;
+        }
+
         struct param_cb_data_t {
             OSSL_LIB_CTX *libctx;
-            common_byte_vector spki;
+            byte_vector spki;
         } cb_data;
         cb_data.libctx = ectx->libctx;
-        cb_data.spki = common_byte_vector{};
+        cb_data.spki = byte_vector{};
 
         // This callback reads the key data from a returned OSSL_PARAM into vk.
         OSSL_CALLBACK *param_cb = [](const OSSL_PARAM params[], void *arg) -> int {
@@ -147,23 +146,20 @@ namespace {
     }
 
     const OSSL_DISPATCH mpss_ec_encoder_functions[] = {
-        { OSSL_FUNC_ENCODER_NEWCTX, reinterpret_cast<void (*)(void)>(mpss_encoder_newctx) },
-        { OSSL_FUNC_ENCODER_FREECTX, reinterpret_cast<void (*)(void)>(mpss_encoder_freectx) },
-        { OSSL_FUNC_ENCODER_GETTABLE_PARAMS,
-          reinterpret_cast<void (*)(void)>(mpss_encoder_gettable_params) },
-        { OSSL_FUNC_ENCODER_GET_PARAMS, reinterpret_cast<void (*)(void)>(mpss_encoder_get_params) },
-        { OSSL_FUNC_ENCODER_DOES_SELECTION,
-          reinterpret_cast<void (*)(void)>(mpss_encoder_does_selection) },
-        { OSSL_FUNC_ENCODER_ENCODE, reinterpret_cast<void (*)(void)>(mpss_encoder_encode) },
-        OSSL_DISPATCH_END
-    };
+        {OSSL_FUNC_ENCODER_NEWCTX, reinterpret_cast<void (*)(void)>(mpss_encoder_newctx)},
+        {OSSL_FUNC_ENCODER_FREECTX, reinterpret_cast<void (*)(void)>(mpss_encoder_freectx)},
+        {OSSL_FUNC_ENCODER_GETTABLE_PARAMS, reinterpret_cast<void (*)(void)>(mpss_encoder_gettable_params)},
+        {OSSL_FUNC_ENCODER_GET_PARAMS, reinterpret_cast<void (*)(void)>(mpss_encoder_get_params)},
+        {OSSL_FUNC_ENCODER_DOES_SELECTION, reinterpret_cast<void (*)(void)>(mpss_encoder_does_selection)},
+        {OSSL_FUNC_ENCODER_ENCODE, reinterpret_cast<void (*)(void)>(mpss_encoder_encode)},
+        OSSL_DISPATCH_END};
 } // namespace
 
 namespace mpss_openssl::provider {
     const OSSL_ALGORITHM mpss_encoder_algorithms[] = {
-        { ec_encoder_names,
-          "provider=mpss,output=der,structure=SubjectPublicKeyInfo",
-          mpss_ec_encoder_functions },
-        { nullptr, nullptr, nullptr }
-    };
+        {ec_encoder_names,
+         "provider=mpss,output=der,structure=SubjectPublicKeyInfo",
+         mpss_ec_encoder_functions,
+         "mpss EC SPKI DER encoder"},
+        {nullptr, nullptr, nullptr, nullptr}};
 }

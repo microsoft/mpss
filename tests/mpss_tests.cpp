@@ -1,8 +1,8 @@
 // Copyright(c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#include "mpss/mpss.h"
 #include <gtest/gtest.h>
+#include "mpss/mpss.h"
 #include <iostream>
 #include <memory>
 #include <string>
@@ -12,7 +12,6 @@
 namespace mpss::tests {
     using namespace mpss;
     using std::operator""s;
-    using std::operator""sv;
 
     class MPSS : public ::testing::Test {
     public:
@@ -36,15 +35,12 @@ namespace mpss::tests {
         static std::unique_ptr<mpss::KeyPair> CreateKey(std::string name, Algorithm algorithm)
         {
             // Create a key pair
-            std::unique_ptr<mpss::KeyPair> handle =
-                mpss::KeyPair::Create(std::move(name), algorithm);
+            std::unique_ptr<mpss::KeyPair> handle = mpss::KeyPair::Create(std::move(name), algorithm);
             if (handle == nullptr) {
                 std::cout << "Key could not be created: " << mpss::get_error() << std::endl;
             } else {
-                std::cout << "Key " << name << " created in "
-                          << handle->key_info().storage_description
-                          << ". Hardware backed: " << handle->key_info().is_hardware_backed
-                          << std::endl;
+                std::cout << "Key " << name << " created in " << handle->key_info().storage_description
+                          << ". Hardware backed: " << handle->key_info().is_hardware_backed << std::endl;
             }
             return handle;
         }
@@ -253,8 +249,7 @@ namespace mpss::tests {
         GetKeySmallBuffer(Algorithm::ecdsa_secp521r1_sha512, "521");
     }
 
-    void VerifyStandaloneSignature(
-        Algorithm algorithm, std::string_view suffix, std::size_t hash_size)
+    void VerifyStandaloneSignature(Algorithm algorithm, std::string_view suffix, std::size_t hash_size)
     {
         std::string key_name = "test_key_4_"s + suffix.data();
         // Delete key if it exists
@@ -333,8 +328,7 @@ namespace mpss::tests {
     TEST(MPSSTests, IsAlgorithmSupported256)
     {
         // All platforms should support P256 at least
-        ASSERT_NO_THROW(
-        {
+        ASSERT_NO_THROW({
             bool supported = mpss::is_algorithm_supported(Algorithm::ecdsa_secp256r1_sha256);
             ASSERT_TRUE(supported);
         });

@@ -96,7 +96,7 @@ steps:
       cd $(Build.SourcesDirectory)
       git clone https://github.com/microsoft/vcpkg.git
       cd vcpkg
-      git checkout 2025.06.13
+      git checkout 2025.07.25
       bootstrap-vcpkg.bat -disableMetrics
     workingDirectory: '$(Build.SourcesDirectory)'
     failOnStderr: false
