@@ -82,13 +82,17 @@ namespace {
         [[maybe_unused]] void *ctx,
         OSSL_CORE_BIO *cout,
         const void *obj_raw,
-        const OSSL_PARAM obj_abstract[],
+        [[maybe_unused]] const OSSL_PARAM obj_abstract[],
         int selection,
-        OSSL_PASSPHRASE_CALLBACK *cb,
-        void *cbarg)
+        [[maybe_unused]] OSSL_PASSPHRASE_CALLBACK *cb,
+        [[maybe_unused]] void *cbarg)
     {
         mpss_encoder_ctx *ectx = static_cast<mpss_encoder_ctx *>(ctx);
         if (!ectx) {
+            return 0;
+        }
+
+        if (selection != EVP_PKEY_PUBLIC_KEY) {
             return 0;
         }
 
@@ -153,6 +157,9 @@ namespace {
 
 namespace mpss_openssl::provider {
     const OSSL_ALGORITHM mpss_encoder_algorithms[] = {
-        {ec_encoder_names, "provider=mpss,output=der,structure=SubjectPublicKeyInfo", mpss_ec_encoder_functions},
-        {nullptr, nullptr, nullptr}};
+        {ec_encoder_names,
+         "provider=mpss,output=der,structure=SubjectPublicKeyInfo",
+         mpss_ec_encoder_functions,
+         "mpss EC SPKI DER encoder"},
+        {nullptr, nullptr, nullptr, nullptr}};
 }

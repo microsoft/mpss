@@ -2,10 +2,8 @@
 // Licensed under the MIT license.
 
 #include "mpss-openssl/api.h"
-#include "mpss-openssl/provider/keymgmt.h"
 #include <memory>
 #include <mpss/mpss.h>
-#include <optional>
 #include <string>
 
 extern "C" bool mpss_delete_key(const char *key_name)

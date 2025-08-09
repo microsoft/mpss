@@ -103,7 +103,7 @@ namespace mpss_openssl::utils {
             EVP_PKEY_free(pkey);
             return {};
         }
-        byte_vector der_data(der_size);
+        byte_vector der_data(static_cast<std::size_t>(der_size));
         std::transform(
             der_buf, der_buf + der_size, der_data.begin(), [](unsigned char c) { return static_cast<std::byte>(c); });
 

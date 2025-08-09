@@ -6,7 +6,6 @@
 #include "mpss/defines.h"
 #include "mpss/mpss.h"
 #include <memory>
-#include <string>
 #include <string_view>
 
 namespace mpss {

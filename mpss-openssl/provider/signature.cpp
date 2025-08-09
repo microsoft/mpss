@@ -133,7 +133,11 @@ namespace {
         // Get and set the algorithm ID to output parameters.
         unsigned char *alg_der = nullptr;
         int aid_size = i2d_X509_ALGOR(alg, &alg_der);
-        if (1 != OSSL_PARAM_set_octet_string(p, alg_der, aid_size)) {
+        if (aid_size < 0) {
+            return 0;
+        }
+        std::size_t aid_size_sz = static_cast<std::size_t>(aid_size);
+        if (1 != OSSL_PARAM_set_octet_string(p, alg_der, aid_size_sz)) {
             OPENSSL_free(alg_der);
             X509_ALGOR_free(alg);
             return 0;
@@ -211,9 +215,10 @@ namespace {
         }
 
         // Copy in the DER-encoded signature.
-        std::transform(der_sig.begin(), der_sig.begin() + bytes_written, sig, [](std::byte b) {
-            return static_cast<unsigned char>(b);
-        });
+        auto der_sig_written_end = der_sig.begin();
+        std::advance(der_sig_written_end, bytes_written);
+        std::transform(
+            der_sig.begin(), der_sig_written_end, sig, [](std::byte b) { return static_cast<unsigned char>(b); });
 
         // siglen must be set to the actual number of bytes written.
         *siglen = bytes_written;
@@ -463,5 +468,6 @@ namespace {
 
 namespace mpss_openssl::provider {
     const OSSL_ALGORITHM mpss_signature_algorithms[] = {
-        {mpss_sig_names[ECDSA_index], "provider=mpss", mpss_ecdsa_functions}, {nullptr, nullptr, nullptr}};
+        {mpss_sig_names[ECDSA_index], "provider=mpss", mpss_ecdsa_functions, "mpss ECDSA implementation"},
+        {nullptr, nullptr, nullptr, nullptr}};
 }

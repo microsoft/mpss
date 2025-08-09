@@ -1,8 +1,10 @@
 // Copyright(c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+#include "mpss/algorithm.h"
 #include "mpss/utils/utilities.h"
 #include <iomanip>
+#include <random>
 #include <sstream>
 #include <string>
 #include <utility>

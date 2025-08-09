@@ -46,9 +46,8 @@ namespace mpss_openssl::provider {
             if (algorithm != mpss::Algorithm::unsupported) {
                 key_pair = mpss::KeyPair::Create(key_name, algorithm);
                 this->mpss_algorithm = mpss::get_algorithm_info(algorithm).type_str;
-            }
-            else {
-                this->mpss_algorithm = std::nullopt; 
+            } else {
+                this->mpss_algorithm = std::nullopt;
             }
 
             // Finally, save the canonical algorithm name in a local variable.
@@ -236,8 +235,8 @@ namespace {
 
         if (key->has_valid_key()) {
             mpss::AlgorithmInfo info = key->key_pair->algorithm_info();
-            bits = info.key_bits;
-            security_bits = info.security_bits;
+            bits = static_cast<int>(info.key_bits);
+            security_bits = static_cast<int>(info.security_bits);
         }
 
         OSSL_PARAM *p;
@@ -371,7 +370,7 @@ namespace {
         }
     }
 
-    const OSSL_DISPATCH mpss_ecdsa_keymgmt_functions[] = {
+    const OSSL_DISPATCH mpss_ec_keymgmt_functions[] = {
         {OSSL_FUNC_KEYMGMT_EXPORT, reinterpret_cast<void (*)(void)>(mpss_keymgmt_export)},
         {OSSL_FUNC_KEYMGMT_EXPORT_TYPES, reinterpret_cast<void (*)(void)>(mpss_keymgmt_export_types)},
         {OSSL_FUNC_KEYMGMT_GEN_SETTABLE_PARAMS, reinterpret_cast<void (*)(void)>(mpss_keymgmt_gen_settable_params)},
@@ -389,7 +388,8 @@ namespace {
 
 namespace mpss_openssl::provider {
     const OSSL_ALGORITHM mpss_keymgmt_algorithms[] = {
-        {ec_key_names, "provider=mpss", mpss_ecdsa_keymgmt_functions}, {nullptr, nullptr, nullptr}};
+        {ec_key_names, "provider=mpss", mpss_ec_keymgmt_functions, "mpss EC key management"},
+        {nullptr, nullptr, nullptr, nullptr}};
 
     int mpss_keymgmt_export(void *keydata, int selection, OSSL_CALLBACK *param_cb, void *cbarg)
     {

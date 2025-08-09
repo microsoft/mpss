@@ -304,7 +304,7 @@ namespace mpss_openssl::utils {
     {
         // This function tries to retrieve the complete mpss algorithm description,
         // which includes the signature scheme descriptor, curve, and hash function.
-        
+
         mpss::Algorithm algorithm = try_get_mpss_algorithm(str);
         if (algorithm != mpss::Algorithm::unsupported) {
             return mpss::get_algorithm_info(algorithm).type_str;

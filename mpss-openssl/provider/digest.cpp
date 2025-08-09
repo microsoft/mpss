@@ -278,7 +278,10 @@ namespace {
     MPSS_MAKE_DIGEST_DISPATCH_TABLE(SHA512, 512, 1024)
 
 #define MPSS_MAKE_DIGEST_ALGORITHM(digest) \
-    {mpss_hash_names[digest##_index], "provider=mpss", mpss_digest_functions_##digest}
+    {mpss_hash_names[digest##_index],      \
+     "provider=mpss",                      \
+     mpss_digest_functions_##digest,       \
+     "mpss " #digest " implementation"}
 } // namespace
 
 namespace mpss_openssl::provider {
@@ -286,7 +289,7 @@ namespace mpss_openssl::provider {
         MPSS_MAKE_DIGEST_ALGORITHM(SHA256),
         MPSS_MAKE_DIGEST_ALGORITHM(SHA384),
         MPSS_MAKE_DIGEST_ALGORITHM(SHA512),
-        {nullptr, nullptr, nullptr}};
+        {nullptr, nullptr, nullptr, nullptr}};
 
     void *mpss_digest_newctx(void *provctx, const char *mdname)
     {

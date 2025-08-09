@@ -48,7 +48,7 @@ namespace mpss {
                 return info;
             }
         }
-        return AlgorithmInfo{0, 0, 0};
+        return algorithm_info[0].second;
     }
 
     /**

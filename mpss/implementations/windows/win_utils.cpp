@@ -1,7 +1,6 @@
 // Copyright(c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#include "mpss/utils/scope_guard.h"
 #include "mpss/utils/utilities.h"
 #include "mpss/implementations/windows/win_utils.h"
 #include <Windows.h>
@@ -15,7 +14,7 @@ namespace {
 } // namespace
 
 namespace mpss::impl::utils {
-    crypto_params const *const get_crypto_params(Algorithm algorithm) noexcept
+    crypto_params const *get_crypto_params(Algorithm algorithm) noexcept
     {
         switch (algorithm) {
         case mpss::Algorithm::ecdsa_secp256r1_sha256:

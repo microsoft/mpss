@@ -4,7 +4,6 @@
 #pragma once
 
 #include "mpss/defines.h"
-#include <string>
 
 namespace mpss {
     /**
