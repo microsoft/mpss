@@ -1,14 +1,13 @@
 // Copyright(c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#include "mpss-openssl/provider/provider.h"
-#include <iostream>
-#include <openssl/core_dispatch.h>
 #include "mpss-openssl/provider/digest.h"
 #include "mpss-openssl/provider/encoder.h"
 #include "mpss-openssl/provider/keymgmt.h"
+#include "mpss-openssl/provider/provider.h"
 #include "mpss-openssl/provider/signature.h"
 #include "mpss-openssl/utils/utils.h"
+#include <openssl/core_dispatch.h>
 
 namespace {
     using namespace mpss_openssl::provider;
@@ -18,7 +17,7 @@ namespace {
     {
         mpss_provider_ctx *ctx = static_cast<mpss_provider_ctx *>(provctx);
         OSSL_LIB_CTX_free(ctx->libctx);
-        mpss_delete<false>(ctx);
+        mpss_delete(ctx);
     }
 
     extern "C" const OSSL_ALGORITHM *mpss_provider_query_operation(
@@ -45,18 +44,13 @@ namespace {
     }
 
     const OSSL_DISPATCH mpss_provider_functions[] = {
-        { OSSL_FUNC_PROVIDER_TEARDOWN, reinterpret_cast<void (*)(void)>(mpss_provider_teardown) },
-        { OSSL_FUNC_PROVIDER_QUERY_OPERATION,
-          reinterpret_cast<void (*)(void)>(mpss_provider_query_operation) },
-        OSSL_DISPATCH_END
-    };
+        {OSSL_FUNC_PROVIDER_TEARDOWN, reinterpret_cast<void (*)(void)>(mpss_provider_teardown)},
+        {OSSL_FUNC_PROVIDER_QUERY_OPERATION, reinterpret_cast<void (*)(void)>(mpss_provider_query_operation)},
+        OSSL_DISPATCH_END};
 } // namespace
 
 extern "C" int OSSL_provider_init(
-    const OSSL_CORE_HANDLE *handle,
-    const OSSL_DISPATCH *in,
-    const OSSL_DISPATCH **out,
-    void **provctx)
+    const OSSL_CORE_HANDLE *handle, const OSSL_DISPATCH *in, const OSSL_DISPATCH **out, void **provctx)
 {
     using namespace mpss_openssl::provider;
     using namespace mpss_openssl::utils;
@@ -67,7 +61,6 @@ extern "C" int OSSL_provider_init(
     // Create a new library context from the provider dispatch table.
     OSSL_LIB_CTX *libctx = OSSL_LIB_CTX_new_from_dispatch(handle, in);
     if (!libctx) {
-        std::cout << "LOG: Failed to create library context." << std::endl;
         return 0;
     }
     ctx->libctx = libctx;
@@ -75,6 +68,5 @@ extern "C" int OSSL_provider_init(
     *provctx = ctx;
     *out = mpss_provider_functions;
 
-    std::cout << "LOG: mpss provider initialized (" << ctx << ")" << std::endl;
     return 1;
 }

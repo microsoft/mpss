@@ -2,8 +2,8 @@
 // Licensed under the MIT license.
 
 #include "mpss/utils/utilities.h"
-#include "android_utils.h"
-#include "JNIObject.h"
+#include "mpss/implementations/android/JNIObject.h"
+#include "mpss/implementations/android/android_utils.h"
 
 namespace mpss::impl::utils {
     using jni_class = JNIObj<jclass>;
@@ -84,8 +84,7 @@ namespace mpss::impl::utils {
             return "Could not find KeyManagement.GetError method";
         }
 
-        jni_string error(
-            env, reinterpret_cast<jstring>(env->CallStaticObjectMethod(km.get(), mid)));
+        jni_string error(env, reinterpret_cast<jstring>(env->CallStaticObjectMethod(km.get(), mid)));
         if (error.is_null()) {
             return "Could not get error string";
         }

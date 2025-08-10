@@ -7,7 +7,7 @@
 
 #ifdef _MSC_VER
 
-#ifdef MPSS_BUILD_MPSS_OPENSSL_SHARED
+#ifdef MPSS_OPENSSL_IS_SHARED
 
 #if defined(MPSS_OPENSSL_EXPORTS)
 #define MPSS_OPENSSL_DECOR __declspec(dllexport)
@@ -17,17 +17,16 @@
 
 #define MPSS_OPENSSL_CALL __cdecl
 
-#else // MPSS_BUILD_MPSS_OPENSSL_SHARED
+#else // MPSS_OPENSSL_IS_SHARED
 
 #define MPSS_OPENSSL_DECOR
 #define MPSS_OPENSSL_CALL
 
-#endif // MPSS_BUILD_MPSS_OPENSSL_SHARED
+#endif // MPSS_OPENSSL_IS_SHARED
 
 #else // _MSC_VER
 
 #define MPSS_OPENSSL_DECOR
-
 #define MPSS_OPENSSL_CALL
 
 #endif // _MSC_VER

@@ -3,15 +3,22 @@
   "version": "0.1.0",
   "description": "A C++ library for multi-platform secret storage.",
   "license": "MIT",
-  "dependencies": [ "ms-gsl" ],
+  "dependencies": [
+    "ms-gsl"
+  ],
   "features": {
     "openssl": {
       "description": "Build the OpenSSL provider.",
-      "dependencies": [ "openssl" ]
+      "dependencies": [
+        "openssl"
+      ]
     },
     "tests": {
       "description": "Build the test suite.",
-      "dependencies": [ "gtest" ]
+      "dependencies": [
+        "gtest"
+      ]
     }
-  }
+  },
+  "builtin-baseline": "f2e1c41da38c71be74ef48684666991929b45418"
 }

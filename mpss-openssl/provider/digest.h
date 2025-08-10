@@ -3,12 +3,11 @@
 
 #pragma once
 
-#include <cstddef>
+#include "mpss-openssl/utils/names.h"
 #include <openssl/core.h>
 #include <openssl/evp.h>
 #include <openssl/types.h>
-#include <string>
-#include "mpss-openssl/utils/utils.h"
+#include <cstddef>
 
 namespace mpss_openssl::provider {
     enum class digest_state { uninitialized, digesting, finalized, error };
@@ -21,7 +20,7 @@ namespace mpss_openssl::provider {
         EVP_MD_CTX *evp_dctx = nullptr;
 
         // This is only meaningful if state == digest_state::finalized.
-        mpss_openssl::utils::common_byte_vector digest = {};
+        mpss_openssl::utils::byte_vector digest = {};
 
         mpss_digest_ctx() = default;
 

@@ -1,8 +1,10 @@
 // Copyright(c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+#include "mpss/algorithm.h"
 #include "mpss/utils/utilities.h"
 #include <iomanip>
+#include <random>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -30,28 +32,40 @@ namespace mpss::utils {
         last_error = std::move(error);
     }
 
-    std::size_t get_max_signature_length(Algorithm algorithm)
+    std::size_t get_max_signature_size(Algorithm algorithm)
     {
         AlgorithmInfo info = get_algorithm_info(algorithm);
         if (0 == info.key_bits) {
             return 0;
         }
 
-        // The maximum signature length is the size of the signature
-        // plus the maximum size of the ASN.1 DER encoding.
-        //
-        // ASN.1 DER encoded signatures contain:
-        // 1 byte to declare a sequence
-        // 2 bytes for the length of the sequence (can be 1 or 2 bytes, depending on the length)
-        // 1 byte to declare the first integer
-        // 1 byte for the length of the first integer
-        // 1 byte to declare the second integer
-        // 1 byte for the length of the second integer
-        // 1 additional byte if the highest order bit of the first byte of 'r' is 1
-        // 1 additional byte if the highest order bit of the first byte of 's' is 1
-        //
-        // So in total, we have a maximum overhead of 9 bytes.
-        std::size_t max_sig_size = ((info.key_bits + 7) / 8) * 2 + 9;
+        std::size_t max_sig_size = 0;
+
+        switch (algorithm) {
+        case Algorithm::ecdsa_secp256r1_sha256:
+        case Algorithm::ecdsa_secp384r1_sha384:
+        case Algorithm::ecdsa_secp521r1_sha512:
+            // The maximum signature length is the size of the signature
+            // plus the maximum size of the ASN.1 DER encoding.
+            //
+            // ASN.1 DER encoded ECDSA signatures contain:
+            // 1 byte to declare a sequence
+            // 2 bytes for the length of the sequence (can be 1 or 2 bytes, depending on the length)
+            // 1 byte to declare the first integer
+            // 1 byte for the length of the first integer
+            // 1 byte to declare the second integer
+            // 1 byte for the length of the second integer
+            // 1 additional byte if the highest order bit of the first byte of 'r' is 1
+            // 1 additional byte if the highest order bit of the first byte of 's' is 1
+            //
+            // So in total, we have a maximum overhead of 9 bytes.
+            max_sig_size = ((info.key_bits + 7) / 8) * 2 + 9;
+            break;
+        case Algorithm::unsupported:
+            max_sig_size = 0;
+            break;
+        }
+
         return max_sig_size;
     }
 
@@ -62,9 +76,21 @@ namespace mpss::utils {
             return 0;
         }
 
-        // The public key size is the size of the X and Y coordinates
-        // plus the compression indicator.
-        std::size_t pk_size = ((info.key_bits + 7) / 8) * 2 + 1;
+        std::size_t pk_size = 0;
+
+        switch (algorithm) {
+        case Algorithm::ecdsa_secp256r1_sha256:
+        case Algorithm::ecdsa_secp384r1_sha384:
+        case Algorithm::ecdsa_secp521r1_sha512:
+            // The public key size is the size of the X and Y coordinates
+            // plus the compression indicator.
+            pk_size = ((info.key_bits + 7) / 8) * 2 + 1;
+            break;
+        case Algorithm::unsupported:
+            pk_size = 0;
+            break;
+        }
+
         return pk_size;
     }
 
@@ -82,14 +108,14 @@ namespace mpss::utils {
         return result;
     }
 
-    bool check_hash_length(gsl::span<const std::byte> hash, Algorithm algorithm) noexcept
+    bool check_hash_size(gsl::span<const std::byte> hash, Algorithm algorithm) noexcept
     {
         AlgorithmInfo info = get_algorithm_info(algorithm);
         if (0 == info.key_bits) {
             return false;
         }
-        // The hash length is the size of the hash in bits divided by 8.
 
+        // The hash length is the size of the hash in bits divided by 8.
         std::size_t hash_length = ((info.hash_bits + 7) / 8);
         std::size_t hash_size = hash.size();
         return hash_size == hash_length;
