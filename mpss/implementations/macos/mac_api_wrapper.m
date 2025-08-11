@@ -19,11 +19,11 @@ void SetThreadLocalError(NSString *error) {
     [[NSThread currentThread].threadDictionary setObject:error forKey:@"MyThreadLocalError"];
 }
 
-NSString* GetThreadLocalError() {
+NSString *GetThreadLocalError() {
     return [[NSThread currentThread].threadDictionary objectForKey:@"MyThreadLocalError"];
 }
 
-NSString *GetKeyLabel(const char* keyName)
+NSString *GetKeyLabel(const char *keyName)
 {
     NSString *keyLabel = [[NSString alloc] initWithUTF8String:keyName];
     NSString *keyNameWithPrefix = [NSString stringWithFormat:@"com.microsoft.mpss.%@", keyLabel];
@@ -43,7 +43,7 @@ void StoreKey(NSString *keyLabel, SecKeyRef keyRef)
     }
 }
 
-SecKeyRef GetKey(NSString* keyLabel)
+SecKeyRef GetKey(NSString *keyLabel)
 {
     InitializeKeyStore();
 
@@ -115,7 +115,7 @@ void MPSS_RemoveKey(const char *keyName)
     }
 }
 
-bool MPSS_OpenExistingKey(const char* keyName, int* bitSize)
+bool MPSS_OpenExistingKey(const char *keyName, int *bitSize)
 {
     if (keyName == NULL || bitSize == NULL) {
         return false;
@@ -165,7 +165,7 @@ bool MPSS_CreateKey(const char *keyName, int bitSize)
     @autoreleasepool {
         int existingBitSize = 0;
         if (MPSS_OpenExistingKey(keyName, &existingBitSize)) {
-            NSString* error = [NSString stringWithFormat:@"Key %s already exists.", keyName];
+            NSString *error = [NSString stringWithFormat:@"Key %s already exists.", keyName];
             NSLog(@"%@", error);
             SetThreadLocalError(error);
             return false;
@@ -176,7 +176,7 @@ bool MPSS_CreateKey(const char *keyName, int bitSize)
         int keyBitSize = GetKeyBitSize(bitSize);
         NSLog(@"Key bit size: %d", keyBitSize);
         if (keyBitSize == -1) {
-            NSString* error = [NSString stringWithFormat:@"Unsupported bit size: %d", bitSize];
+            NSString *error = [NSString stringWithFormat:@"Unsupported bit size: %d", bitSize];
             SetThreadLocalError(error);
             return false;
         }
@@ -204,7 +204,7 @@ bool MPSS_CreateKey(const char *keyName, int bitSize)
 
         if (keyRef == NULL) {
             NSError *err = CFBridgingRelease(error);
-            NSString* error = [NSString stringWithFormat:@"Failed to generate key: %@", err];
+            NSString *error = [NSString stringWithFormat:@"Failed to generate key: %@", err];
             SetThreadLocalError(error);
             return false;
         } else {
@@ -216,7 +216,8 @@ bool MPSS_CreateKey(const char *keyName, int bitSize)
     }
 }
 
-bool MPSS_SignHash(const char *keyName, int signatureType, const uint8_t *hash, size_t hashSize, uint8_t* signature, size_t* signatureSize)
+bool MPSS_SignHash(const char *keyName, int signatureType, const uint8_t *hash, size_t hashSize,
+        uint8_t *signature, size_t *signatureSize)
 {
     if (keyName == NULL || hash == NULL || signature == NULL || signatureSize == NULL) {
         return false;
@@ -235,7 +236,7 @@ bool MPSS_SignHash(const char *keyName, int signatureType, const uint8_t *hash, 
 
         SecKeyAlgorithm algorithm = GetAlgorithm(signatureType);
         if (algorithm == NULL) {
-            NSString* error = [NSString stringWithFormat:@"Unsupported signature type: %d", signatureType];
+            NSString *error = [NSString stringWithFormat:@"Unsupported signature type: %d", signatureType];
             SetThreadLocalError(error);
             return false;
         }
@@ -245,14 +246,14 @@ bool MPSS_SignHash(const char *keyName, int signatureType, const uint8_t *hash, 
 
         if (signatureData == NULL) {
             NSError *err = CFBridgingRelease(error);
-            NSString* error = [NSString stringWithFormat:@"Failed to sign hash: %@", err];
+            NSString *error = [NSString stringWithFormat:@"Failed to sign hash: %@", err];
             SetThreadLocalError(error);
             return false;
         }
 
         size_t signatureDataSize = CFDataGetLength(signatureData);
         if (*signatureSize < signatureDataSize) {
-            NSString* error = [NSString stringWithFormat:@"Insufficient buffer provided. Buffer size: %lu, signature size: %lu", *signatureSize, signatureDataSize];
+            NSString *error = [NSString stringWithFormat:@"Insufficient buffer provided. Buffer size: %lu, signature size: %lu", *signatureSize, signatureDataSize];
             SetThreadLocalError(error);
             return false;
         }
@@ -270,7 +271,8 @@ bool MPSS_SignHash(const char *keyName, int signatureType, const uint8_t *hash, 
     }
 }
 
-bool MPSS_VerifySignature(const char *keyName, int signatureType, const uint8_t *hash, size_t hashSize, const uint8_t *signature, size_t signatureSize)
+bool MPSS_VerifySignature(const char *keyName, int signatureType, const uint8_t *hash, size_t hashSize,
+        const uint8_t *signature, size_t signatureSize)
 {
     if (keyName == NULL || hash == NULL || signature == NULL) {
         return false;
@@ -281,7 +283,7 @@ bool MPSS_VerifySignature(const char *keyName, int signatureType, const uint8_t 
         SecKeyRef keyRef = GetKey(keyLabel);
 
         if (keyRef == NULL) {
-            NSString* error = @"Key not found";
+            NSString *error = @"Key not found";
             SetThreadLocalError(error);
             return false;
         }
@@ -291,14 +293,14 @@ bool MPSS_VerifySignature(const char *keyName, int signatureType, const uint8_t 
 
         SecKeyAlgorithm algorithm = GetAlgorithm(signatureType);
         if (algorithm == NULL) {
-            NSString* error = [NSString stringWithFormat:@"Unsupported signature type: %d", signatureType];
+            NSString *error = [NSString stringWithFormat:@"Unsupported signature type: %d", signatureType];
             SetThreadLocalError(error);
             return false;
         }
 
         SecKeyRef publicKeyRef = SecKeyCopyPublicKey(keyRef);
         if (!publicKeyRef) {
-            NSString* error = @"Could not copy public key";
+            NSString *error = @"Could not copy public key";
             SetThreadLocalError(error);
             return false;
         }
@@ -316,7 +318,7 @@ bool MPSS_VerifySignature(const char *keyName, int signatureType, const uint8_t 
 
         if (!result) {
             NSError *err = CFBridgingRelease(error);
-            NSString* error = [NSString stringWithFormat:@"Failed to verify signature: %@", err];
+            NSString *error = [NSString stringWithFormat:@"Failed to verify signature: %@", err];
             SetThreadLocalError(error);
             return false;
         }
@@ -325,7 +327,8 @@ bool MPSS_VerifySignature(const char *keyName, int signatureType, const uint8_t 
     }
 }
 
-bool MPSS_VerifyStandaloneSignature(int signatureType, const uint8_t *hash, size_t hashSize, const uint8_t *publicKey, size_t publicKeySize, const uint8_t *signature, size_t signatureSize)
+bool MPSS_VerifyStandaloneSignature(int signatureType, const uint8_t *hash, size_t hashSize,
+        const uint8_t *publicKey, size_t publicKeySize, const uint8_t *signature, size_t signatureSize)
 {
     if (hash == NULL || publicKey == NULL || signature == NULL) {
         SetThreadLocalError(@"Invalid parameters (hash, publicKey, or signature is NULL)");
@@ -340,7 +343,7 @@ bool MPSS_VerifyStandaloneSignature(int signatureType, const uint8_t *hash, size
         SecKeyAlgorithm algorithm = GetAlgorithm(signatureType);
         NSLog(@"Algorithm: %@", algorithm);
         if (algorithm == NULL) {
-            NSString* error = [NSString stringWithFormat:@"Unsupported signature type: %d", signatureType];
+            NSString *error = [NSString stringWithFormat:@"Unsupported signature type: %d", signatureType];
             SetThreadLocalError(error);
             return false;
         }
@@ -349,7 +352,7 @@ bool MPSS_VerifyStandaloneSignature(int signatureType, const uint8_t *hash, size
         NSLog(@"Key bit size: %d", keyBitSize);
 
         if (keyBitSize == -1) {
-            NSString* error = [NSString stringWithFormat:@"Unsupported signature type: %d", signatureType];
+            NSString *error = [NSString stringWithFormat:@"Unsupported signature type: %d", signatureType];
             SetThreadLocalError(error);
             return false;
         }
@@ -371,7 +374,7 @@ bool MPSS_VerifyStandaloneSignature(int signatureType, const uint8_t *hash, size
 
         if (!publicKeyRef) {
             NSError *err = CFBridgingRelease(error);
-            NSString* error = [NSString stringWithFormat:@"Failed to create public key from data: %@", err];
+            NSString *error = [NSString stringWithFormat:@"Failed to create public key from data: %@", err];
             SetThreadLocalError(error);
             return false;
         }
@@ -389,7 +392,7 @@ bool MPSS_VerifyStandaloneSignature(int signatureType, const uint8_t *hash, size
 
         if (!result) {
             NSError *err = CFBridgingRelease(error);
-            NSString* error = [NSString stringWithFormat:@"Failed to verify standalone signature: %@", err];
+            NSString *error = [NSString stringWithFormat:@"Failed to verify standalone signature: %@", err];
             SetThreadLocalError(error);
             return false;
         }
@@ -409,7 +412,7 @@ bool MPSS_GetPublicKey(const char *keyName, uint8_t *pk, size_t *pkSize)
         SecKeyRef keyRef = GetKey(keyLabel);
 
         if (keyRef == NULL) {
-            NSString* error = @"Key not found";
+            NSString *error = @"Key not found";
             SetThreadLocalError(error);
             return false;
         }
@@ -485,10 +488,10 @@ bool MPSS_DeleteKey(const char *keyName)
     }
 }
 
-const char* MPSS_GetLastError()
+const char *MPSS_GetLastError()
 {
     @autoreleasepool {
-        NSString* error = GetThreadLocalError();
+        NSString *error = GetThreadLocalError();
         if (error) {
             return [error UTF8String];
         }

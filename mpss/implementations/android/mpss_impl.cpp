@@ -82,7 +82,6 @@ namespace {
 namespace mpss::impl {
     std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm)
     {
-        // Simple checks
         if (name.empty()) {
             mpss::utils::set_error("Key name cannot be empty");
             return {};
@@ -185,7 +184,6 @@ namespace mpss::impl {
 
     std::unique_ptr<KeyPair> open_key(std::string_view name)
     {
-        // Simple checks
         if (name.empty()) {
             mpss::utils::set_error("Key name cannot be empty");
             return {};

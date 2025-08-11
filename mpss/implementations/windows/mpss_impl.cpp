@@ -266,7 +266,13 @@ namespace {
 namespace mpss::impl {
     std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm)
     {
-        // Fail if the key already exists.
+        if (name.empty()) {
+            mpss::utils::set_error("Key name cannot be empty.");
+            return {};
+        }
+
+        // Fail if the key already exists or is already open.
+        // Important: open_key returns nullptr if name is empty.
         std::unique_ptr<KeyPair> existing = open_key(name);
         if (existing) {
             std::stringstream ss;
@@ -303,6 +309,11 @@ namespace mpss::impl {
 
     std::unique_ptr<KeyPair> open_key(std::string_view name)
     {
+        if (name.empty()) {
+            mpss::utils::set_error("Key name cannot be empty.");
+            return {};
+        }
+
         Algorithm algorithm;
 
         const char *storage_description = nullptr;
