@@ -12,11 +12,11 @@ namespace mpss {
     /**
      * @brief The supported signature algorithms.
      */
-    enum class MPSS_DECOR Algorithm {
-        unsupported,
-        ecdsa_secp256r1_sha256,
-        ecdsa_secp384r1_sha384,
-        ecdsa_secp521r1_sha512
+    enum class MPSS_DECOR Algorithm : int {
+        unsupported = 0,
+        ecdsa_secp256r1_sha256 = 1,
+        ecdsa_secp384r1_sha384 = 2,
+        ecdsa_secp521r1_sha512 = 3
     };
 
     /**

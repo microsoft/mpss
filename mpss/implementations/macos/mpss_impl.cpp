@@ -20,10 +20,12 @@ namespace mpss {
                 return {};
             }
 
-            // Fail if the key already exists
+            // Fail if the key already exists or is already open.
             std::unique_ptr<KeyPair> existing_key = open_key(name);
             if (existing_key) {
-                mpss::utils::set_error("Key already exists.");
+                std::stringstream ss;
+                ss << "Key already exists: " << name;
+                mpss::utils::set_error(ss.str());
                 return {};
             }
 
@@ -59,11 +61,11 @@ namespace mpss {
 
             // Try secure enclave first if available
             if (MPSS_SE_SecureEnclaveIsSupported() && MPSS_SE_OpenExistingKey(key_name.c_str())) {
-                return std::make_unique<MacSEKeyPair>(name, Algorithm::ecdsa_secp256r1_sha256);
+                return std::make_unique<MacSEKeyPair>(key_name, Algorithm::ecdsa_secp256r1_sha256);
             }
 
             int bitSize = 0;
-            if (MPSS_OpenExistingKey(name.data(), &bitSize)) {
+            if (MPSS_OpenExistingKey(key_name.c_str(), &bitSize)) {
                 Algorithm algorithm = Algorithm::unsupported;
                 switch (bitSize) {
                 case 256:
@@ -80,7 +82,7 @@ namespace mpss {
                     throw std::runtime_error(msg);
                 }
 
-                return std::make_unique<MacKeyPair>(name, algorithm);
+                return std::make_unique<MacKeyPair>(key_name, algorithm);
             }
 
             return {};
