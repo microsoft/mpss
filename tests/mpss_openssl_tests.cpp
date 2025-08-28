@@ -164,8 +164,11 @@ namespace mpss_openssl::tests {
     TEST_P(CreateAndDeleteKeyTest, CreateAndDeleteKey)
     {
         const char *mpss_algorithm = GetParam();
-        const char *key_name = "test_create_delete_key";
-        bool _ = mpss_delete_key(key_name);
+        std::string key_name = "test_create_delete_key_";
+        key_name.append(mpss_algorithm);
+
+        // Delete existing key.
+        bool _ = mpss_delete_key(key_name.c_str());
 
         OSSL_LIB_CTX *mpss_libctx = OSSL_LIB_CTX_new();
         ASSERT_NE(nullptr, mpss_libctx);
@@ -177,7 +180,7 @@ namespace mpss_openssl::tests {
         ASSERT_NE(nullptr, ctx);
         ASSERT_EQ(1, EVP_PKEY_keygen_init(ctx));
         OSSL_PARAM params[] = {
-            OSSL_PARAM_construct_utf8_string("key_name", const_cast<char *>(key_name), 0),
+            OSSL_PARAM_construct_utf8_string("key_name", const_cast<char *>(key_name.c_str()), 0),
             OSSL_PARAM_construct_utf8_string("mpss_algorithm", const_cast<char *>(mpss_algorithm), 0),
             OSSL_PARAM_END};
         ASSERT_EQ(1, EVP_PKEY_CTX_set_params(ctx, params));
@@ -187,7 +190,7 @@ namespace mpss_openssl::tests {
         EVP_PKEY_free(pkey);
 
         // Now delete the key using the API.
-        ASSERT_EQ(1, mpss_delete_key(key_name));
+        ASSERT_EQ(1, mpss_delete_key(key_name.c_str()));
         ASSERT_NE(0, OSSL_PROVIDER_unload(mpss_prov));
         OSSL_LIB_CTX_free(mpss_libctx);
     }
