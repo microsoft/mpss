@@ -17,8 +17,8 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin" OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
     message(STATUS "Building for ${CMAKE_SYSTEM_NAME}")
     add_subdirectory(macos)
 
-    # Update mpss_swift_SOURCE_FILES variable in the parent scope.
-    set(mpss_swift_SOURCE_FILES ${mpss_swift_SOURCE_FILES} PARENT_SCOPE)
+    # Update mpss_SWIFT_SOURCE_FILES variable in the parent scope.
+    set(mpss_SWIFT_SOURCE_FILES ${mpss_SWIFT_SOURCE_FILES} PARENT_SCOPE)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Android")
     message(STATUS "Building for Android")
     add_subdirectory(android)

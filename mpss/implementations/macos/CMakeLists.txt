@@ -16,11 +16,11 @@ set(mpss_SOURCE_FILES ${mpss_SOURCE_FILES}
 )
 
 # Add Swift source files from this directory
-set(mpss_swift_SOURCE_FILES ${mpss_swift_SOURCE_FILES}
+set(mpss_SWIFT_SOURCE_FILES ${mpss_SWIFT_SOURCE_FILES}
     ${CMAKE_CURRENT_LIST_DIR}/mac_se_wrapper.swift)
 
 # Update mpss_SOURCE_FILES variable in the parent scope.
 set(mpss_SOURCE_FILES ${mpss_SOURCE_FILES} PARENT_SCOPE)
 
-# U[pdate mpss_swift_SOURCE_FILES variable in the parent scope.
-set(mpss_swift_SOURCE_FILES ${mpss_swift_SOURCE_FILES} PARENT_SCOPE)
+# Update mpss_SWIFT_SOURCE_FILES variable in the parent scope.
+set(mpss_SWIFT_SOURCE_FILES ${mpss_SWIFT_SOURCE_FILES} PARENT_SCOPE)

@@ -50,7 +50,7 @@ endif()
 # Where to look for our helper modules.
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_LIST_DIR}/cmake)
 
-project(mpss VERSION 0.1.1 LANGUAGES C CXX Swift OBJC)
+project(mpss VERSION 0.1.1 LANGUAGES C CXX)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
     enable_language(OBJC)
@@ -98,7 +98,7 @@ endif()
 
 # List of all source files.
 set(mpss_SOURCE_FILES "")
-set(mpss_swift_SOURCE_FILES "")
+set(mpss_SWIFT_SOURCE_FILES "")
 set(mpss_jar_SOURCE_FILES "")
 
 if(MPSS_BUILD_MPSS_CORE_STATIC OR MPSS_BUILD_MPSS_CORE_SHARED)
@@ -145,7 +145,7 @@ if(MPSS_BUILD_MPSS_CORE_STATIC OR MPSS_BUILD_MPSS_CORE_SHARED)
 
     # On macOS and iOS we need to build the Swift functions as well.
     if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
-        target_sources(${mpss_TARGET} PRIVATE ${mpss_swift_SOURCE_FILES})
+        target_sources(${mpss_TARGET} PRIVATE ${mpss_SWIFT_SOURCE_FILES})
     endif()
 endif()
 
