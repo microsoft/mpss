@@ -57,7 +57,7 @@ private func storeKeyInDict(keyName: String, key: SecureEnclave.P256.Signing.Pri
     }
 }
 
-/// Get a private ke3y from the in-memory dictionary.
+/// Get a private key from the in-memory dictionary.
 /// - Parameters:
 ///      - keyName: Name of the key to retrieve
 /// - Returns: Private key if found, nil otherwise

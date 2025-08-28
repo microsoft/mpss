@@ -37,33 +37,92 @@ cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcp
 ```
 
 ### iOS
-Generating an Xcode project is recommended for iOS. After generating the project, it can simply be added to a different Xcode project as a Framework. Another benefit of generating an Xcode project is that you don't have to worry about targeting either the iPhone Simulator or a real iPhone. Xcode will take care of this.
-The command to generate an Xcode project is the following:
 
+To build mpss for iOS and iOS simulator (arm64 in this example), take the following steps:
 ```bash
-cmake -S . -B build -GXcode -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_DEPLOYMENT_TARGET=$IPHONE_SDK_VERSION -DCMAKE_XCODE_ATTRIBUTE_ONLY_ACTIVE_ARCH=NO -DCMAKE_IOS_INSTALL_COMBINED=YES
+# Configure for separate build directories.
+cmake -S . -B build-ios-device -GXcode                                      \
+    -DCMAKE_SYSTEM_NAME=iOS                                                 \
+    -DCMAKE_OSX_SYSROOT=iphoneos                                            \
+    -DCMAKE_OSX_ARCHITECTURES=arm64                                         \
+    -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"   \
+    -DMPSS_BUILD_MPSS_CORE_STATIC=ON                                        \
+    -DMPSS_BUILD_MPSS_OPENSSL_STATIC=ON # only if building also mpss-openssl
+cmake -S . -B build-ios-simulator -GXcode                                   \
+    -DCMAKE_SYSTEM_NAME=iOS                                                 \
+    -DCMAKE_OSX_SYSROOT=iphonesimulator                                     \
+    -DCMAKE_OSX_ARCHITECTURES=arm64                                         \
+    -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"   \
+    -DMPSS_BUILD_MPSS_CORE_STATIC=ON                                        \
+    -DMPSS_BUILD_MPSS_OPENSSL_STATIC=ON # only if building also mpss-openssl
+
+# Build and install to local directories.
+cmake --build build-ios-device --config Release -j
+cmake --build build-ios-simulator --config Release -j
+cmake --install build-ios-device --config Release --prefix install-ios-device
+cmake --install build-ios-simulator --config Release --prefix install-ios-simulator
+
+# We need some temporary directory structure to create xcframeworks
+mkdir -p xcf/include/mpss/{device,simulator}
+rsync -a install-ios-device/include/mpss-0.2/mpss xcf/include/mpss/device/mpss
+rsync -a install-ios-simulator/include/mpss-0.2/mpss xcf/include/mpss/simulator/mpss
+rsync -a build-ios-device/vcpkg_installed/arm64-ios/include/gsl xcf/include/mpss/device
+rsync -a build-ios-simulator/vcpkg_installed/arm64-ios/include/gsl xcf/include/mpss/simulator
+
+# Only if building also mpss-openssl.
+mkdir -p xcf/include/mpss-openssl/{device,simulator}
+rsync -a install-ios-device/include/mpss-0.2/mpss-openssl xcf/include/mpss-openssl/device/mpss-openssl
+rsync -a install-ios-simulator/include/mpss-0.2/mpss-openssl xcf/include/mpss-openssl/simulator/mpss-openssl
+rsync -a build-ios-device/vcpkg_installed/arm64-ios/include/openssl xcf/include/mpss-openssl/device
+rsync -a build-ios-simulator/vcpkg_installed/arm64-ios/include/openssl xcf/include/mpss-openssl/simulator
+
+# Create an XCFramework for mpss.
+xcodebuild -create-xcframework                                      \
+    -library install-ios-device/lib/mpss-0.2/libmpss_static.a       \
+    -headers xcf/include/mpss/device                                \
+    -library install-ios-simulator/lib/mpss-0.2/libmpss_static.a    \
+    -headers xcf/include/mpss/simulator                             \
+    -output libmpss-0.2.xcframework
+
+# Only if building also mpss-openssl.
+xcodebuild -create-xcframework                                          \
+    -library install-device/lib/mpss-0.2/libmpss_openssl_static.a       \
+    -headers xcf/include/mpss-openssl/device                            \
+    -library install-simulator/lib/mpss-0.2/libmpss_openssl_static.a    \
+    -headers xcf/include/mpss-openssl/simulator                         \
+    -output libmpss_openssl-0.2.xcframework
 ```
-
-In order to find out what iPhone SDKs are installed, you can run the following command:
-
-```bash
-xcodebuild -showsdks
-```
-
-This will show all installed SDKs. If the SDK appears as `iOS 18.4`, for example, you would need to specify `-DCMAKE_OSX_DEPLOYMENT_TARGET=18.4`.
-
+One you have the XCFramework(s), you can simply include them in your Xcode project as Framework dependencies.
+You will naturally still need to build OpenSSL itself for iOS to be able to load and use the OpenSSL provider.
 
 ### Android
-Generate Ninja build files for cross compiling to the x64 Android simulator. The vcpkg toolchain file is specified to satisfy build dependencies of MPSS.
+Generate Ninja build files for cross-compiling to the x64 Android simulator.
+The vcpkg toolchain file is specified to satisfy build dependencies of MPSS.
 
 ```cmd
-cmake -S . -B buildX64 -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-android -DCMAKE_SYSTEM_NAME=Android -DCMAKE_SYSTEM_VERSION=%ANDROID_API_VERSION% -DCMAKE_ANDROID_ARCH_ABI=x86_64 -GNinja -DCMAKE_MAKE_PROGRAM=%NINJA_ROOT%\ninja.exe -DCMAKE_ANDROID_NDK=%ANDROID_NDK_HOME%
+cmake -S . -B buildX64                                                      ^
+  -GNinja                                                                   ^
+  -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake"    ^
+  -DVCPKG_TARGET_TRIPLET=x64-android                                        ^
+  -DCMAKE_SYSTEM_NAME=Android                                               ^
+  -DCMAKE_SYSTEM_VERSION=%ANDROID_API_VERSION%                              ^
+  -DCMAKE_ANDROID_ARCH_ABI=x86_64                                           ^
+  -DCMAKE_MAKE_PROGRAM="%NINJA_ROOT%\ninja.exe"                             ^
+  -DCMAKE_ANDROID_NDK="%ANDROID_NDK_HOME%"
 ```
 
-Generate Ninja build files for cross compiling to Arm64.
+Generate Ninja build files for cross-compiling to arm64.
 
 ```cmd
-cmake -S . -B buildArm -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=arm64-android -DCMAKE_SYSTEM_NAME=Android -DCMAKE_SYSTEM_VERSION=%ANDROID_API_VERSION% -DCMAKE_ANDROID_ARCH_ABI=arm64-v8a -GNinja -DCMAKE_MAKE_PROGRAM=%NINJA_ROOT%\ninja.exe -DCMAKE_ANDROID_NDK=%ANDROID_NDK_HOME%
+cmake -S . -B buildArm                                                      ^
+  -GNinja                                                                   ^
+  -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake"    ^
+  -DVCPKG_TARGET_TRIPLET=arm64-android                                      ^
+  -DCMAKE_SYSTEM_NAME=Android                                               ^
+  -DCMAKE_SYSTEM_VERSION=%ANDROID_API_VERSION%                              ^
+  -DCMAKE_ANDROID_ARCH_ABI=arm64-v8a                                        ^
+  -DCMAKE_MAKE_PROGRAM="%NINJA_ROOT%\ninja.exe"                             ^
+  -DCMAKE_ANDROID_NDK="%ANDROID_NDK_HOME%"
 ```
 
 **Note**: You will need to also set the following environment variables:
@@ -356,6 +415,9 @@ To build the OpenSSL provider, configure the CMake project with one of:
 
 - `MPSS_BUILD_MPSS_OPENSSL_STATIC=ON` for a static library build
 - `MPSS_BUILD_MPSS_OPENSSL_SHARED=ON` for a shared library build
+
+Building for iOS requires extra care.
+For instructions, see [the example above](README#iOS).
 
 ### Examples and Testing
 
