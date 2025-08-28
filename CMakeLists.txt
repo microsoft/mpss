@@ -10,6 +10,12 @@ option(MPSS_BUILD_MPSS_OPENSSL_STATIC "Build the OpenSSL provider static library
 option(MPSS_BUILD_MPSS_OPENSSL_SHARED "Build the mpss OpenSSL provider shared library." NO)
 option(MPSS_BUILD_TESTS "Build the test suite." NO)
 
+# If BUILD_SHARED_LIBS is set, build only shared libraries.
+if(BUILD_SHARED_LIBS)
+    set(MPSS_BUILD_MPSS_CORE_SHARED ON)
+    set(MPSS_BUILD_MPSS_OPENSSL_SHARED ON)
+endif()
+
 # Validate mutual exclusivity
 if(MPSS_BUILD_MPSS_CORE_STATIC AND MPSS_BUILD_MPSS_CORE_SHARED)
     message(FATAL_ERROR
@@ -31,7 +37,7 @@ if(NOT MPSS_BUILD_MPSS_CORE_STATIC
     message(FATAL_ERROR "No library to build.")
 endif()
 
-# Enable tests feature in vcpkg if MPSS_BUILD_TESTS is YES.
+
 if(MPSS_BUILD_TESTS)
     list(APPEND VCPKG_MANIFEST_FEATURES "tests")
 endif()
@@ -41,9 +47,13 @@ if(MPSS_BUILD_MPSS_OPENSSL_STATIC OR MPSS_BUILD_MPSS_OPENSSL_SHARED)
     list(APPEND VCPKG_MANIFEST_FEATURES "openssl")
 endif()
 
-project(mpss VERSION 0.1.0 LANGUAGES C CXX)
+# Where to look for our helper modules.
+list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_LIST_DIR}/cmake)
+
+project(mpss VERSION 0.1.1 LANGUAGES C CXX Swift OBJC)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    enable_language(OBJC)
     enable_language(Swift)
 endif()
 
@@ -104,22 +114,15 @@ endif()
 # Create config.h from config.h.in.
 configure_file(${mpss_CONFIG_H_IN_FILENAME} ${mpss_CONFIG_H_FILENAME})
 
-# Set up either static or shared libraries, depending primarily on the variables
-# MPSS_BUILD_MPSS_CORE_SHARED and MPSS_BUILD_MPSS_OPENSSL_SHARED. Secondarily,
-# the library type is set based on BUILD_SHARED_LIBS.
 if(MPSS_BUILD_MPSS_CORE_SHARED)
     set(mpss_LIBRARY_TYPE SHARED)
-elseif(BUILD_SHARED_LIBS)
-    set(mpss_LIBRARY_TYPE SHARED)
-else()
+elseif(MPSS_BUILD_MPSS_CORE_STATIC)
     set(mpss_LIBRARY_TYPE STATIC)
 endif()
 
 if(MPSS_BUILD_MPSS_OPENSSL_SHARED)
     set(mpss_openssl_LIBRARY_TYPE SHARED)
-elseif(BUILD_SHARED_LIBS)
-    set(mpss_openssl_LIBRARY_TYPE SHARED)
-else()
+elseif(MPSS_BUILD_MPSS_OPENSSL_STATIC)
     set(mpss_openssl_LIBRARY_TYPE STATIC)
 endif()
 
@@ -128,11 +131,6 @@ if(MPSS_BUILD_MPSS_CORE_STATIC OR MPSS_BUILD_MPSS_CORE_SHARED)
         message(STATUS "[mpss] Building static library")
         set(mpss_TARGET mpss_static)
         add_library(${mpss_TARGET} ${mpss_LIBRARY_TYPE} ${mpss_SOURCE_FILES})
-
-        if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
-            # Add Swift library
-            add_library(mpss_swift STATIC ${mpss_swift_SOURCE_FILES})
-        endif()
     elseif(mpss_LIBRARY_TYPE STREQUAL "SHARED")
         message(STATUS "[mpss] Building shared library")
 
@@ -143,6 +141,11 @@ if(MPSS_BUILD_MPSS_CORE_STATIC OR MPSS_BUILD_MPSS_CORE_SHARED)
         add_library(${mpss_TARGET} ${mpss_LIBRARY_TYPE} ${mpss_SOURCE_FILES})
     else()
         message(FATAL_ERROR "[mpss] Invalid value for mpss_LIBRARY_TYPE: ${mpss_LIBRARY_TYPE}")
+    endif()
+
+    # On macOS and iOS we need to build the Swift functions as well.
+    if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
+        target_sources(${mpss_TARGET} PRIVATE ${mpss_swift_SOURCE_FILES})
     endif()
 endif()
 
@@ -184,8 +187,8 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Android")
 
     # Add Jar file with Java part of the code
     add_jar(mpss_jar
-            STATIC ${mpss_jar_SOURCE_FILES}
-            OUTPUT_DIR ${CMAKE_BINARY_DIR}/lib)
+        STATIC ${mpss_jar_SOURCE_FILES}
+        OUTPUT_DIR ${CMAKE_BINARY_DIR}/lib)
 endif()
 
 if(TARGET ${mpss_TARGET})
@@ -209,10 +212,12 @@ if(TARGET ${mpss_TARGET})
         target_link_libraries(${mpss_TARGET} PRIVATE ncrypt)
         target_link_libraries(${mpss_TARGET} PRIVATE crypt32)
     elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin" OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
-        target_link_libraries(${mpss_TARGET} PRIVATE "-framework Foundation -framework Security -framework CryptoKit")
-        target_link_libraries(${mpss_TARGET} PRIVATE mpss_swift)
+        target_link_libraries(${mpss_TARGET} PRIVATE
+            "-framework Foundation"
+            "-framework Security"
+            "-framework CryptoKit")
     elseif(CMAKE_SYSTEM_NAME STREQUAL "Android")
-        message(STATUS "[mpss] Building for Android")
+        # Nothing to do.
     else()
         message(FATAL_ERROR "Unsupported platform: ${CMAKE_SYSTEM_NAME}")
     endif()
@@ -321,13 +326,6 @@ configure_package_config_file(
     INSTALL_DESTINATION ${mpss_CONFIG_INSTALL_DIR}
     PATH_VARS mpss_INCLUDES_INSTALL_DIR mpss_CONFIG_INSTALL_DIR
 )
-
-# Install our export.
-if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
-    install(TARGETS mpss_swift EXPORT mpssTargets
-        DESTINATION ${mpss_INCLUDES_INSTALL_DIR}/mpss
-    )
-endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Android")
     install_jar(mpss_jar DESTINATION lib)
