@@ -507,6 +507,7 @@ bool MPSS_DeleteKey(const char *keyName) {
     query[(id)kSecAttrKeyClass] = (__bridge id)kSecAttrKeyClassPublic;
 
     status = SecItemDelete((__bridge CFDictionaryRef)query);
+
     if (status == errSecSuccess) {
       NSLog(@"Successfully deleted public key");
     } else {

@@ -249,8 +249,14 @@ private func createKeyPriv(_ keyName: String) -> SecureEnclave.P256.Signing.Priv
         let privateKey = try SecureEnclave.P256.Signing.PrivateKey(accessControl: access)
 
         // Save it now
-        _ = storeDataInKeychain(
+        let status = storeDataInKeychain(
             data: privateKey.dataRepresentation, account: KeyChainAccountName, service: keyName)
+
+        if status != errSecSuccess {
+            setError("Error storing private key in Keychain: \(status)")
+            return nil
+        }
+
         storeKeyInDict(keyName: keyName, key: privateKey)
 
         return privateKey
