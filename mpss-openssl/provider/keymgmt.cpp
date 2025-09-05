@@ -129,20 +129,20 @@ namespace {
 
     extern "C" const OSSL_PARAM *mpss_keymgmt_export_types(int selection)
     {
-        static constexpr OSSL_PARAM no_types[] = {OSSL_PARAM_END};
+        static const OSSL_PARAM no_types[] = {OSSL_PARAM_END};
 
-        static constexpr OSSL_PARAM param_types[] = {
+        static const OSSL_PARAM param_types[] = {
             OSSL_PARAM_utf8_string(OSSL_PKEY_PARAM_GROUP_NAME, nullptr, 0), OSSL_PARAM_END};
 
-        static constexpr OSSL_PARAM key_types[] = {
+        static const OSSL_PARAM key_types[] = {
             OSSL_PARAM_octet_string(OSSL_PKEY_PARAM_PUB_KEY, nullptr, 0), OSSL_PARAM_END};
 
-        static constexpr OSSL_PARAM all_types[] = {
+        static const OSSL_PARAM all_types[] = {
             OSSL_PARAM_utf8_string(OSSL_PKEY_PARAM_GROUP_NAME, nullptr, 0),
             OSSL_PARAM_octet_string(OSSL_PKEY_PARAM_PUB_KEY, nullptr, 0),
             OSSL_PARAM_END};
 
-        static constexpr const OSSL_PARAM *types_array[] = {no_types, param_types, key_types, all_types};
+        static const const OSSL_PARAM *types_array[] = {no_types, param_types, key_types, all_types};
 
         std::size_t types_idx = 0;
         if (selection & OSSL_KEYMGMT_SELECT_ALL_PARAMETERS) {
@@ -157,7 +157,7 @@ namespace {
 
     extern "C" const OSSL_PARAM *mpss_keymgmt_gen_settable_params([[maybe_unused]] void *provctx)
     {
-        static constexpr OSSL_PARAM ret[] = {
+        static const OSSL_PARAM ret[] = {
             OSSL_PARAM_utf8_string("key_name", nullptr, 0),
             OSSL_PARAM_utf8_string("mpss_algorithm", nullptr, 0),
             OSSL_PARAM_END};
@@ -198,7 +198,7 @@ namespace {
     extern "C" const OSSL_PARAM *mpss_keymgmt_gettable_params(
         [[maybe_unused]] void *genctx, [[maybe_unused]] void *provctx)
     {
-        static constexpr OSSL_PARAM ret[] = {
+        static const OSSL_PARAM ret[] = {
             OSSL_PARAM_utf8_string("key_name", nullptr, 0),
             OSSL_PARAM_utf8_string("mpss_algorithm", nullptr, 0),
             OSSL_PARAM_int("is_hardware_backed", nullptr),

@@ -43,7 +43,7 @@ namespace {
 
     extern "C" const OSSL_PARAM *mpss_encoder_gettable_params([[maybe_unused]] void *provctx)
     {
-        static constexpr OSSL_PARAM ret[] = {
+        static const OSSL_PARAM ret[] = {
             OSSL_PARAM_utf8_string("output", nullptr, 0),
             OSSL_PARAM_utf8_string("structure", nullptr, 0),
             OSSL_PARAM_END};

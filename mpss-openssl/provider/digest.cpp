@@ -235,7 +235,7 @@ namespace {
 
     extern "C" const OSSL_PARAM *mpss_digest_gettable_params([[maybe_unused]] void *ctx)
     {
-        static constexpr OSSL_PARAM ret[] = {
+        static const OSSL_PARAM ret[] = {
             OSSL_PARAM_size_t(OSSL_DIGEST_PARAM_BLOCK_SIZE, nullptr),
             OSSL_PARAM_size_t(OSSL_DIGEST_PARAM_SIZE, nullptr),
             OSSL_PARAM_END};
