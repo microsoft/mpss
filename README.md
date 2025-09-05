@@ -275,11 +275,11 @@ auto existing_key2 = KeyPair::Open("my-key");
 existing_key1->delete_key();
 
 // Sign with deleted key
-auto sig_size = existing_key2->sign(hash, sig);
+auto sig_size = existing_key2->sign_hash(hash, sig);
 ```
 
 This code opens two instances of the same key, and deletes the first one from the operating system.
-- In Windows, the signing operation with ```existing_key2``` will succeed. The Windows instance implementation holds a handle to the opened key, which will persist until closed, even if the unerlying key representation has been deleted.
+- In Windows, the signing operation with ```existing_key2``` will succeed. The Windows instance implementation holds a handle to the opened key, which will persist until closed, even if the underlying key representation has been deleted.
 - In other platforms the operation will fail. All other platform implementations hold only a reference to an in-memory cache that does not persist they key when it is deleted.
 
 ## OpenSSL Provider (mpss-openssl)
