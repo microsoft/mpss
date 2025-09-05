@@ -263,6 +263,25 @@ if (!key_pair) {
 }
 ```
 
+### Implementation Differences
+There is a single known implementation difference which happens when opening several instances of the same key. Take the following code, for example:
+
+```cpp
+// Open an existing key pair
+auto existing_key1 = KeyPair::Open("my-key");
+auto existing_key2 = KeyPair::Open("my-key");
+
+// Delete existing key
+existing_key1->delete_key();
+
+// Sign with deleted key
+auto sig_size = existing_key2->sign(hash, sig);
+```
+
+This code opens two instances of the same key, and deletes the first one from the operating system.
+- In Windows, the signing operation with ```existing_key2``` will succeed. The Windows instance implementation holds a handle to the opened key, which will persist until closed, even if the unerlying key representation has been deleted.
+- In other platforms the operation will fail. All other platform implementations hold only a reference to an in-memory cache that does not persist they key when it is deleted.
+
 ## OpenSSL Provider (mpss-openssl)
 
 The MPSS OpenSSL provider enables seamless integration with OpenSSL 3.x applications by exposing MPSS functionality through the standard OpenSSL API. This allows existing OpenSSL-based applications to leverage hardware-backed secure key storage without code changes.
