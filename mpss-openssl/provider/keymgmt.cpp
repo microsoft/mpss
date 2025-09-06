@@ -142,7 +142,7 @@ namespace {
             OSSL_PARAM_octet_string(OSSL_PKEY_PARAM_PUB_KEY, nullptr, 0),
             OSSL_PARAM_END};
 
-        static const const OSSL_PARAM *types_array[] = {no_types, param_types, key_types, all_types};
+        static const OSSL_PARAM *types_array[] = {no_types, param_types, key_types, all_types};
 
         std::size_t types_idx = 0;
         if (selection & OSSL_KEYMGMT_SELECT_ALL_PARAMETERS) {
