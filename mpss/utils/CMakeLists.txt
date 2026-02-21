@@ -1,14 +1,14 @@
-# Copyright(c) Microsoft Corporation. All rights reserved.
+# Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT license.
 
 # Check that this CMake file is not invoked directly.
-if(${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_CURRENT_SOURCE_DIR})
+if("${CMAKE_SOURCE_DIR}" STREQUAL "${CMAKE_CURRENT_SOURCE_DIR}")
     message(FATAL_ERROR "${CMAKE_CURRENT_LIST_FILE} must not be invoked directly.")
 endif()
 
 # Add the source files from this directory.
-set(mpss_SOURCE_FILES ${mpss_SOURCE_FILES}
-    ${CMAKE_CURRENT_LIST_DIR}/utilities.cpp
+list(APPEND mpss_SOURCE_FILES
+    "${CMAKE_CURRENT_LIST_DIR}/utilities.cpp"
 )
 
 # Update mpss_SOURCE_FILES variable in the parent scope.

@@ -1,4 +1,4 @@
-// Copyright(c) Microsoft Corporation. All rights reserved.
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
 package com.microsoft.research.mpss;
@@ -17,7 +17,7 @@ public class Utils {
             case secp521r1:
                 return new ECGenParameterSpec("secp521r1");
             default:
-                throw new IllegalArgumentException("No valid value for Algorithm");
+                throw new IllegalArgumentException("No valid value for Algorithm.");
         }
     }
 
@@ -31,7 +31,7 @@ public class Utils {
             case secp521r1:
                 return KeyProperties.DIGEST_SHA512;
             default:
-                throw new IllegalArgumentException("No valid value for Algorithm");
+                throw new IllegalArgumentException("No valid value for Algorithm.");
         }
     }
 }

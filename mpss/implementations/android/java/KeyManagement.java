@@ -1,4 +1,4 @@
-// Copyright(c) Microsoft Corporation. All rights reserved.
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
 package com.microsoft.research.mpss;
@@ -48,7 +48,7 @@ public class KeyManagement {
 
     private static KeyPair CreateKey(String keyName, Algorithm algorithm, Boolean useStrongbox) throws NoSuchAlgorithmException, NoSuchProviderException, InvalidAlgorithmParameterException, InvalidKeySpecException {
         if (null == keyName) {
-            throw new IllegalArgumentException("keyName is null");
+            throw new IllegalArgumentException("keyName is null.");
         }
 
         KeyPairGenerator kpg = KeyPairGenerator.getInstance(
@@ -71,8 +71,8 @@ public class KeyManagement {
     }
 
     /**
-     * Get security level for the given Key pair
-     * @param keyName Name of the keypair
+     * Get security level for the given key pair.
+     * @param keyName Name of the keypair.
      * @return Integer indicating security level of the key. Possible values are:
      *         0: Unknown
      *         1: Software
@@ -83,7 +83,7 @@ public class KeyManagement {
      */
     @SuppressWarnings("deprecation")
     public static int GetKeySecurityLevel(String keyName) {
-        if (null == keyName) throw new IllegalArgumentException("keyName is null");
+        if (null == keyName) throw new IllegalArgumentException("keyName is null.");
 
         try {
             KeyPair kp = GetExistingKeyPair(keyName);
@@ -131,17 +131,17 @@ public class KeyManagement {
                 return 0; // Unknown
             }
         } catch (NoSuchProviderException e) {
-            String msg = "No such provider";
+            String msg = "No such provider.";
             Log.e("MPSS", msg);
             SetError(msg);
             return -1;
         } catch (NoSuchAlgorithmException e) {
-            String msg = "No such algorithm";
-            Log.e("MPSS", "msg");
+            String msg = "No such algorithm.";
+            Log.e("MPSS", msg);
             SetError(msg);
             return -1;
         } catch (InvalidKeySpecException e) {
-            String msg = "Invalid Key Spec";
+            String msg = "Invalid Key Spec.";
             Log.e("MPSS", msg);
             SetError(msg);
             return -1;
@@ -151,13 +151,13 @@ public class KeyManagement {
     /**
      * Create a new long-term key.
      * Tries to create first in StrongBox, will create in TEE if StrongBox is not available.
-     * @param keyName Name of the key to create
-     * @param algorithm Algorithm for the key
+     * @param keyName Name of the key to create.
+     * @param algorithm Algorithm for the key.
      * @return True if key was created successfully, False otherwise.
      */
     public static Boolean CreateKey(String keyName, Algorithm algorithm) {
-        if (null == keyName) throw new IllegalArgumentException("keyName is null");
-        if (null == algorithm) throw new IllegalArgumentException("algorithm is null");
+        if (null == keyName) throw new IllegalArgumentException("keyName is null.");
+        if (null == algorithm) throw new IllegalArgumentException("algorithm is null.");
 
 
         try {
@@ -171,7 +171,7 @@ public class KeyManagement {
             KeyPair kp = null;
             boolean useStrongbox = false;
 
-            // Only P-256 is supported in StrongBox
+            // Only P-256 is supported in StrongBox.
             if (algorithm == Algorithm.secp256r1) {
                 useStrongbox = true;
             }
@@ -179,18 +179,18 @@ public class KeyManagement {
             try {
                 kp = CreateKey(keyName, algorithm, useStrongbox);
             } catch (StrongBoxUnavailableException ex) {
-                Log.w("MPSS", "Strong box is not available");
+                Log.w("MPSS", "Strong box is not available.");
             }
 
             if (!useStrongbox && null == kp) {
-                // If we are not using StrongBox, no need to try again
-                String msg = "Failed to create key in TEE";
+                // If we are not using StrongBox, no need to try again.
+                String msg = "Failed to create key in TEE.";
                 Log.w("MPSS", msg);
                 SetError(msg);
                 return false;
             }
 
-            // Try again without StrongBox
+            // Try again without StrongBox.
             if (null == kp) {
                 kp = CreateKey(keyName, algorithm, /* useStrongBox */ false);
             }
@@ -210,14 +210,14 @@ public class KeyManagement {
     }
 
     /**
-     * Sign a hash using the given key
-     * @param keyName Name of the key to use
-     * @param hash Hash to sign
-     * @return Signature, or null if signature could not be created
+     * Sign a hash using the given key.
+     * @param keyName Name of the key to use.
+     * @param hash Hash to sign.
+     * @return Signature, or null if signature could not be created.
      */
     public static byte[] SignHash(String keyName, byte[] hash) {
-        if (null == keyName) throw new IllegalArgumentException("keyName is null");
-        if (null == hash) throw new IllegalArgumentException("hash is null");
+        if (null == keyName) throw new IllegalArgumentException("keyName is null.");
+        if (null == hash) throw new IllegalArgumentException("hash is null.");
 
         try {
             KeyPair kp = GetExistingKeyPair(keyName);
@@ -239,16 +239,16 @@ public class KeyManagement {
     }
 
     /**
-     * Verify that the given signature for the give hash is correct
-     * @param keyName Name of the key used to verify signature
-     * @param hash Hash whose signature should be verified
-     * @param sig Signature to verify
-     * @return True if signature verifies correctly, False otherwise
+     * Verify that the given signature for the given hash is correct.
+     * @param keyName Name of the key used to verify signature.
+     * @param hash Hash whose signature should be verified.
+     * @param sig Signature to verify.
+     * @return True if signature verifies correctly, False otherwise.
      */
     public static Boolean VerifySignature(String keyName, byte[] hash, byte[] sig) {
-        if (null == keyName) throw new IllegalArgumentException("keyName is null");
-        if (null == hash) throw new IllegalArgumentException("hash is null");
-        if (null == sig) throw new IllegalArgumentException("sig is null");
+        if (null == keyName) throw new IllegalArgumentException("keyName is null.");
+        if (null == hash) throw new IllegalArgumentException("hash is null.");
+        if (null == sig) throw new IllegalArgumentException("sig is null.");
 
         try {
             KeyPair kp = GetExistingKeyPair(keyName);
@@ -268,15 +268,15 @@ public class KeyManagement {
     /**
      * Verify that the given signature for the given hash is correct, using the given
      * public key.
-     * @param hash Hash whose signature should be verified
-     * @param sig Signature to verify
-     * @param pk Public key used to verify signature
-     * @return True if signature verifies correctly, False otherwise
+     * @param hash Hash whose signature should be verified.
+     * @param sig Signature to verify.
+     * @param pk Public key used to verify signature.
+     * @return True if signature verifies correctly, False otherwise.
      */
     public static Boolean VerifySignature(byte[] hash, byte[] sig, byte[] pk) {
-        if (null == hash) throw new IllegalArgumentException("hash is null");
-        if (null == sig) throw new IllegalArgumentException("sig is null");
-        if (null == pk) throw new IllegalArgumentException("pk is null");
+        if (null == hash) throw new IllegalArgumentException("hash is null.");
+        if (null == sig) throw new IllegalArgumentException("sig is null.");
+        if (null == pk) throw new IllegalArgumentException("pk is null.");
 
         try {
             PublicKey publicKey = FromUncompressedPoint(pk);
@@ -299,12 +299,12 @@ public class KeyManagement {
     }
 
     /**
-     * Get a representation of the public key of the given key pair
-     * @param keyName Name of the key pair whose public key we need to get
-     * @return Representation of the public key
+     * Get a representation of the public key of the given key pair.
+     * @param keyName Name of the key pair whose public key we need to get.
+     * @return Representation of the public key.
      */
     public static byte[] GetPublicKey(String keyName) {
-        if (null == keyName) throw new IllegalArgumentException("keyName is null");
+        if (null == keyName) throw new IllegalArgumentException("keyName is null.");
 
         try {
             KeyPair kp = GetExistingKeyPair(keyName);
@@ -312,12 +312,12 @@ public class KeyManagement {
                 return null;
             }
 
-            // Parse X509
+            // Parse X509.
             KeyFactory kf = KeyFactory.getInstance("EC");
             X509EncodedKeySpec keySpec = new X509EncodedKeySpec(kp.getPublic().getEncoded());
             ECPublicKey ecpk = (ECPublicKey) kf.generatePublic(keySpec);
 
-            // Get coordinates
+            // Get coordinates.
             ECPoint point = ecpk.getW();
             BigInteger x = point.getAffineX();
             BigInteger y = point.getAffineY();
@@ -325,7 +325,7 @@ public class KeyManagement {
             int fieldSize = ecpk.getParams().getCurve().getField().getFieldSize();
             int coordinateSize = (fieldSize + 7) / 8;
 
-            // Pad and format
+            // Pad and format.
             byte[] xBytes = PadToSize(x.toByteArray(), coordinateSize);
             byte[] yBytes = PadToSize(y.toByteArray(), coordinateSize);
 
@@ -344,28 +344,29 @@ public class KeyManagement {
     }
 
     /**
-     * Close the given key
+     * Close the given key.
      * @param keyName Name of the key to close.
      */
     public static void CloseKey(String keyName) {
-        if (null == keyName) throw new IllegalArgumentException("keyName is null");
+        if (null == keyName) throw new IllegalArgumentException("keyName is null.");
         MemKeyStore.RemoveKey(keyName);
     }
 
     /**
-     * Delete the given key
-     * @param keyName Name of the key to delete
+     * Delete the given key.
+     * @param keyName Name of the key to delete.
+     * @return True if the key was deleted successfully, False otherwise.
      */
-    public static void DeleteKey(String keyName) {
-        if (null == keyName) throw new IllegalArgumentException("keyName is null");
+    public static Boolean DeleteKey(String keyName) {
+        if (null == keyName) throw new IllegalArgumentException("keyName is null.");
 
         try {
             KeyPair kp = GetExistingKeyPair(keyName);
             if (null == kp) {
-                String msg = "Could not get existing KeyPair";
+                String msg = "Could not get existing KeyPair.";
                 Log.w("MPSS", msg);
                 SetError(msg);
-                return;
+                return false;
             }
 
             CloseKey(keyName);
@@ -373,33 +374,35 @@ public class KeyManagement {
             KeyStore ks = KeyStore.getInstance("AndroidKeyStore");
             ks.load(/* param */ null);
             ks.deleteEntry(keyName);
+            return true;
         } catch (KeyStoreException | IOException | CertificateException |
                  NoSuchAlgorithmException ex) {
             String msg = "Error deleting key: " + ex.toString();
             Log.e("MPSS", msg);
             SetError(msg);
+            return false;
         }
     }
 
     /**
-     * Open the key pair with the given name
-     * @param keyName Name of the key pair to open
-     * @return True if the key pair was opened successfully, False otherwise
+     * Open the key pair with the given name.
+     * @param keyName Name of the key pair to open.
+     * @return True if the key pair was opened successfully, False otherwise.
      */
     public static Boolean OpenKey(String keyName) {
-        if (null == keyName) throw new IllegalArgumentException("keyName is null");
+        if (null == keyName) throw new IllegalArgumentException("keyName is null.");
         return null != GetExistingKeyPair(keyName);
     }
 
     /**
-     * Get the Algorithm that was used to create the given key
-     * @param keyName Name of the key pair
-     * @return Algorithm used to create the key pair
+     * Get the Algorithm that was used to create the given key.
+     * @param keyName Name of the key pair.
+     * @return Algorithm used to create the key pair.
      */
     public static Algorithm GetKeyAlgorithm(String keyName) {
-        if (null == keyName) throw new IllegalArgumentException("keyName is null");
+        if (null == keyName) throw new IllegalArgumentException("keyName is null.");
 
-        // Deduce the type from the length of the public key
+        // Deduce the type from the length of the public key.
         byte[] pk = GetPublicKey(keyName);
         if (null == pk) {
             return Algorithm.undefined;
@@ -419,7 +422,7 @@ public class KeyManagement {
 
     private static KeyPair GetExistingKeyPair(String keyName) {
         try {
-            // Check mem store first
+            // Check mem store first.
             KeyPair kp = MemKeyStore.GetKey(keyName);
             if (null != kp) {
                 return kp;
@@ -429,7 +432,7 @@ public class KeyManagement {
             ks.load(null);
             PrivateKey pk = (PrivateKey) ks.getKey(keyName, /* password */ null);
             if (null == pk) {
-                String msg = "Failed to get private key from AndroidKeyStore";
+                String msg = "Failed to get private key from AndroidKeyStore.";
                 Log.w("MPSS", msg);
                 SetError(msg);
                 return null;
@@ -450,8 +453,8 @@ public class KeyManagement {
     }
 
     /**
-     * Get the text of the last error that occurred
-     * @return Last error that occurred
+     * Get the text of the last error that occurred.
+     * @return Last error that occurred.
      */
     public static String GetError() {
         return _lastError.get();
@@ -471,7 +474,7 @@ public class KeyManagement {
 
     private static PublicKey FromUncompressedPoint(byte[] uncompressed) throws NoSuchAlgorithmException, InvalidKeySpecException, InvalidParameterSpecException {
         if (uncompressed[0] != 0x04) {
-            throw new IllegalArgumentException("Invalid EC point format");
+            throw new IllegalArgumentException("Invalid EC point format.");
         }
 
         String curveName = null;

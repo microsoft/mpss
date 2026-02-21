@@ -1,80 +1,101 @@
-// Copyright(c) Microsoft Corporation. All rights reserved.
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
 #include "mpss/implementations/android/JNIHelper.h"
 
 extern "C" JNIEXPORT jint JNI_OnLoad(JavaVM *vm, void *reserved)
 {
-    // JNI initialization
-    mpss::impl::JNIHelper::Init(vm);
+    // JNI initialization.
+    mpss::impl::os::JNIHelper::Init(vm);
     return JNI_VERSION_1_6;
 }
 
 extern "C" JNIEXPORT void JNI_OnUnload(JavaVM *vm, void *reserved)
 {
-    // Uninitialize
+    // Uninitialize.
 }
 
-JavaVM *mpss::impl::JNIHelper::java_vm_ = nullptr;
-bool mpss::impl::JNIEnvGuard::attached_ = false;
-int mpss::impl::JNIEnvGuard::ref_count_ = 0;
+JavaVM *mpss::impl::os::JNIHelper::java_vm_ = nullptr;
+bool mpss::impl::os::JNIEnvGuard::attached_ = false;
+int mpss::impl::os::JNIEnvGuard::ref_count_ = 0;
 
-namespace mpss::impl {
-    void JNIHelper::Init(JavaVM *vm)
+namespace mpss::impl::os
+{
+
+void JNIHelper::Init(JavaVM *vm)
+{
+    java_vm_ = vm;
+}
+
+void JNIHelper::Detach()
+{
+    if (nullptr != java_vm_)
     {
-        java_vm_ = vm;
+        java_vm_->DetachCurrentThread();
+    }
+}
+
+JNIEnv *JNIHelper::GetEnv(bool *did_attach)
+{
+    JNIEnv *env = nullptr;
+    if (nullptr == java_vm_)
+    {
+        return nullptr;
     }
 
-    void JNIHelper::Detach()
+    const jint result = java_vm_->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_6);
+    if (JNI_OK == result)
     {
-        if (java_vm_) {
-            java_vm_->DetachCurrentThread();
+        if (nullptr != did_attach)
+        {
+            *did_attach = false;
         }
+        return env;
     }
-
-    JNIEnv *JNIHelper::GetEnv(bool *did_attach)
+    else if (JNI_EDETACHED == result)
     {
-        JNIEnv *env = nullptr;
-        if (java_vm_ == nullptr)
-            return nullptr;
-
-        jint result = java_vm_->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_6);
-        if (result == JNI_OK) {
-            if (did_attach)
-                *did_attach = false;
+        if (0 == java_vm_->AttachCurrentThread(&env, nullptr))
+        {
+            if (nullptr != did_attach)
+            {
+                *did_attach = true;
+            }
             return env;
-        } else if (result == JNI_EDETACHED) {
-            if (java_vm_->AttachCurrentThread(&env, nullptr) == 0) {
-                if (did_attach)
-                    *did_attach = true;
-                return env;
-            } else {
-                return nullptr;
-            }
-        } else {
+        }
+        else
+        {
             return nullptr;
         }
     }
-
-    // RAII Wrapper
-    JNIEnvGuard::JNIEnvGuard()
+    else
     {
-        ref_count_++;
-        bool attached = false;
-        env_ = JNIHelper::GetEnv(&attached);
-        if (attached) {
-            attached_ = true;
+        return nullptr;
+    }
+}
+
+// RAII Wrapper.
+JNIEnvGuard::JNIEnvGuard()
+{
+    ref_count_++;
+    bool attached = false;
+    env_ = JNIHelper::GetEnv(&attached);
+    if (attached)
+    {
+        attached_ = true;
+    }
+}
+
+JNIEnvGuard::~JNIEnvGuard()
+{
+    ref_count_--;
+    if (0 == ref_count_)
+    {
+        if (attached_)
+        {
+            JNIHelper::Detach();
+            attached_ = false;
         }
     }
+}
 
-    JNIEnvGuard::~JNIEnvGuard()
-    {
-        ref_count_--;
-        if (ref_count_ == 0) {
-            if (attached_) {
-                JNIHelper::Detach();
-                attached_ = false;
-            }
-        }
-    }
-} // namespace mpss::impl
+} // namespace mpss::impl::os

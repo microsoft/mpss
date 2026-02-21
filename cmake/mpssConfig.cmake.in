@@ -1,18 +1,25 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT license.
 
+# Input variables (optional, set before calling find_package):
+#   - YKPIV_ROOT : Path to a custom libykpiv installation directory. Only needed when MPSS
+#                  was built with YubiKey backend and libykpiv is not in a standard location.
+#
 # Created variables:
-#   - MPSS_CORE_SHARED_FOUND : YES if mpss is found and target mpss::mpss is available.
-#   - MPSS_CORE_STATIC_FOUND : YES if mpss is found and target mpss::mpss_static is available.
+#   - MPSS_CORE_SHARED_FOUND : YES if MPSS is found and target mpss::mpss is available.
+#   - MPSS_CORE_STATIC_FOUND : YES if MPSS is found and target mpss::mpss_static is available.
 #   - MPSS_CORE_FOUND : Literally, MPSS_CORE_SHARED_FOUND OR MPSS_CORE_STATIC_FOUND.
 #   - MPSS_OPENSSL_SHARED_FOUND : YES if mpss::mpss_openssl is available.
 #   - MPSS_OPENSSL_STATIC_FOUND : YES if mpss::mpss_openssl_static is available.
 #   - MPSS_OPENSSL_FOUND : Literally, MPSS_OPENSSL_SHARED_FOUND OR MPSS_OPENSSL_STATIC_FOUND.
-#   - MPSS_INCLUDES_DIR : Directory where the mpss include files are.
-#   - MPSS_CONFIG_DIR : Directory where the mpss config files are.
+#   - MPSS_INCLUDES_DIR : Directory where the MPSS include files are.
+#   - MPSS_CONFIG_DIR : Directory where the MPSS config files are.
+#   - MPSS_BACKEND_YUBIKEY : YES if MPSS was built with the YubiKey PIV backend.
 #   - MPSS_AVAILABLE_TARGETS : Contains a list of available MPSS targets.
 
 @PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
 
 # Set our variables.
 set(MPSS_CORE_SHARED_FOUND NO)
@@ -43,8 +50,20 @@ if(TARGET mpss::mpss)
     set(MPSS_CORE_SHARED_FOUND YES)
     list(APPEND MPSS_AVAILABLE_TARGETS "mpss::mpss")
 endif()
+
+# Find dependencies for MPSS core.
 if(MPSS_CORE_SHARED_FOUND OR MPSS_CORE_STATIC_FOUND)
     set(MPSS_CORE_FOUND YES)
+
+    # Expose whether the YubiKey backend was enabled at build time.
+    set(MPSS_BACKEND_YUBIKEY @MPSS_BACKEND_YUBIKEY@)
+
+    # When MPSS was built with the YubiKey backend, it has PUBLIC dependencies
+    # on OpenSSL and libykpiv that consumers must resolve.
+    if(MPSS_BACKEND_YUBIKEY)
+        find_dependency(OpenSSL 3 REQUIRED)
+        find_dependency(YKPIV MODULE REQUIRED)
+    endif()
 endif()
 
 # Same for mpss-openssl.
@@ -56,13 +75,16 @@ if(TARGET mpss::mpss_openssl)
     set(MPSS_OPENSSL_SHARED_FOUND YES)
     list(APPEND MPSS_AVAILABLE_TARGETS "mpss::mpss_openssl")
 endif()
+
+# Find dependencies.
 if(MPSS_OPENSSL_SHARED_FOUND OR MPSS_OPENSSL_STATIC_FOUND)
+    find_dependency(OpenSSL 3 REQUIRED)
     set(MPSS_OPENSSL_FOUND YES)
 endif()
 
 # Print information about available targets and directories.
 if(MPSS_CORE_FOUND OR MPSS_OPENSSL_FOUND)
-    message(STATUS "Found mpss. Available targets:")
+    message(STATUS "Found mpss version \"${mpss_VERSION}\". Available targets:")
     foreach(target ${MPSS_AVAILABLE_TARGETS})
         message(STATUS "  - ${target}")
     endforeach()

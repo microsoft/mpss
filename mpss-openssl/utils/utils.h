@@ -1,56 +1,55 @@
-// Copyright(c) Microsoft Corporation. All rights reserved.
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
 #pragma once
 
 #include "mpss-openssl/utils/names.h"
-#include <gsl/span>
 #include <cstddef>
 #include <memory>
 #include <mpss/mpss.h>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
 
-namespace mpss_openssl::utils {
-    template <typename T, typename... Args>
-    [[nodiscard]] inline T *mpss_new(Args &&...args)
-    {
-        return new T{std::forward<Args>(args)...};
-    }
+namespace mpss_openssl::utils
+{
 
-    template <typename T>
-    inline void mpss_delete(T *obj)
-    {
-        delete obj;
-    }
+template <typename T, typename... Args> [[nodiscard]] inline T *mpss_new(Args &&...args)
+{
+    return new T{std::forward<Args>(args)...};
+}
 
-    std::size_t mpss_sign_as_der(
-        const std::unique_ptr<mpss::KeyPair> &key_pair, gsl::span<const std::byte> hash_tbs, gsl::span<std::byte> out);
+template <typename T> inline void mpss_delete(T *obj)
+{
+    delete obj;
+}
 
-    [[nodiscard]] bool verify_der(
-        const std::unique_ptr<mpss::KeyPair> &key_pair,
-        gsl::span<const std::byte> hash_tbs,
-        gsl::span<const std::byte> der_sig);
+std::size_t mpss_sign_as_der(const std::unique_ptr<mpss::KeyPair> &key_pair, std::span<const std::byte> hash_tbs,
+                             std::span<std::byte> out);
 
-    [[nodiscard]] byte_vector mpss_vk_params_to_spki(OSSL_LIB_CTX *libctx, const OSSL_PARAM *params);
+[[nodiscard]] bool verify_der(const std::unique_ptr<mpss::KeyPair> &key_pair, std::span<const std::byte> hash_tbs,
+                              std::span<const std::byte> der_sig);
 
-    [[nodiscard]] std::string_view get_canonical_hash_name(std::string_view name);
-    [[nodiscard]] std::string_view get_canonical_sig_name(std::string_view name);
-    [[nodiscard]] std::string_view get_canonical_group_name(std::string_view name);
-    [[nodiscard]] std::string_view get_canonical_algorithm_name(std::string_view name);
+[[nodiscard]] byte_vector mpss_vk_params_to_spki(OSSL_LIB_CTX *libctx, const OSSL_PARAM *params);
 
-    [[nodiscard]] bool are_same_hash(std::string_view name1, std::string_view name2);
-    [[nodiscard]] bool are_same_sig(std::string_view name1, std::string_view name2);
-    [[nodiscard]] bool are_same_group(std::string_view name1, std::string_view name2);
+[[nodiscard]] std::string_view get_canonical_hash_name(std::string_view name);
+[[nodiscard]] std::string_view get_canonical_sig_name(std::string_view name);
+[[nodiscard]] std::string_view get_canonical_group_name(std::string_view name);
+[[nodiscard]] std::string_view get_canonical_algorithm_name(std::string_view name);
 
-    [[nodiscard]] std::optional<std::string> try_get_ec_group(std::string_view str);
-    [[nodiscard]] std::optional<std::string> try_get_ec_group(const std::unique_ptr<mpss::KeyPair> &key_pair);
-    [[nodiscard]] std::optional<std::string> try_get_hash_func(std::string_view str);
-    [[nodiscard]] std::optional<std::string> try_get_hash_func(const std::unique_ptr<mpss::KeyPair> &key_pair);
-    [[nodiscard]] std::optional<std::string> try_get_signature_scheme(std::string_view str);
-    [[nodiscard]] std::optional<std::string> try_get_signature_scheme(const std::unique_ptr<mpss::KeyPair> &key_pair);
-    [[nodiscard]] std::optional<std::string> try_get_algorithm_name(std::string_view str);
-    [[nodiscard]] std::optional<std::string> try_get_algorithm_name(const std::unique_ptr<mpss::KeyPair> &key_pair);
+[[nodiscard]] bool are_same_hash(std::string_view name1, std::string_view name2);
+[[nodiscard]] bool are_same_sig(std::string_view name1, std::string_view name2);
+[[nodiscard]] bool are_same_group(std::string_view name1, std::string_view name2);
+
+[[nodiscard]] std::optional<std::string> try_get_ec_group(std::string_view str);
+[[nodiscard]] std::optional<std::string> try_get_ec_group(const std::unique_ptr<mpss::KeyPair> &key_pair);
+[[nodiscard]] std::optional<std::string> try_get_hash_func(std::string_view str);
+[[nodiscard]] std::optional<std::string> try_get_hash_func(const std::unique_ptr<mpss::KeyPair> &key_pair);
+[[nodiscard]] std::optional<std::string> try_get_signature_scheme(std::string_view str);
+[[nodiscard]] std::optional<std::string> try_get_signature_scheme(const std::unique_ptr<mpss::KeyPair> &key_pair);
+[[nodiscard]] std::optional<std::string> try_get_algorithm_name(std::string_view str);
+[[nodiscard]] std::optional<std::string> try_get_algorithm_name(const std::unique_ptr<mpss::KeyPair> &key_pair);
+
 } // namespace mpss_openssl::utils
