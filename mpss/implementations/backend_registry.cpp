@@ -415,7 +415,7 @@ std::string get_default_backend_name()
     return "";
 }
 
-bool Backend::is_algorithm_available(Algorithm algorithm)
+bool Backend::is_algorithm_available(Algorithm algorithm) const
 {
     const AlgorithmInfo info = get_algorithm_info(algorithm);
     if (0 == info.key_bits)

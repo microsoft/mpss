@@ -19,18 +19,18 @@ namespace os
 
 } // namespace os
 
-std::unique_ptr<KeyPair> OSBackend::create_key(std::string_view name, Algorithm algorithm)
+std::unique_ptr<KeyPair> OSBackend::create_key(std::string_view name, Algorithm algorithm) const
 {
     return os::create_key(name, algorithm);
 }
 
-std::unique_ptr<KeyPair> OSBackend::open_key(std::string_view name)
+std::unique_ptr<KeyPair> OSBackend::open_key(std::string_view name) const
 {
     return os::open_key(name);
 }
 
 bool OSBackend::verify(std::span<const std::byte> hash, std::span<const std::byte> public_key, Algorithm algorithm,
-                       std::span<const std::byte> sig)
+                       std::span<const std::byte> sig) const
 {
     return os::verify(hash, public_key, algorithm, sig);
 }

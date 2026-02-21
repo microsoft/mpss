@@ -30,11 +30,11 @@ The easiest way to build MPSS on desktop platforms is using [CMake presets](http
 Ensure [vcpkg](https://GitHub.com/Microsoft/vcpkg) is installed and the environment variable `VCPKG_ROOT` is set, then run:
 
 ```bash
-cmake -S . --preset <preset-name>
-cmake --build --preset <preset-name>
+cmake -S . --preset <configure-preset-name>
+cmake --build --preset <build-preset-name>
 ```
 
-The list of available presets can be seen by running `cmake --list-presets`.
+The list of available presets can be seen by running `cmake --list-presets=all`.
 Presets whose name includes `-with-yubikey` additionally enable the YubiKey PIV backend (requires `libykpiv`; [see below](#prerequisites)).
 
 If you do not want to use presets, you can configure manually as shown in the platform-specific sections below.
@@ -529,9 +529,9 @@ Once all slots are full, you cannot create new keys until you delete existing on
 
 1. **PIN Policy**: Keys created by MPSS use PIN policy `once` by default (configurable via `MPSS_YUBIKEY_PINPOLICY`). With the connection-per-operation architecture, `once` and `always` behave identically, both requiring the PIN on every MPSS call, because each operation opens a fresh PIV session. The only policy that changes MPSS behavior is `never`, which allows signing operations to succeed without a PIN prompt. Note that key creation and deletion operations need access to the management key, which, if PIN-protected, will require the PIN no matter what (`MPSS_YUBIKEY_PINPOLICY` has nothing to do with this).
 
-1. **Touch Policy**: Keys created by MPSS use touch policy `never` by default (configurable via `MPSS_YUBIKEY_TOUCHPOLICY`). When a key has a touch policy other than `never`, the YubiKey will wait for a physical touch before completing signing operations. MPSS notifies the application via the `InteractionHandler` (`notify_touch_needed` / `notify_touch_complete`) so it can display appropriate UI. If the user does not touch the device within the YubiKey's timeout window (typically ~15 seconds), the signing operation fails.
+1. **Touch Policy**: Keys created by MPSS use touch policy `never` ureby default (configurable via `MPSS_YUBIKEY_TOUCHPOLICY`). When a key has a touch policy other than `never`, the YubiKey will wait for a physical touch before completing signing operations. MPSS notifies the application via the `InteractionHandler` (`notify_touch_needed` / `notify_touch_complete`) so it can display appropriate UI. If the user does not touch the device within the YubiKey's timeout window (typically ~15 seconds), the signing operation fails.
 
-1. **Key Deletion**: Deleting a key from the YubiKey PIV does erase the slot. Instead, MPSS overwrites the private key with a newly generated dummy key and writes a marker certificate with `CN=(available)` to indicate the slot is free for reuse. You can observe this with `ykman piv info`. A deleted key may show up as follows:
+1. **Key Deletion**: Deleting a key from the YubiKey PIV does *not* erase the slot. Instead, MPSS overwrites the private key with a newly generated dummy key and writes a marker certificate with `CN=(available)` to indicate the slot is free for reuse. You can observe this with `ykman piv info`. A deleted key may show up as follows:
    ```
    Slot 82 (RETIRED1):
      Private key type: ECCP256

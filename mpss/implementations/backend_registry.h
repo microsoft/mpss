@@ -32,14 +32,14 @@ class Backend
      * @param[in] algorithm The signature algorithm to use.
      * @return Key pair if successful, nullptr otherwise.
      */
-    [[nodiscard]] virtual std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm) = 0;
+    [[nodiscard]] virtual std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm) const = 0;
 
     /**
      * @brief Open an existing key pair.
      * @param[in] name The name of the key pair.
      * @return Key pair if successful, nullptr otherwise.
      */
-    [[nodiscard]] virtual std::unique_ptr<KeyPair> open_key(std::string_view name) = 0;
+    [[nodiscard]] virtual std::unique_ptr<KeyPair> open_key(std::string_view name) const = 0;
 
     /**
      * @brief Verify a signature (standalone, without a key pair object).
@@ -50,7 +50,7 @@ class Backend
      * @return true if verification succeeds, false otherwise.
      */
     [[nodiscard]] virtual bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_key,
-                                      Algorithm algorithm, std::span<const std::byte> sig) = 0;
+                                      Algorithm algorithm, std::span<const std::byte> sig) const = 0;
 
     /**
      * @brief Check if the given algorithm is supported by this backend.
@@ -62,7 +62,7 @@ class Backend
      * @param algorithm The algorithm to check.
      * @return true if the algorithm is supported, false otherwise.
      */
-    [[nodiscard]] virtual bool is_algorithm_available(Algorithm algorithm);
+    [[nodiscard]] virtual bool is_algorithm_available(Algorithm algorithm) const;
 
     /**
      * @brief Check if this backend is available on the current system.

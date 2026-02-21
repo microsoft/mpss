@@ -19,7 +19,7 @@ extern "C"
 #endif
 
 /** @brief Maximum buffer size (in bytes) passed to @ref mpss_request_pin_handler_t, including the null terminator. */
-#define MPSS_PIN_BUF_SIZE 256
+#define MPSS_PIN_BUF_SIZE ((size_t)256)
 
     /**
      * @brief Callback type for requesting a YubiKey PIN from the user.
@@ -29,7 +29,7 @@ extern "C"
      * @return true if the PIN was provided, false if the user cancelled.
      * @warning Implementations must never log or persist the PIN.
      */
-    typedef bool (*mpss_request_pin_handler_t)(const char *context, char *pin_buf, ::size_t pin_buf_size);
+    typedef bool (*mpss_request_pin_handler_t)(const char *context, char *pin_buf, size_t pin_buf_size);
 
     /**
      * @brief Callback type for touch notifications.

@@ -80,12 +80,12 @@ class YubiKeyBackend : public Backend
         return "yubikey";
     }
 
-    [[nodiscard]] bool is_algorithm_available(Algorithm algorithm) override
+    [[nodiscard]] bool is_algorithm_available(Algorithm algorithm) const override
     {
         return 0 != utils::mpss_to_yk_algorithm(algorithm);
     }
 
-    [[nodiscard]] std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm) override
+    [[nodiscard]] std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm) const override
     {
         const std::string key_name{name};
         if (key_name.empty())
@@ -171,7 +171,7 @@ class YubiKeyBackend : public Backend
         return std::make_unique<YubiKeyKeyPair>(name, algorithm, slot);
     }
 
-    [[nodiscard]] std::unique_ptr<KeyPair> open_key(std::string_view name) override
+    [[nodiscard]] std::unique_ptr<KeyPair> open_key(std::string_view name) const override
     {
         const std::string key_name{name};
         if (key_name.empty())
@@ -203,7 +203,7 @@ class YubiKeyBackend : public Backend
     }
 
     [[nodiscard]] bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_key,
-                              Algorithm algorithm, std::span<const std::byte> sig) override
+                              Algorithm algorithm, std::span<const std::byte> sig) const override
     {
         if (hash.empty() || public_key.empty() || sig.empty())
         {
