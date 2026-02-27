@@ -3,18 +3,18 @@
 
 #pragma once
 
-#include "mpss-openssl/utils/names.h"
 #include <cstddef>
 #include <memory>
 #include <mpss/mpss.h>
-#include <optional>
+#include <openssl/types.h>
 #include <span>
-#include <string>
-#include <string_view>
 #include <utility>
+#include <vector>
 
 namespace mpss_openssl::utils
 {
+
+using byte_vector = std::vector<std::byte>;
 
 template <typename T, typename... Args> [[nodiscard]] inline T *mpss_new(Args &&...args)
 {
@@ -33,23 +33,5 @@ std::size_t mpss_sign_as_der(const std::unique_ptr<mpss::KeyPair> &key_pair, std
                               std::span<const std::byte> der_sig);
 
 [[nodiscard]] byte_vector mpss_vk_params_to_spki(OSSL_LIB_CTX *libctx, const OSSL_PARAM *params);
-
-[[nodiscard]] std::string_view get_canonical_hash_name(std::string_view name);
-[[nodiscard]] std::string_view get_canonical_sig_name(std::string_view name);
-[[nodiscard]] std::string_view get_canonical_group_name(std::string_view name);
-[[nodiscard]] std::string_view get_canonical_algorithm_name(std::string_view name);
-
-[[nodiscard]] bool are_same_hash(std::string_view name1, std::string_view name2);
-[[nodiscard]] bool are_same_sig(std::string_view name1, std::string_view name2);
-[[nodiscard]] bool are_same_group(std::string_view name1, std::string_view name2);
-
-[[nodiscard]] std::optional<std::string> try_get_ec_group(std::string_view str);
-[[nodiscard]] std::optional<std::string> try_get_ec_group(const std::unique_ptr<mpss::KeyPair> &key_pair);
-[[nodiscard]] std::optional<std::string> try_get_hash_func(std::string_view str);
-[[nodiscard]] std::optional<std::string> try_get_hash_func(const std::unique_ptr<mpss::KeyPair> &key_pair);
-[[nodiscard]] std::optional<std::string> try_get_signature_scheme(std::string_view str);
-[[nodiscard]] std::optional<std::string> try_get_signature_scheme(const std::unique_ptr<mpss::KeyPair> &key_pair);
-[[nodiscard]] std::optional<std::string> try_get_algorithm_name(std::string_view str);
-[[nodiscard]] std::optional<std::string> try_get_algorithm_name(const std::unique_ptr<mpss::KeyPair> &key_pair);
 
 } // namespace mpss_openssl::utils

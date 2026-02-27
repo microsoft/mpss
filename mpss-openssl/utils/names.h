@@ -12,12 +12,9 @@
 #include <optional>
 #include <string>
 #include <string_view>
-#include <vector>
 
 namespace mpss_openssl::utils
 {
-
-using byte_vector = std::vector<std::byte>;
 
 inline constexpr const char *ec_encoder_names = "EC";
 
@@ -54,10 +51,16 @@ inline constexpr std::array<const char *, 3> mpss_algorithm_names = {SN_ecdsa_wi
 [[nodiscard]] bool are_same_sig(std::string_view name1, std::string_view name2);
 [[nodiscard]] bool are_same_group(std::string_view name1, std::string_view name2);
 
+[[nodiscard]] std::optional<std::string> try_get_ec_group(std::string_view str);
+[[nodiscard]] std::optional<std::string> try_get_hash_func(std::string_view str);
+[[nodiscard]] std::optional<std::string> try_get_signature_scheme(std::string_view str);
+[[nodiscard]] std::optional<std::string> try_get_algorithm_name(std::string_view str);
+
 [[nodiscard]] std::optional<std::string> try_get_ec_group(const std::unique_ptr<mpss::KeyPair> &key_pair);
 [[nodiscard]] std::optional<std::string> try_get_hash_func(const std::unique_ptr<mpss::KeyPair> &key_pair);
 [[nodiscard]] std::optional<std::string> try_get_signature_scheme(const std::unique_ptr<mpss::KeyPair> &key_pair);
 [[nodiscard]] std::optional<std::string> try_get_algorithm_name(const std::unique_ptr<mpss::KeyPair> &key_pair);
+
 [[nodiscard]] mpss::Algorithm try_get_mpss_algorithm(std::string_view str);
 [[nodiscard]] std::optional<std::string> try_get_mpss_algorithm_name(std::string_view str);
 

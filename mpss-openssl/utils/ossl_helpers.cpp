@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 #include "mpss-openssl/utils/names.h"
+#include "mpss-openssl/utils/utils.h"
 #include <algorithm>
 #include <cstddef>
 #include <memory>

@@ -2,13 +2,21 @@
 // Licensed under the MIT license.
 
 #include "mpss-openssl/api.h"
-#include "mpss-openssl/utils/utils.h"
 #include <algorithm>
 #include <filesystem>
 #include <gtest/gtest.h>
 #include <openssl/pem.h>
 #include <openssl/provider.h>
 #include <openssl/x509v3.h>
+#include <optional>
+#include <string>
+#include <string_view>
+
+namespace mpss_openssl::utils
+{
+/** @brief Extract the canonical OpenSSL hash name from a vague algorithm string. */
+[[nodiscard]] std::optional<std::string> try_get_hash_func(std::string_view str);
+} // namespace mpss_openssl::utils
 
 namespace
 {
@@ -191,8 +199,10 @@ TEST_P(CertificateChainSerializationTest, CertificateChainSerialization)
     // Sign with the CA key. We use an internal API here to extract the correct hash
     // function name for this test. In practice, the user would know what hash function
     // they need to use.
-    const std::string_view hash_name = mpss_openssl::utils::get_canonical_hash_name(mpss_algorithm);
-    const EVP_MD *hash_func = EVP_get_digestbyname(hash_name.data());
+    const std::optional<std::string> hash_name = mpss_openssl::utils::try_get_hash_func(mpss_algorithm);
+    ASSERT_TRUE(hash_name.has_value());
+    const EVP_MD *hash_func = EVP_get_digestbyname(hash_name->c_str());
+    ASSERT_NE(nullptr, hash_func);
     ASSERT_GT(X509_sign(ca_cert, ca_pkey, hash_func), 0);
 
     // -------------------------------------------------------------------------

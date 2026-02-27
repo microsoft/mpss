@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "mpss-openssl/utils/names.h"
+#include "mpss-openssl/utils/utils.h"
 #include <cstddef>
 #include <openssl/core.h>
 #include <openssl/evp.h>

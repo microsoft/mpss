@@ -5,6 +5,7 @@
 #include "mpss-openssl/provider/digest.h"
 #include "mpss-openssl/provider/keymgmt.h"
 #include "mpss-openssl/provider/provider.h"
+#include "mpss-openssl/utils/names.h"
 #include "mpss-openssl/utils/utils.h"
 #include <algorithm>
 #include <cstddef>
