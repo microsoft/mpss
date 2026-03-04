@@ -15,6 +15,7 @@ endif()
 list(APPEND mpss_SOURCE_FILES
     ${CMAKE_CURRENT_LIST_DIR}/mpss_impl.cpp
     ${CMAKE_CURRENT_LIST_DIR}/terminal_interaction_handler.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/yk_backend.cpp
     ${CMAKE_CURRENT_LIST_DIR}/yk_keypair.cpp
     ${CMAKE_CURRENT_LIST_DIR}/yk_piv.cpp
     ${CMAKE_CURRENT_LIST_DIR}/yk_utils.cpp
