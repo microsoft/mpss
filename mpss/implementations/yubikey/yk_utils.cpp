@@ -61,8 +61,8 @@ std::uint8_t get_touch_policy_from_env()
     const char *env_ptr = std::getenv("MPSS_YUBIKEY_TOUCHPOLICY");
     if (nullptr == env_ptr)
     {
-        mpss::utils::log_trace("MPSS_YUBIKEY_TOUCHPOLICY environment variable not set. Defaulting to 'never' policy.");
-        return YKPIV_TOUCHPOLICY_NEVER;
+        mpss::utils::log_trace("MPSS_YUBIKEY_TOUCHPOLICY environment variable not set. Defaulting to 'cached' policy.");
+        return YKPIV_TOUCHPOLICY_CACHED;
     }
 
     const std::string value = to_lower(env_ptr);
@@ -88,9 +88,9 @@ std::uint8_t get_touch_policy_from_env()
     }
 
     mpss::utils::log_warning("MPSS_YUBIKEY_TOUCHPOLICY has unrecognized value '{}'. "
-                             "Expected: default, never, always, cached, auto. Defaulting to 'never'.",
+                             "Expected: default, never, always, cached, auto. Defaulting to 'cached'.",
                              env_ptr);
-    return YKPIV_TOUCHPOLICY_NEVER;
+    return YKPIV_TOUCHPOLICY_CACHED;
 }
 
 } // namespace
@@ -198,9 +198,9 @@ std::uint8_t resolve_touch_policy(KeyPolicy policy)
     case 3:
         return YKPIV_TOUCHPOLICY_CACHED;
     default:
-        mpss::utils::log_warning("Unrecognized YubiKey touch policy value {} in KeyPolicy. Defaulting to 'never'.",
+        mpss::utils::log_warning("Unrecognized YubiKey touch policy value {} in KeyPolicy. Defaulting to 'cached'.",
                                  field);
-        return YKPIV_TOUCHPOLICY_NEVER;
+        return YKPIV_TOUCHPOLICY_CACHED;
     }
 }
 

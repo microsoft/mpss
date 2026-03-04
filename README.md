@@ -458,8 +458,8 @@ These can be configured via environment variables (ahead of key creation), as fo
 export MPSS_YUBIKEY_PINPOLICY=once
 
 # Touch policy: default, never, always, cached, auto
-# Default: never
-export MPSS_YUBIKEY_TOUCHPOLICY=never
+# Default: cached
+export MPSS_YUBIKEY_TOUCHPOLICY=cached
 ```
 
 See the PIN Policy and Touch Policy items under [YubiKey Backend Limitations and Considerations](#yubikey-backend-limitations-and-considerations) for details on how these affect MPSS operations.
@@ -519,7 +519,7 @@ You can find your YubiKey's serial number using `ykman list`.
 | `MPSS_YUBIKEY_MGM_KEY` | Custom YubiKey PIV management key (hex-encoded). Only needed if **not** using PIN-protected mode. | 32, 48, or 64 hex characters | Factory default key |
 | `MPSS_YUBIKEY_SERIAL` | Target a specific YubiKey by serial number when multiple devices are connected. | Serial number (e.g., `18268739`) | First available device |
 | `MPSS_YUBIKEY_PINPOLICY` | PIN policy baked into newly created keys. See [PIN Policy](#yubikey-backend-limitations-and-considerations) for details. | `default`, `never`, `once`, `always` | `once` |
-| `MPSS_YUBIKEY_TOUCHPOLICY` | Touch policy baked into newly created keys. See [Touch Policy](#yubikey-backend-limitations-and-considerations) for details. | `default`, `never`, `always`, `cached`, `auto` | `never` |
+| `MPSS_YUBIKEY_TOUCHPOLICY` | Touch policy baked into newly created keys. See [Touch Policy](#yubikey-backend-limitations-and-considerations) for details. | `default`, `never`, `always`, `cached`, `auto` | `cached` |
 
 
 ### YubiKey Backend Limitations and Considerations
@@ -543,7 +543,7 @@ Once all slots are full, you cannot create new keys until you delete existing on
 
 1. **PIN Policy**: Keys created by MPSS use PIN policy `once` by default (configurable via `MPSS_YUBIKEY_PINPOLICY`). With the connection-per-operation architecture, `once` and `always` behave identically, both requiring the PIN on every MPSS call, because each operation opens a fresh PIV session. The only policy that changes MPSS behavior is `never`, which allows signing operations to succeed without a PIN prompt. Note that key creation and deletion operations need access to the management key, which, if PIN-protected, will require the PIN no matter what (`MPSS_YUBIKEY_PINPOLICY` has nothing to do with this).
 
-1. **Touch Policy**: Keys created by MPSS use touch policy `never` ureby default (configurable via `MPSS_YUBIKEY_TOUCHPOLICY`). When a key has a touch policy other than `never`, the YubiKey will wait for a physical touch before completing signing operations. MPSS notifies the application via the `InteractionHandler` (`notify_touch_needed` / `notify_touch_complete`) so it can display appropriate UI. If the user does not touch the device within the YubiKey's timeout window (typically ~15 seconds), the signing operation fails.
+1. **Touch Policy**: Keys created by MPSS use touch policy `cached` by default (configurable via `MPSS_YUBIKEY_TOUCHPOLICY`). The `cached` policy requires a physical touch once per 15-second window, balancing security and usability. When a key has a touch policy other than `never`, the YubiKey will wait for a physical touch before completing signing operations. MPSS notifies the application via the `InteractionHandler` (`notify_touch_needed` / `notify_touch_complete`) so it can display appropriate UI. If the user does not touch the device within the YubiKey's timeout window (typically ~15 seconds), the signing operation fails. To disable touch entirely, set `MPSS_YUBIKEY_TOUCHPOLICY=never`.
 
 1. **Key Deletion**: Deleting a key from the YubiKey PIV does *not* erase the slot. Instead, MPSS overwrites the private key with a newly generated dummy key and writes a marker certificate with `CN=(available)` to indicate the slot is free for reuse. You can observe this with `ykman piv info`. A deleted key may show up as follows:
    ```
@@ -568,7 +568,7 @@ To run the tests with the YubiKey backend (assuming [PIN-protected management ke
 MPSS_DEFAULT_BACKEND=yubikey MPSS_YUBIKEY_PIN=123456 out/build/macos-arm64-debug/bin/mpss_tests
 ```
 If you do not supply the PIN, you will see the default terminal-based interaction handler requesting the PIN.
-If you additionally specify a touch policy other than `never` (e.g., `MPSS_YUBIKEY_TOUCHPOLICY=always`), you will see the touch prompt from the default interaction handler. 
+Since the default touch policy is `cached`, you will see the touch prompt from the default interaction handler. To skip touch during testing, set `MPSS_YUBIKEY_TOUCHPOLICY=never`.
 
 ## OpenSSL Provider (mpss-openssl)
 
