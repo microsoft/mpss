@@ -96,7 +96,7 @@ class YubiKeyBackend : public Backend
 
         if (unsupported == algorithm)
         {
-            mpss::utils::log_warn("Unsupported algorithm: {}", get_algorithm_info(algorithm).type_str);
+            mpss::utils::log_warn("Unsupported algorithm '{}'.", get_algorithm_info(algorithm).type_str);
             return nullptr;
         }
 
@@ -109,7 +109,7 @@ class YubiKeyBackend : public Backend
         }
 
         // Connect to YubiKey.
-        mpss::utils::log_debug("Creating key '{}' with algorithm '{}' on YubiKey.", key_name,
+        mpss::utils::log_trace("Creating key '{}' with algorithm '{}' on YubiKey.", key_name,
                                get_algorithm_info(algorithm).type_str);
         YubiKeyPIV piv;
         if (!piv.is_connected())
@@ -120,7 +120,7 @@ class YubiKeyBackend : public Backend
         // Check if key already exists on the device.
         if (piv.has_key_with_name(name))
         {
-            mpss::utils::log_warn("Key already exists: {}", name);
+            mpss::utils::log_warn("Key '{}' already exists.", name);
             return nullptr;
         }
 
@@ -167,7 +167,7 @@ class YubiKeyBackend : public Backend
             return nullptr;
         }
 
-        mpss::utils::log_debug("Key '{}' created in YubiKey slot {}.", key_name, utils::get_slot_name(slot));
+        mpss::utils::log_trace("Key '{}' created in YubiKey slot {}.", key_name, utils::get_slot_name(slot));
         return std::make_unique<YubiKeyKeyPair>(name, algorithm, slot);
     }
 
@@ -181,7 +181,7 @@ class YubiKeyBackend : public Backend
         }
 
         // Connect to YubiKey.
-        mpss::utils::log_debug("Attempting to open key '{}' on YubiKey.", key_name);
+        mpss::utils::log_trace("Attempting to open key '{}' on YubiKey.", key_name);
         YubiKeyPIV piv;
         if (!piv.is_connected())
         {
@@ -192,11 +192,11 @@ class YubiKeyBackend : public Backend
         const auto slot_info = piv.find_slot_by_name(name);
         if (!slot_info)
         {
-            mpss::utils::log_info("Key not found: {}", key_name);
+            mpss::utils::log_debug("Key '{}' not found.", key_name);
             return nullptr;
         }
 
-        mpss::utils::log_debug("Key '{}' found in YubiKey slot {} with algorithm '{}'.", key_name,
+        mpss::utils::log_trace("Key '{}' found in YubiKey slot {} with algorithm '{}'.", key_name,
                                utils::get_slot_name(slot_info->slot),
                                get_algorithm_info(slot_info->algorithm).type_str);
         return std::make_unique<YubiKeyKeyPair>(name, slot_info->algorithm, slot_info->slot);
@@ -213,7 +213,7 @@ class YubiKeyBackend : public Backend
 
         if (unsupported == algorithm)
         {
-            mpss::utils::log_warn("Unsupported algorithm: {}", get_algorithm_info(algorithm).type_str);
+            mpss::utils::log_warn("Unsupported algorithm '{}'.", get_algorithm_info(algorithm).type_str);
             return false;
         }
 
@@ -233,7 +233,7 @@ class YubiKeyBackend : public Backend
             group_name = "P-384";
             break;
         default:
-            mpss::utils::log_and_set_error("Unsupported algorithm for YubiKey verification: {}",
+            mpss::utils::log_and_set_error("Unsupported algorithm '{}' for YubiKey verification.",
                                            get_algorithm_info(algorithm).type_str);
             return false;
         }

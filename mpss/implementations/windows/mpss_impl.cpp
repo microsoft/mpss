@@ -126,7 +126,7 @@ NCRYPT_KEY_HANDLE CreateKey(std::string_view name, mpss::Algorithm algorithm, bo
     mpss::impl::os::crypto_params const *const crypto = mpss::impl::os::utils::get_crypto_params(algorithm);
     if (nullptr == crypto)
     {
-        mpss::utils::log_and_set_error("Unsupported algorithm: {}", mpss::get_algorithm_info(algorithm).type_str);
+        mpss::utils::log_and_set_error("Unsupported algorithm '{}'.", mpss::get_algorithm_info(algorithm).type_str);
         return 0;
     }
 
@@ -258,7 +258,7 @@ std::unique_ptr<KeyPair> open_key(std::string_view name)
         return {};
     }
 
-    mpss::utils::log_debug("Attempting to open key '{}' on Windows backend.", name);
+    mpss::utils::log_trace("Attempting to open key '{}' on Windows backend.", name);
 
     Algorithm algorithm;
 
@@ -266,7 +266,7 @@ std::unique_ptr<KeyPair> open_key(std::string_view name)
     NCRYPT_KEY_HANDLE key_handle = GetKey(name, &storage_description);
     if (0 == key_handle)
     {
-        mpss::utils::log_info("Key not found: {}", name);
+        mpss::utils::log_debug("Key '{}' not found.", name);
         return nullptr;
     }
 
@@ -290,7 +290,7 @@ std::unique_ptr<KeyPair> open_key(std::string_view name)
         }
     }
 
-    mpss::utils::log_debug("Key '{}' opened with {} storage.", name, storage_description);
+    mpss::utils::log_trace("Key '{}' opened with {} storage.", name, storage_description);
     return std::make_unique<WindowsKeyPair>(algorithm, key_handle, /* hardware_backed */ true, storage_description);
 }
 
@@ -305,7 +305,7 @@ std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm)
 
     if (unsupported == algorithm)
     {
-        mpss::utils::log_warn("Unsupported algorithm: {}", get_algorithm_info(algorithm).type_str);
+        mpss::utils::log_warn("Unsupported algorithm '{}'.", get_algorithm_info(algorithm).type_str);
         return nullptr;
     }
 
@@ -313,16 +313,16 @@ std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm)
     std::unique_ptr<KeyPair> existing_key = open_key(name);
     if (nullptr != existing_key)
     {
-        mpss::utils::log_warn("Key already exists: {}", name);
+        mpss::utils::log_warn("Key '{}' already exists.", name);
         return nullptr;
     }
 
     // Try to create the key using the primary provider.
-    mpss::utils::log_debug("Creating key '{}' with {} provider.", name, provider_description);
+    mpss::utils::log_trace("Creating key '{}' with {} provider.", name, provider_description);
     NCRYPT_KEY_HANDLE key_handle = CreateKey(name, algorithm, /* fallback */ false);
     if (0 != key_handle)
     {
-        mpss::utils::log_debug("Key '{}' created successfully with {} provider.", name, provider_description);
+        mpss::utils::log_trace("Key '{}' created with {} provider.", name, provider_description);
         return std::make_unique<WindowsKeyPair>(algorithm, key_handle, /* hardware_backed */ true,
                                                 provider_description);
     }
@@ -335,7 +335,7 @@ std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm)
     key_handle = CreateKey(name, algorithm, /* fallback */ true);
     if (0 != key_handle)
     {
-        mpss::utils::log_debug("Key '{}' created successfully with {} provider.", name, fallback_provider_description);
+        mpss::utils::log_trace("Key '{}' created with {} provider.", name, fallback_provider_description);
         return std::make_unique<WindowsKeyPair>(algorithm, key_handle, /* hardware_backed */ true,
                                                 fallback_provider_description);
     }
@@ -357,7 +357,7 @@ bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_k
 
     if (unsupported == algorithm)
     {
-        mpss::utils::log_warn("Unsupported algorithm: {}", get_algorithm_info(algorithm).type_str);
+        mpss::utils::log_warn("Unsupported algorithm '{}'.", get_algorithm_info(algorithm).type_str);
         return false;
     }
 
@@ -381,7 +381,7 @@ bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_k
     crypto_params const *const crypto = utils::get_crypto_params(algorithm);
     if (nullptr == crypto)
     {
-        mpss::utils::log_warn("Unsupported algorithm: {}", info.type_str);
+        mpss::utils::log_warn("Unsupported algorithm '{}'.", info.type_str);
         return false;
     }
 

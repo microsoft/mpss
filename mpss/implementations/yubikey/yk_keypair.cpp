@@ -18,7 +18,7 @@ YubiKeyKeyPair::YubiKeyKeyPair(std::string_view name, Algorithm algorithm, std::
 
 bool YubiKeyKeyPair::delete_key()
 {
-    mpss::utils::log_debug("Deleting YubiKey key '{}' in slot {}.", name_, utils::get_slot_name(slot_));
+    mpss::utils::log_trace("Deleting YubiKey key '{}' in slot {}.", name_, utils::get_slot_name(slot_));
     YubiKeyPIV piv;
     if (!piv.is_connected())
     {
@@ -43,7 +43,7 @@ bool YubiKeyKeyPair::delete_key()
 
     if (deleted)
     {
-        mpss::utils::log_info("Key '{}' in slot {} deleted.", name_, utils::get_slot_name(slot_));
+        mpss::utils::log_trace("Key '{}' in slot {} deleted.", name_, utils::get_slot_name(slot_));
     }
     return deleted;
 }
@@ -56,7 +56,7 @@ std::size_t YubiKeyKeyPair::sign_hash(std::span<const std::byte> hash, std::span
         return mpss::utils::get_max_signature_size(algorithm());
     }
 
-    mpss::utils::log_debug("Signing hash with YubiKey key '{}' in slot {}, hash size {}.", name_,
+    mpss::utils::log_trace("Signing hash with YubiKey key '{}' in slot {}, hash size {}.", name_,
                            utils::get_slot_name(slot_), hash.size());
 
     if (!mpss::utils::check_exact_hash_size(hash, algorithm()))
@@ -122,7 +122,7 @@ std::size_t YubiKeyKeyPair::sign_hash(std::span<const std::byte> hash, std::span
 
     if (0 != written)
     {
-        mpss::utils::log_debug("YubiKey sign produced {} byte signature.", written);
+        mpss::utils::log_trace("YubiKey sign produced {} byte signature.", written);
     }
 
     return written;
@@ -167,7 +167,7 @@ std::size_t YubiKeyKeyPair::extract_key(std::span<std::byte> public_key) const
     }
 
     // Connect and extract public key directly into the caller's buffer.
-    mpss::utils::log_debug("Extracting public key from YubiKey slot {}.", utils::get_slot_name(slot_));
+    mpss::utils::log_trace("Extracting public key from YubiKey slot {}.", utils::get_slot_name(slot_));
     YubiKeyPIV piv;
     if (!piv.is_connected())
     {
@@ -177,7 +177,7 @@ std::size_t YubiKeyKeyPair::extract_key(std::span<std::byte> public_key) const
     const std::size_t pk_size = piv.get_public_key(slot_, public_key);
     if (0 != pk_size)
     {
-        mpss::utils::log_debug("Extracted {} byte public key from YubiKey slot {}.", pk_size,
+        mpss::utils::log_trace("Extracted {} byte public key from YubiKey slot {}.", pk_size,
                                utils::get_slot_name(slot_));
     }
     return pk_size;

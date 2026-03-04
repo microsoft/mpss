@@ -43,13 +43,13 @@ std::size_t decode_raw_signature(std::span<const std::byte> der_sig, Algorithm a
     // Check for obvious problems.
     if (der_sig.empty())
     {
-        mpss::utils::log_info("Nothing to decode.");
+        mpss::utils::log_warn("Nothing to decode.");
         return 0;
     }
 
     if (unsupported == algorithm)
     {
-        mpss::utils::log_warn("Unsupported algorithm: {}", get_algorithm_info(algorithm).type_str);
+        mpss::utils::log_warn("Unsupported algorithm '{}'.", get_algorithm_info(algorithm).type_str);
         return 0;
     }
 

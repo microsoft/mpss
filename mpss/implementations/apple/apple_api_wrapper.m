@@ -148,7 +148,7 @@ bool MPSS_OpenExistingKey(const char *keyName, int *bitSize) {
     OSStatus status = SecItemCopyMatching((__bridge CFDictionaryRef)query, (CFTypeRef *)&keyRef);
 
     if (status == errSecSuccess) {
-      mpss_log_debug("Successfully retrieved key from OS.");
+      mpss_log_debug("Retrieved key from OS.");
       StoreKey(keyLabel, keyRef);
 
       *bitSize = GetKeySize(keyRef);
@@ -208,7 +208,7 @@ bool MPSS_CreateKey(const char *keyName, int bitSize) {
       SetThreadLocalError(error);
       return false;
     } else {
-      mpss_log_info("Key generated successfully.");
+      mpss_log_trace("Key generated successfully.");
       StoreKey(keyLabel, keyRef);
     }
 
@@ -480,7 +480,7 @@ bool MPSS_DeleteKey(const char *keyName) {
     OSStatus status = SecItemDelete((__bridge CFDictionaryRef)query);
 
     if (status == errSecSuccess) {
-      mpss_log_info("Successfully deleted private key.");
+      mpss_log_trace("Deleted private key.");
     } else {
       // Append to status.
       op_status = [op_status
@@ -493,7 +493,7 @@ bool MPSS_DeleteKey(const char *keyName) {
     status = SecItemDelete((__bridge CFDictionaryRef)query);
 
     if (status == errSecSuccess) {
-      mpss_log_info("Successfully deleted public key.");
+      mpss_log_trace("Deleted public key.");
     } else {
       // Append to status.
       op_status = [op_status

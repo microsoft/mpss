@@ -91,7 +91,7 @@ extern "C"
      * @brief Logs a message at ERR level.
      * @param[in] message The message string to log.
      */
-    MPSS_DECOR void mpss_log_error(const char *message);
+    MPSS_DECOR void mpss_log_err(const char *message);
 
     /**
      * @brief Flushes all log handlers on the global logger.
@@ -115,9 +115,9 @@ extern "C"
      * @param[in] close_handlers Array of MPSS_LOG_LEVEL_COUNT close handler callbacks, one per log
      *   level. Pass NULL for any callback that is not needed, or NULL for the entire array.
      */
-    MPSS_DECOR void mpss_log_set_custom_logger(const mpss_log_handler_t log_handlers[MPSS_LOG_LEVEL_COUNT],
-                                               const mpss_flush_handler_t flush_handlers[MPSS_LOG_LEVEL_COUNT],
-                                               const mpss_close_handler_t close_handlers[MPSS_LOG_LEVEL_COUNT]);
+    MPSS_DECOR void mpss_log_set_custom_logger(mpss_log_handler_t log_handlers[MPSS_LOG_LEVEL_COUNT],
+                                               mpss_flush_handler_t flush_handlers[MPSS_LOG_LEVEL_COUNT],
+                                               mpss_close_handler_t close_handlers[MPSS_LOG_LEVEL_COUNT]);
 
     /**
      * @brief Resets the global logger back to the default stdout/stderr logger.
@@ -125,5 +125,5 @@ extern "C"
     MPSS_DECOR void mpss_log_reset_default(void);
 
 #ifdef __cplusplus
-}
+} // extern "C"
 #endif

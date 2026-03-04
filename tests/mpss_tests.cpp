@@ -32,7 +32,7 @@ class MPSS : public ::testing::Test
             const bool deleted = handle->delete_key();
             if (!deleted)
             {
-                mpss::GetLogger()->error("Key could not be deleted: {}", mpss::get_error());
+                mpss::GetLogger()->err("Key could not be deleted: {}", mpss::get_error());
             }
             ASSERT_TRUE(deleted);
         }
@@ -44,7 +44,7 @@ class MPSS : public ::testing::Test
         std::unique_ptr<mpss::KeyPair> handle = mpss::KeyPair::Create(std::move(name), algorithm);
         if (nullptr == handle)
         {
-            mpss::GetLogger()->error("Key could not be created: {}", mpss::get_error());
+            mpss::GetLogger()->err("Key could not be created: {}", mpss::get_error());
         }
         else
         {
@@ -87,7 +87,7 @@ void SignAndVerify(Algorithm algorithm, std::string_view suffix, std::size_t has
     std::size_t written = handle->sign_hash(hash, signature);
     if (0 == written)
     {
-        mpss::GetLogger()->error("Data could not be signed: {}", mpss::get_error());
+        mpss::GetLogger()->err("Data could not be signed: {}", mpss::get_error());
     }
     ASSERT_GE(sig_size, written);
 
@@ -99,7 +99,7 @@ void SignAndVerify(Algorithm algorithm, std::string_view suffix, std::size_t has
     written = handle->sign_hash(hash, signature2);
     if (0 == written)
     {
-        mpss::GetLogger()->error("Data could not be signed second time: {}", mpss::get_error());
+        mpss::GetLogger()->err("Data could not be signed second time: {}", mpss::get_error());
     }
     ASSERT_GE(sig_size, written);
 
@@ -110,7 +110,7 @@ void SignAndVerify(Algorithm algorithm, std::string_view suffix, std::size_t has
     bool verified = handle->verify(hash, signature);
     if (!verified)
     {
-        mpss::GetLogger()->error("Signature 1 could not be verified: {}", mpss::get_error());
+        mpss::GetLogger()->err("Signature 1 could not be verified: {}", mpss::get_error());
     }
     ASSERT_TRUE(verified);
 
@@ -118,7 +118,7 @@ void SignAndVerify(Algorithm algorithm, std::string_view suffix, std::size_t has
     verified = handle->verify(hash, signature2);
     if (!verified)
     {
-        mpss::GetLogger()->error("Signature 2 could not be verified: {}", mpss::get_error());
+        mpss::GetLogger()->err("Signature 2 could not be verified: {}", mpss::get_error());
     }
     ASSERT_TRUE(verified);
 
@@ -211,7 +211,7 @@ void GetKey(Algorithm algorithm, std::string_view suffix)
     const std::size_t read = handle->extract_key(vk);
     if (0 == read)
     {
-        mpss::GetLogger()->error("Key could not be retrieved: {}", mpss::get_error());
+        mpss::GetLogger()->err("Key could not be retrieved: {}", mpss::get_error());
     }
     mpss::GetLogger()->info("VK size: {} read: {}", vk_size, read);
     ASSERT_EQ(vk_size, read);
@@ -245,7 +245,7 @@ void GetKeySmallBuffer(Algorithm algorithm, std::string_view suffix)
     const std::size_t read = handle->extract_key(vk);
     if (0 == read)
     {
-        mpss::GetLogger()->error("Key could not be retrieved: {}", mpss::get_error());
+        mpss::GetLogger()->err("Key could not be retrieved: {}", mpss::get_error());
     }
     ASSERT_EQ(0, read);
 
@@ -308,7 +308,7 @@ void VerifyStandaloneSignature(Algorithm algorithm, std::string_view suffix, std
     const std::size_t written = handle->sign_hash(hash, signature);
     if (0 == written)
     {
-        mpss::GetLogger()->error("Data could not be signed: {}", mpss::get_error());
+        mpss::GetLogger()->err("Data could not be signed: {}", mpss::get_error());
     }
     ASSERT_GE(sig_size, written);
     signature.resize(written);
@@ -319,7 +319,7 @@ void VerifyStandaloneSignature(Algorithm algorithm, std::string_view suffix, std
     const std::size_t read = handle->extract_key(vk);
     if (0 == read)
     {
-        mpss::GetLogger()->error("Key could not be retrieved: {}", mpss::get_error());
+        mpss::GetLogger()->err("Key could not be retrieved: {}", mpss::get_error());
     }
     mpss::GetLogger()->info("VK size: {}", vk_size);
     ASSERT_EQ(vk_size, read);
@@ -334,7 +334,7 @@ void VerifyStandaloneSignature(Algorithm algorithm, std::string_view suffix, std
     const bool verified = mpss::verify(hash, vk, algorithm, signature);
     if (!verified)
     {
-        mpss::GetLogger()->error("Data could not be verified: {}", mpss::get_error());
+        mpss::GetLogger()->err("Data could not be verified: {}", mpss::get_error());
     }
     ASSERT_TRUE(verified);
 }

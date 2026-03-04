@@ -83,7 +83,7 @@ inline void log_and_set_error(std::string msg)
 {
     if (auto logger = mpss::GetLogger())
     {
-        logger->error("{}", msg);
+        logger->err("{}", msg);
     }
     set_error(std::move(msg));
 }
@@ -162,6 +162,28 @@ inline void log_debug(std::string msg)
 template <typename... Args> void log_debug(std::format_string<Args...> fmt, Args &&...args)
 {
     log_debug(std::format(fmt, std::forward<Args>(args)...));
+}
+
+/**
+ * @brief Log a trace message.
+ * @param msg The trace message to log.
+ */
+inline void log_trace(std::string msg)
+{
+    if (auto logger = mpss::GetLogger())
+    {
+        logger->trace("{}", msg);
+    }
+}
+
+/**
+ * @brief Log a formatted trace message.
+ * @param fmt The format string for the trace message.
+ * @param args The format arguments for the trace message.
+ */
+template <typename... Args> void log_trace(std::format_string<Args...> fmt, Args &&...args)
+{
+    log_trace(std::format(fmt, std::forward<Args>(args)...));
 }
 
 /**

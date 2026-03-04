@@ -9,7 +9,7 @@
 namespace mpss
 {
 
-std::shared_ptr<Logger> &GetOrSetLogger(std::shared_ptr<Logger> new_logger = nullptr)
+std::shared_ptr<Logger> GetOrSetLogger(std::shared_ptr<Logger> new_logger = nullptr)
 {
     static std::shared_ptr<Logger> logger = NewDefaultLogger();
     if (nullptr != new_logger)
@@ -165,7 +165,7 @@ void mpss_log_warn(const char *message)
     mpss_log(MPSS_LOG_LEVEL_WARN, message);
 }
 
-void mpss_log_error(const char *message)
+void mpss_log_err(const char *message)
 {
     mpss_log(MPSS_LOG_LEVEL_ERR, message);
 }
@@ -188,9 +188,9 @@ void mpss_log_close(void)
     }
 }
 
-void mpss_log_set_custom_logger(const mpss_log_handler_t log_handlers[MPSS_LOG_LEVEL_COUNT],
-                                const mpss_flush_handler_t flush_handlers[MPSS_LOG_LEVEL_COUNT],
-                                const mpss_close_handler_t close_handlers[MPSS_LOG_LEVEL_COUNT])
+void mpss_log_set_custom_logger(mpss_log_handler_t log_handlers[MPSS_LOG_LEVEL_COUNT],
+                                mpss_flush_handler_t flush_handlers[MPSS_LOG_LEVEL_COUNT],
+                                mpss_close_handler_t close_handlers[MPSS_LOG_LEVEL_COUNT])
 {
     std::array<mpss::log_handler_t, mpss::log_level_count> cpp_log{};
     std::array<mpss::flush_handler_t, mpss::log_level_count> cpp_flush{};

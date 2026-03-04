@@ -14,7 +14,7 @@ namespace mpss::impl::os
 
 bool WindowsKeyPair::delete_key()
 {
-    mpss::utils::log_debug("Deleting Windows key.");
+    mpss::utils::log_trace("Deleting Windows key.");
     SECURITY_STATUS status = ::NCryptDeleteKey(key_handle_, /* dwFlags */ 0);
     if (ERROR_SUCCESS != status)
     {
@@ -25,7 +25,7 @@ bool WindowsKeyPair::delete_key()
     // Release the key handle.
     win_release();
 
-    mpss::utils::log_debug("Windows key deleted successfully.");
+    mpss::utils::log_trace("Windows key deleted successfully.");
     return true;
 }
 
@@ -37,7 +37,7 @@ std::size_t WindowsKeyPair::sign_hash(std::span<const std::byte> hash, std::span
         return mpss::utils::get_max_signature_size(algorithm());
     }
 
-    mpss::utils::log_debug("Signing hash with Windows key, hash size {}.", hash.size());
+    mpss::utils::log_trace("Signing hash with Windows key, hash size {}.", hash.size());
 
     if (!mpss::utils::check_exact_hash_size(hash, algorithm()))
     {
@@ -58,7 +58,7 @@ std::size_t WindowsKeyPair::sign_hash(std::span<const std::byte> hash, std::span
     crypto_params const *const crypto = utils::get_crypto_params(algorithm());
     if (nullptr == crypto)
     {
-        mpss::utils::log_and_set_error("Unsupported algorithm: {}", get_algorithm_info(algorithm()).type_str);
+        mpss::utils::log_and_set_error("Unsupported algorithm '{}'.", get_algorithm_info(algorithm()).type_str);
         return 0;
     }
 
@@ -140,7 +140,7 @@ std::size_t WindowsKeyPair::sign_hash(std::span<const std::byte> hash, std::span
 
     // Return the number of bytes written to the signature buffer.
     const std::size_t result = mpss::utils::narrow_or_error<std::size_t>(encoded_size);
-    mpss::utils::log_debug("Windows sign produced {} byte signature.", result);
+    mpss::utils::log_trace("Windows sign produced {} byte signature.", result);
     return result;
 }
 
@@ -206,7 +206,7 @@ std::size_t WindowsKeyPair::extract_key(std::span<std::byte> public_key) const
         return 0;
     }
 
-    mpss::utils::log_debug("Extracting public key from Windows key.");
+    mpss::utils::log_trace("Extracting public key from Windows key.");
 
     crypto_params const *const crypto = utils::get_crypto_params(algorithm_);
 

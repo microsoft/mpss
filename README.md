@@ -32,6 +32,7 @@ Ensure [vcpkg](https://GitHub.com/Microsoft/vcpkg) is installed and the environm
 ```bash
 cmake -S . --preset <configure-preset-name>
 cmake --build --preset <build-preset-name>
+cmake --install out/build/<build-preset-name> # optional; to install in custom destination, include --prefix <destination>
 ```
 
 The list of available presets can be seen by running `cmake --list-presets=all`.
@@ -716,7 +717,7 @@ When an MPSS secret key is no longer needed, it can be securely deleted from the
 const char *ca_key_name = "my-old-key";
 bool deletion_success = mpss_delete_key(ca_key_name);
 if (deletion_success) {
-    printf("MPSS CA key '%s' successfully deleted from secure storage\n", ca_key_name);
+    printf("MPSS CA key '%s' deleted from secure storage\n", ca_key_name);
 } else {
     const char *error_msg = mpss_get_error();
     printf("Failed to delete MPSS key '%s': %s\n", ca_key_name, error_msg);

@@ -343,7 +343,7 @@ include(CMakePackageConfigHelpers)
 configure_package_config_file(
     "${mpss_CONFIG_IN_FILENAME}" "${mpss_CONFIG_FILENAME}"
     INSTALL_DESTINATION "${mpss_CONFIG_INSTALL_DIR}"
-    PATH_VARS mpss_INCLUDES_INSTALL_DIR mpss_CONFIG_INSTALL_DIR
+    PATH_VARS mpss_INCLUDES_INSTALL_DIR
 )
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Android")

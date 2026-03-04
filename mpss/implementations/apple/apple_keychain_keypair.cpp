@@ -25,7 +25,7 @@ AppleKeychainKeyPair::~AppleKeychainKeyPair()
 
 bool AppleKeychainKeyPair::do_delete_key()
 {
-    mpss::utils::log_debug("Deleting Keychain key '{}'.", name());
+    mpss::utils::log_trace("Deleting Keychain key '{}'.", name());
     const bool result = MPSS_DeleteKey(name().c_str());
     if (!result)
     {
@@ -33,7 +33,7 @@ bool AppleKeychainKeyPair::do_delete_key()
     }
     else
     {
-        mpss::utils::log_debug("Keychain key '{}' deleted.", name());
+        mpss::utils::log_trace("Keychain key '{}' deleted.", name());
     }
 
     return result;
@@ -41,7 +41,7 @@ bool AppleKeychainKeyPair::do_delete_key()
 
 std::size_t AppleKeychainKeyPair::do_sign_hash(std::span<const std::byte> hash, std::span<std::byte> sig) const
 {
-    mpss::utils::log_debug("Signing hash with Keychain key '{}', hash size {}.", name(), hash.size());
+    mpss::utils::log_trace("Signing hash with Keychain key '{}', hash size {}.", name(), hash.size());
     std::size_t signature_size = sig.size();
 
     if (!MPSS_SignHash(name().c_str(), static_cast<int>(algorithm()),
@@ -53,7 +53,7 @@ std::size_t AppleKeychainKeyPair::do_sign_hash(std::span<const std::byte> hash, 
         return 0;
     }
 
-    mpss::utils::log_debug("Keychain sign produced {} byte signature.", signature_size);
+    mpss::utils::log_trace("Keychain sign produced {} byte signature.", signature_size);
     return signature_size;
 }
 
@@ -69,7 +69,7 @@ bool AppleKeychainKeyPair::do_verify(std::span<const std::byte> hash, std::span<
 
 std::size_t AppleKeychainKeyPair::do_extract_key(std::span<std::byte> public_key) const
 {
-    mpss::utils::log_debug("Extracting public key from Keychain key '{}'.", name());
+    mpss::utils::log_trace("Extracting public key from Keychain key '{}'.", name());
     std::size_t pk_size = public_key.size();
 
     if (!MPSS_GetPublicKey(name().c_str(), reinterpret_cast<std::uint8_t *>(public_key.data()), &pk_size))
@@ -79,7 +79,7 @@ std::size_t AppleKeychainKeyPair::do_extract_key(std::span<std::byte> public_key
         return 0;
     }
 
-    mpss::utils::log_debug("Extracted {} byte public key from Keychain key '{}'.", pk_size, name());
+    mpss::utils::log_trace("Extracted {} byte public key from Keychain key '{}'.", pk_size, name());
     return pk_size;
 }
 

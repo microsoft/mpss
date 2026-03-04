@@ -9,25 +9,17 @@ import Security
 @_silgen_name("mpss_log_debug")
 private func c_mpss_log_debug(_ message: UnsafePointer<CChar>)
 
-@_silgen_name("mpss_log_info")
-private func c_mpss_log_info(_ message: UnsafePointer<CChar>)
+@_silgen_name("mpss_log_trace")
+private func c_mpss_log_trace(_ message: UnsafePointer<CChar>)
 
-@_silgen_name("mpss_log_warn")
-private func c_mpss_log_warn(_ message: UnsafePointer<CChar>)
+/// Log a trace message through the unified C++ logger.
+private func logTrace(_ message: String) {
+    message.withCString { c_mpss_log_trace($0) }
+}
 
 /// Log a debug message through the unified C++ logger.
 private func logDebug(_ message: String) {
     message.withCString { c_mpss_log_debug($0) }
-}
-
-/// Log an info message through the unified C++ logger.
-private func logInfo(_ message: String) {
-    message.withCString { c_mpss_log_info($0) }
-}
-
-/// Log a warning message through the unified C++ logger.
-private func logWarn(_ message: String) {
-    message.withCString { c_mpss_log_warn($0) }
 }
 
 // The dispatch queue is used to serialize access to the key store in order to make it thread-safe.
@@ -163,14 +155,13 @@ private func storeDataInKeychain(data: Data, account: String, service: String) -
     // Add new data to the Keychain.
     let status = SecItemAdd(query as CFDictionary, nil)
     if status == errSecSuccess {
-        // Successfully added.
-        logInfo("Successfully added item to Keychain.")
+        logTrace("Added item to Keychain.")
     } else if status == errSecDuplicateItem {
         // Item already exists.
-        logWarn("Item already exists in Keychain.")
+        logDebug("Item already exists in Keychain.")
     } else {
         // Some other error occurred.
-        logWarn("Error adding item to Keychain: \(status)")
+        logDebug("Error adding item to Keychain: \(status)")
     }
 
     return status
@@ -197,15 +188,14 @@ private func retrieveDataFromKeychain(account: String, service: String) -> Data?
     var item: CFTypeRef?
     let status = SecItemCopyMatching(query as CFDictionary, &item)
     if status == errSecSuccess {
-        // Successfully retrieved.
-        logDebug("Successfully retrieved item from Keychain.")
+        logTrace("Retrieved item from Keychain.")
     } else if status == errSecItemNotFound {
         // Item not found.
         logDebug("Item not found in Keychain.")
         return nil
     } else {
         // Some other error occurred.
-        logWarn("Error retrieving item from Keychain: \(status)")
+        logDebug("Error retrieving item from Keychain: \(status)")
         return nil
     }
 
@@ -231,8 +221,7 @@ private func removeDataFromKeyChain(account: String, service: String) -> Bool {
     let status = SecItemDelete(query as CFDictionary)
 
     if status == errSecSuccess {
-        // Successfully deleted.
-        logInfo("Successfully deleted item from Keychain.")
+        logTrace("Deleted item from Keychain.")
         return true
     } else if status == errSecItemNotFound {
         // Item not found, nothing to delete.
@@ -240,7 +229,7 @@ private func removeDataFromKeyChain(account: String, service: String) -> Bool {
         return true
     } else {
         // Some other error occurred.
-        logWarn("Error deleting item from Keychain: \(status)")
+        logDebug("Error deleting item from Keychain: \(status)")
         setError("Error deleting item from Keychain: \(status)")
         return false
     }

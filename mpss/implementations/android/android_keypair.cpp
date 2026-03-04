@@ -16,7 +16,7 @@ using jni_bytearray = utils::JNIObj<jbyteArray>;
 
 bool AndroidKeyPair::delete_key()
 {
-    mpss::utils::log_debug("Deleting Android key '{}'.", key_name_);
+    mpss::utils::log_trace("Deleting Android key '{}'.", key_name_);
     jni_class km(env(), utils::GetKeyManagementClass(env()));
     if (km.is_null())
     {
@@ -51,7 +51,7 @@ bool AndroidKeyPair::delete_key()
         return false;
     }
 
-    mpss::utils::log_debug("Android key '{}' deleted.", key_name_);
+    mpss::utils::log_trace("Android key '{}' deleted.", key_name_);
     return true;
 }
 
@@ -63,7 +63,7 @@ std::size_t AndroidKeyPair::sign_hash(std::span<const std::byte> hash, std::span
         return mpss::utils::get_max_signature_size(algorithm());
     }
 
-    mpss::utils::log_debug("Signing hash with Android key '{}', hash size {}.", key_name_, hash.size());
+    mpss::utils::log_trace("Signing hash with Android key '{}', hash size {}.", key_name_, hash.size());
 
     if (!mpss::utils::check_exact_hash_size(hash, algorithm()))
     {
@@ -118,7 +118,7 @@ std::size_t AndroidKeyPair::sign_hash(std::span<const std::byte> hash, std::span
     }
     else
     {
-        mpss::utils::log_debug("Android sign produced {} byte signature.", sig_size);
+        mpss::utils::log_trace("Android sign produced {} byte signature.", sig_size);
     }
 
     return sig_size;
@@ -192,7 +192,7 @@ std::size_t AndroidKeyPair::extract_key(std::span<std::byte> public_key) const
         return 0;
     }
 
-    mpss::utils::log_debug("Extracting public key from Android key '{}'.", key_name_);
+    mpss::utils::log_trace("Extracting public key from Android key '{}'.", key_name_);
 
     jni_class km(env(), utils::GetKeyManagementClass(env()));
     if (km.is_null())

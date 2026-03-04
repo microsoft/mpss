@@ -100,7 +100,7 @@ std::unique_ptr<KeyPair> open_key(std::string_view name)
         return nullptr;
     }
 
-    mpss::utils::log_debug("Attempting to open key '{}' on Android backend.", name);
+    mpss::utils::log_trace("Attempting to open key '{}' on Android backend.", name);
 
     JNIEnvGuard guard;
     jni_class km(guard.Env(), utils::GetKeyManagementClass(guard.Env()));
@@ -134,7 +134,7 @@ std::unique_ptr<KeyPair> open_key(std::string_view name)
 
     if (!utils::UnboxBoolean(guard.Env(), result.get()))
     {
-        mpss::utils::log_info("Key not found: {}", name);
+        mpss::utils::log_debug("Key '{}' not found.", name);
         return nullptr;
     }
 
@@ -203,7 +203,7 @@ std::unique_ptr<KeyPair> open_key(std::string_view name)
     }
 
     // Finally, we can return the key.
-    mpss::utils::log_debug("Key '{}' opened on Android with {} storage.", name, storage_description);
+    mpss::utils::log_trace("Key '{}' opened on Android with {} storage.", name, storage_description);
     return std::make_unique<AndroidKeyPair>(algorithm, name, hardware_backed, storage_description);
 }
 
@@ -217,7 +217,7 @@ std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm)
 
     if (unsupported == algorithm)
     {
-        mpss::utils::log_warn("Unsupported algorithm: {}", get_algorithm_info(algorithm).type_str);
+        mpss::utils::log_warn("Unsupported algorithm '{}'.", get_algorithm_info(algorithm).type_str);
         return nullptr;
     }
 
@@ -225,11 +225,11 @@ std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm)
     std::unique_ptr<KeyPair> existingKey = open_key(name);
     if (nullptr != existingKey)
     {
-        mpss::utils::log_warn("Key already exists: {}", name);
+        mpss::utils::log_warn("Key '{}' already exists.", name);
         return nullptr;
     }
 
-    mpss::utils::log_debug("Creating key '{}' with algorithm '{}' on Android backend.", name,
+    mpss::utils::log_trace("Creating key '{}' with algorithm '{}' on Android backend.", name,
                            get_algorithm_info(algorithm).type_str);
 
     JNIEnvGuard guard;
@@ -280,7 +280,7 @@ std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm)
             guard->GetStaticFieldID(algorithmClass.get(), "secp521r1", "Lcom/microsoft/research/mpss/Algorithm;");
         break;
     default:
-        mpss::utils::log_warn("Unsupported algorithm: {}", get_algorithm_info(algorithm).type_str);
+        mpss::utils::log_warn("Unsupported algorithm '{}'.", get_algorithm_info(algorithm).type_str);
         return nullptr;
     }
 
@@ -321,7 +321,7 @@ std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm)
         return nullptr;
     }
 
-    mpss::utils::log_debug("Key '{}' created successfully on Android with {} storage.", name, storage_description);
+    mpss::utils::log_trace("Key '{}' created on Android with {} storage.", name, storage_description);
     return std::make_unique<AndroidKeyPair>(algorithm, name, hardware_backed, storage_description);
 }
 
@@ -336,7 +336,7 @@ bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_k
 
     if (unsupported == algorithm)
     {
-        mpss::utils::log_warn("Unsupported algorithm: {}", get_algorithm_info(algorithm).type_str);
+        mpss::utils::log_warn("Unsupported algorithm '{}'.", get_algorithm_info(algorithm).type_str);
         return false;
     }
 
@@ -393,8 +393,8 @@ bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_k
 
     const bool verified = utils::UnboxBoolean(guard.Env(), result.get());
 
-    mpss::utils::log_info("Verification using standalone signature verification {}.",
-                          verified ? "succeeded" : "failed");
+    mpss::utils::log_trace("Verification using standalone signature verification {}.",
+                           verified ? "succeeded" : "failed");
     return verified;
 }
 

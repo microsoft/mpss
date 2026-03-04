@@ -83,14 +83,14 @@ bool YubiKeyPIV::connect()
 
         if (target_serial && serial_ != *target_serial)
         {
-            mpss::utils::log_info("Reader '{}': YubiKey serial {} does not match target {}.", reader, serial_,
-                                  *target_serial);
+            mpss::utils::log_debug("Reader '{}': YubiKey serial {} does not match target {}.", reader, serial_,
+                                   *target_serial);
             ykpiv_disconnect(state_);
             reader += std::strlen(reader) + 1;
             continue;
         }
 
-        mpss::utils::log_info("Connected to YubiKey with serial {} on reader '{}'.", serial_, reader);
+        mpss::utils::log_trace("Connected to YubiKey with serial {} on reader '{}'.", serial_, reader);
         return true;
         reader += std::strlen(reader) + 1;
     }
@@ -137,7 +137,7 @@ PinResult YubiKeyPIV::authenticate_pin(std::string_view pin)
     ykpiv_rc rc = ykpiv_verify(state_, pin_str.c_str(), &tries);
     if (YKPIV_OK == rc)
     {
-        mpss::utils::log_info("PIN authentication successful.");
+        mpss::utils::log_trace("PIN authentication successful.");
         return PinResult::ok;
     }
 
@@ -168,7 +168,7 @@ bool YubiKeyPIV::authenticate_mgm_key()
         rc = ykpiv_authenticate2(state_, protected_mgm.data, protected_mgm.len);
         if (YKPIV_OK == rc)
         {
-            mpss::utils::log_info("Authenticated with PIN-protected management key.");
+            mpss::utils::log_trace("Authenticated with PIN-protected management key.");
             return true;
         }
         mpss::utils::log_warn("PIN-protected management key authentication failed: {}", ykpiv_strerror(rc));
@@ -181,7 +181,7 @@ bool YubiKeyPIV::authenticate_mgm_key()
         rc = ykpiv_authenticate(state_, reinterpret_cast<const unsigned char *>(env_key.data()));
         if (YKPIV_OK == rc)
         {
-            mpss::utils::log_info("Authenticated with management key from MPSS_YUBIKEY_MGM_KEY.");
+            mpss::utils::log_trace("Authenticated with management key from MPSS_YUBIKEY_MGM_KEY.");
             return true;
         }
         mpss::utils::log_warn("Management key from MPSS_YUBIKEY_MGM_KEY failed: {}", ykpiv_strerror(rc));
@@ -288,7 +288,7 @@ std::size_t YubiKeyPIV::sign(std::uint8_t slot, std::span<const std::byte> hash,
     const std::uint8_t yk_algorithm = utils::mpss_to_yk_algorithm(algorithm);
     if (0 == yk_algorithm)
     {
-        mpss::utils::log_and_set_error("Unsupported algorithm for YubiKey signing: {}",
+        mpss::utils::log_and_set_error("Unsupported algorithm '{}' for YubiKey signing.",
                                        get_algorithm_info(algorithm).type_str);
         return 0;
     }

@@ -26,19 +26,19 @@ AppleSEKeyPair::~AppleSEKeyPair()
 
 bool AppleSEKeyPair::do_delete_key()
 {
-    mpss::utils::log_debug("Deleting Secure Enclave key '{}'.", name());
+    mpss::utils::log_trace("Deleting Secure Enclave key '{}'.", name());
     if (!MPSS_SE_RemoveExistingKey(name().c_str()))
     {
         mpss::utils::log_and_set_error("Failed to delete Secure Enclave key: {}", utils::MPSS_SE_GetLastError());
         return false;
     }
-    mpss::utils::log_debug("Secure Enclave key '{}' deleted.", name());
+    mpss::utils::log_trace("Secure Enclave key '{}' deleted.", name());
     return true;
 }
 
 std::size_t AppleSEKeyPair::do_sign_hash(std::span<const std::byte> hash, std::span<std::byte> sig) const
 {
-    mpss::utils::log_debug("Signing hash with Secure Enclave key '{}', hash size {}.", name(), hash.size());
+    mpss::utils::log_trace("Signing hash with Secure Enclave key '{}', hash size {}.", name(), hash.size());
     std::size_t signature_size = sig.size();
 
     if (!MPSS_SE_Sign(name().c_str(), reinterpret_cast<const std::uint8_t *>(hash.data()), hash.size(),
@@ -48,7 +48,7 @@ std::size_t AppleSEKeyPair::do_sign_hash(std::span<const std::byte> hash, std::s
         return 0;
     }
 
-    mpss::utils::log_debug("Secure Enclave sign produced {} byte signature.", signature_size);
+    mpss::utils::log_trace("Secure Enclave sign produced {} byte signature.", signature_size);
     return signature_size;
 }
 
@@ -64,7 +64,7 @@ bool AppleSEKeyPair::do_verify(std::span<const std::byte> hash, std::span<const 
 
 std::size_t AppleSEKeyPair::do_extract_key(std::span<std::byte> public_key) const
 {
-    mpss::utils::log_debug("Extracting public key from Secure Enclave key '{}'.", name());
+    mpss::utils::log_trace("Extracting public key from Secure Enclave key '{}'.", name());
     std::size_t pk_size = public_key.size();
 
     const bool result =
@@ -75,7 +75,7 @@ std::size_t AppleSEKeyPair::do_extract_key(std::span<std::byte> public_key) cons
         return 0;
     }
 
-    mpss::utils::log_debug("Extracted {} byte public key from Secure Enclave key '{}'.", pk_size, name());
+    mpss::utils::log_trace("Extracted {} byte public key from Secure Enclave key '{}'.", pk_size, name());
     return pk_size;
 }
 

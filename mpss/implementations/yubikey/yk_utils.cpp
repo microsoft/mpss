@@ -59,7 +59,7 @@ SecureByteVector get_mgm_key_from_env()
     const char *env_ptr = std::getenv("MPSS_YUBIKEY_MGM_KEY");
     if (nullptr == env_ptr)
     {
-        mpss::utils::log_info("MPSS_YUBIKEY_MGM_KEY environment variable not set.");
+        mpss::utils::log_trace("MPSS_YUBIKEY_MGM_KEY environment variable not set.");
         return {};
     }
 
@@ -91,7 +91,7 @@ std::uint8_t get_pin_policy_from_env()
     const char *env_ptr = std::getenv("MPSS_YUBIKEY_PINPOLICY");
     if (nullptr == env_ptr)
     {
-        mpss::utils::log_info("MPSS_YUBIKEY_PINPOLICY environment variable not set. Defaulting to 'once' policy.");
+        mpss::utils::log_trace("MPSS_YUBIKEY_PINPOLICY environment variable not set. Defaulting to 'once' policy.");
         return YKPIV_PINPOLICY_ONCE;
     }
 
@@ -132,7 +132,7 @@ std::uint8_t get_touch_policy_from_env()
     const char *env_ptr = std::getenv("MPSS_YUBIKEY_TOUCHPOLICY");
     if (nullptr == env_ptr)
     {
-        mpss::utils::log_info("MPSS_YUBIKEY_TOUCHPOLICY environment variable not set. Defaulting to 'never' policy.");
+        mpss::utils::log_trace("MPSS_YUBIKEY_TOUCHPOLICY environment variable not set. Defaulting to 'never' policy.");
         return YKPIV_TOUCHPOLICY_NEVER;
     }
 

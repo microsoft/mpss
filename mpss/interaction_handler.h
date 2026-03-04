@@ -56,7 +56,7 @@ std::shared_ptr<InteractionHandler> NewDefaultInteractionHandler();
  * returned without replacing it.
  * @return A reference to the global interaction handler.
  */
-inline std::shared_ptr<InteractionHandler> &GetOrSetInteractionHandler(
+inline std::shared_ptr<InteractionHandler> GetOrSetInteractionHandler(
     std::shared_ptr<InteractionHandler> new_handler = nullptr)
 {
     static std::shared_ptr<InteractionHandler> handler = NewDefaultInteractionHandler();

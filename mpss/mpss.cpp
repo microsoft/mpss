@@ -13,27 +13,27 @@ namespace mpss
 
 std::unique_ptr<KeyPair> KeyPair::Create(std::string_view name, Algorithm algorithm)
 {
-    utils::log_debug("KeyPair::Create called for key '{}' with algorithm '{}'.", name,
+    utils::log_trace("KeyPair::Create called for key '{}' with algorithm '{}'.", name,
                      get_algorithm_info(algorithm).type_str);
     return impl::create_key(name, algorithm);
 }
 
 std::unique_ptr<KeyPair> KeyPair::Create(std::string_view name, Algorithm algorithm, std::string_view backend_name)
 {
-    utils::log_debug("KeyPair::Create called for key '{}' with algorithm '{}' on backend '{}'.", name,
+    utils::log_trace("KeyPair::Create called for key '{}' with algorithm '{}' on backend '{}'.", name,
                      get_algorithm_info(algorithm).type_str, backend_name);
     return impl::create_key(backend_name, name, algorithm);
 }
 
 std::unique_ptr<KeyPair> KeyPair::Open(std::string_view name)
 {
-    utils::log_debug("KeyPair::Open called for key '{}'.", name);
+    utils::log_trace("KeyPair::Open called for key '{}'.", name);
     return impl::open_key(name);
 }
 
 std::unique_ptr<KeyPair> KeyPair::Open(std::string_view name, std::string_view backend_name)
 {
-    utils::log_debug("KeyPair::Open called for key '{}' on backend '{}'.", name, backend_name);
+    utils::log_trace("KeyPair::Open called for key '{}' on backend '{}'.", name, backend_name);
     return impl::open_key(backend_name, name);
 }
 
@@ -54,19 +54,19 @@ bool is_algorithm_available(Algorithm algorithm)
         std::lock_guard lock{cache_mutex};
         if (cache[idx])
         {
-            utils::log_debug("Algorithm availability for '{}' returned from cache: {}.", info.type_str,
+            utils::log_trace("Algorithm availability for '{}' returned from cache: {}.", info.type_str,
                              *cache[idx] ? "available" : "unavailable");
             return *cache[idx];
         }
     }
 
     // Delegate to the active backend.
-    utils::log_debug("Probing algorithm availability for '{}'.", info.type_str);
+    utils::log_trace("Probing algorithm availability for '{}'.", info.type_str);
     const bool available = impl::is_algorithm_available(algorithm);
 
     std::lock_guard lock{cache_mutex};
     cache[idx] = available;
-    utils::log_debug("Algorithm '{}' is {}.", info.type_str, available ? "available" : "unavailable");
+    utils::log_trace("Algorithm '{}' is {}.", info.type_str, available ? "available" : "unavailable");
     return available;
 }
 
@@ -90,7 +90,7 @@ std::vector<Algorithm> get_available_algorithms()
 bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_key, Algorithm algorithm,
             std::span<const std::byte> sig)
 {
-    utils::log_debug("Standalone verify called with algorithm '{}', hash size {}, signature size {}.",
+    utils::log_trace("Standalone verify called with algorithm '{}', hash size {}, signature size {}.",
                      get_algorithm_info(algorithm).type_str, hash.size(), sig.size());
     return impl::verify(hash, public_key, algorithm, sig);
 }
@@ -98,7 +98,7 @@ bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_k
 bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_key, Algorithm algorithm,
             std::span<const std::byte> sig, std::string_view backend_name)
 {
-    utils::log_debug("Standalone verify called with algorithm '{}' on backend '{}', hash size {}, signature size {}.",
+    utils::log_trace("Standalone verify called with algorithm '{}' on backend '{}', hash size {}, signature size {}.",
                      get_algorithm_info(algorithm).type_str, backend_name, hash.size(), sig.size());
     return impl::verify(backend_name, hash, public_key, algorithm, sig);
 }
@@ -133,7 +133,7 @@ KeyPair::KeyPair(Algorithm algorithm, bool hardware_backed, const char *storage_
 {
     if (0 == info_.key_bits)
     {
-        utils::log_and_set_error("Unsupported algorithm: {}", info_.type_str);
+        utils::log_and_set_error("Unsupported algorithm '{}'.", info_.type_str);
     }
 }
 

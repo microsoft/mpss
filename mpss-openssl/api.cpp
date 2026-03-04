@@ -90,9 +90,7 @@ const char **mpss_get_available_backends()
 
 const char *mpss_get_default_backend_name()
 {
-    // Use thread-local storage since the default backend name can depend on
-    // the MPSS_DEFAULT_BACKEND environment variable.
-    static thread_local std::string name;
+    static std::string name;
 
     name = mpss::get_default_backend_name();
     return name.c_str();
