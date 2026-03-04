@@ -453,7 +453,7 @@ When creating keys, the PIN and touch policies (i.e., when to prompt for these) 
 These can be configured via environment variables (ahead of key creation), as follows:
 
 ```bash
-# PIN policy: default, never, once, always, match_once, match_always
+# PIN policy: default, never, once, always
 # Default: once
 export MPSS_YUBIKEY_PINPOLICY=once
 
@@ -463,6 +463,19 @@ export MPSS_YUBIKEY_TOUCHPOLICY=never
 ```
 
 See the PIN Policy and Touch Policy items under [YubiKey Backend Limitations and Considerations](#yubikey-backend-limitations-and-considerations) for details on how these affect MPSS operations.
+
+Alternatively, policies can be set programmatically per-key via the [`KeyPolicy`](mpss/key_policy.h) parameter on `KeyPair::Create()`. Programmatic settings override environment variables for that key:
+
+```cpp
+#include "mpss/key_policy.h"
+
+// Create a key with explicit PIN and touch policies.
+auto key = mpss::KeyPair::Create("my-key", mpss::Algorithm::ecdsa_secp256r1_sha256,
+    mpss::KeyPolicy::yubikey_pin_once | mpss::KeyPolicy::yubikey_touch_cached);
+
+// Create a key using env var / default policies (existing behavior).
+auto key2 = mpss::KeyPair::Create("my-key2", mpss::Algorithm::ecdsa_secp256r1_sha256);
+```
 
 ### Custom Interaction Handlers
 
@@ -505,7 +518,7 @@ You can find your YubiKey's serial number using `ykman list`.
 | `MPSS_YUBIKEY_PIN` | YubiKey PIV PIN for signing and PIN-protected management operations. If unset, MPSS prompts interactively. | Any valid PIN string | *(interactive prompt)* |
 | `MPSS_YUBIKEY_MGM_KEY` | Custom YubiKey PIV management key (hex-encoded). Only needed if **not** using PIN-protected mode. | 32, 48, or 64 hex characters | Factory default key |
 | `MPSS_YUBIKEY_SERIAL` | Target a specific YubiKey by serial number when multiple devices are connected. | Serial number (e.g., `18268739`) | First available device |
-| `MPSS_YUBIKEY_PINPOLICY` | PIN policy baked into newly created keys. See [PIN Policy](#yubikey-backend-limitations-and-considerations) for details. | `default`, `never`, `once`, `always`, `match_once`, `match_always` | `once` |
+| `MPSS_YUBIKEY_PINPOLICY` | PIN policy baked into newly created keys. See [PIN Policy](#yubikey-backend-limitations-and-considerations) for details. | `default`, `never`, `once`, `always` | `once` |
 | `MPSS_YUBIKEY_TOUCHPOLICY` | Touch policy baked into newly created keys. See [Touch Policy](#yubikey-backend-limitations-and-considerations) for details. | `default`, `never`, `always`, `cached`, `auto` | `never` |
 
 

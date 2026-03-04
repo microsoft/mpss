@@ -8,6 +8,6 @@
 int main(int argc, char *argv[])
 {
     ::testing::InitGoogleTest(&argc, argv);
-    mpss::GetLogger()->set_level(mpss::LogLevel::DEBUG);
+    mpss::GetLogger()->set_level(mpss::LogLevel::trace);
     return RUN_ALL_TESTS();
 }

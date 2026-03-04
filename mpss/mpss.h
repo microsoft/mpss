@@ -6,6 +6,7 @@
 #include "mpss/algorithm.h"
 #include "mpss/defines.h"
 #include "mpss/key_info.h"
+#include "mpss/key_policy.h"
 #include <cstddef>
 #include <memory>
 #include <span>
@@ -134,21 +135,25 @@ class MPSS_DECOR KeyPair
      * @brief Creates a new key pair with the given name and algorithm.
      * @param[in] name The name of the key pair.
      * @param[in] algorithm The signature algorithm to use.
+     * @param[in] policy Backend-specific key policy. Defaults to KeyPolicy::none (use env vars / backend defaults).
      * @return Key pair if the key pair was created successfully, a null pointer otherwise.
      * @note The name must be unique. If a key pair with the same name already exists, the
      * function will return a null pointer.
      */
-    [[nodiscard]] static std::unique_ptr<KeyPair> Create(std::string_view name, Algorithm algorithm);
+    [[nodiscard]] static std::unique_ptr<KeyPair> Create(std::string_view name, Algorithm algorithm,
+                                                         KeyPolicy policy = KeyPolicy::none);
 
     /**
      * @brief Creates a new key pair using a specific backend.
      * @param[in] name The name of the key pair.
      * @param[in] algorithm The signature algorithm to use.
      * @param[in] backend_name The backend to use (e.g., "os", "yubikey").
+     * @param[in] policy Backend-specific key policy. Defaults to KeyPolicy::none (use env vars / backend defaults).
      * @return Key pair if created successfully, nullptr otherwise.
      */
     [[nodiscard]] static std::unique_ptr<KeyPair> Create(std::string_view name, Algorithm algorithm,
-                                                         std::string_view backend_name);
+                                                         std::string_view backend_name,
+                                                         KeyPolicy policy = KeyPolicy::none);
 
     /**
      * @brief Opens the key pair with the given name.

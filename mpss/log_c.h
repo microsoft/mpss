@@ -18,8 +18,8 @@ extern "C"
         MPSS_LOG_LEVEL_TRACE = 0,
         MPSS_LOG_LEVEL_DEBUG = 1,
         MPSS_LOG_LEVEL_INFO = 2,
-        MPSS_LOG_LEVEL_WARN = 3,
-        MPSS_LOG_LEVEL_ERR = 4,
+        MPSS_LOG_LEVEL_WARNING = 3,
+        MPSS_LOG_LEVEL_ERROR = 4,
         MPSS_LOG_LEVEL_SUPPRESS = 5,
     } mpss_log_level_t;
 
@@ -64,34 +64,34 @@ extern "C"
     MPSS_DECOR void mpss_log(mpss_log_level_t level, const char *message);
 
     /**
-     * @brief Logs a message at TRACE level.
+     * @brief Logs a message at trace level.
      * @param[in] message The message string to log.
      */
     MPSS_DECOR void mpss_log_trace(const char *message);
 
     /**
-     * @brief Logs a message at DEBUG level.
+     * @brief Logs a message at debug level.
      * @param[in] message The message string to log.
      */
     MPSS_DECOR void mpss_log_debug(const char *message);
 
     /**
-     * @brief Logs a message at INFO level.
+     * @brief Logs a message at info level.
      * @param[in] message The message string to log.
      */
     MPSS_DECOR void mpss_log_info(const char *message);
 
     /**
-     * @brief Logs a message at WARN level.
+     * @brief Logs a message at warning level.
      * @param[in] message The message string to log.
      */
-    MPSS_DECOR void mpss_log_warn(const char *message);
+    MPSS_DECOR void mpss_log_warning(const char *message);
 
     /**
-     * @brief Logs a message at ERR level.
+     * @brief Logs a message at error level.
      * @param[in] message The message string to log.
      */
-    MPSS_DECOR void mpss_log_err(const char *message);
+    MPSS_DECOR void mpss_log_error(const char *message);
 
     /**
      * @brief Flushes all log handlers on the global logger.
@@ -108,7 +108,7 @@ extern "C"
     /**
      * @brief Installs a custom logger with the given callback handlers.
      * @param[in] log_handlers Array of MPSS_LOG_LEVEL_COUNT log handler callbacks, one per log level
-     *   (TRACE, DEBUG, INFO, WARN, ERR). Pass NULL for any callback that is not needed, or NULL
+     *   (trace, debug, info, warning, error). Pass NULL for any callback that is not needed, or NULL
      *   for the entire array to leave log handlers empty.
      * @param[in] flush_handlers Array of MPSS_LOG_LEVEL_COUNT flush handler callbacks, one per log
      *   level. Pass NULL for any callback that is not needed, or NULL for the entire array.

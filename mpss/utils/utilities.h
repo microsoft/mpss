@@ -83,7 +83,7 @@ inline void log_and_set_error(std::string msg)
 {
     if (auto logger = mpss::GetLogger())
     {
-        logger->err("{}", msg);
+        logger->error("{}", msg);
     }
     set_error(std::move(msg));
 }
@@ -102,11 +102,11 @@ template <typename... Args> void log_and_set_error(std::format_string<Args...> f
  * @brief Log a warning message.
  * @param msg The warning message to log.
  */
-inline void log_warn(std::string msg)
+inline void log_warning(std::string msg)
 {
     if (auto logger = mpss::GetLogger())
     {
-        logger->warn("{}", msg);
+        logger->warning("{}", msg);
     }
 }
 
@@ -115,9 +115,9 @@ inline void log_warn(std::string msg)
  * @param fmt The format string for the warning message.
  * @param args The format arguments for the warning message.
  */
-template <typename... Args> void log_warn(std::format_string<Args...> fmt, Args &&...args)
+template <typename... Args> void log_warning(std::format_string<Args...> fmt, Args &&...args)
 {
-    log_warn(std::format(fmt, std::forward<Args>(args)...));
+    log_warning(std::format(fmt, std::forward<Args>(args)...));
 }
 
 /**

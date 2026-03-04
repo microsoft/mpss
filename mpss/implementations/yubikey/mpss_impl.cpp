@@ -85,18 +85,19 @@ class YubiKeyBackend : public Backend
         return 0 != utils::mpss_to_yk_algorithm(algorithm);
     }
 
-    [[nodiscard]] std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm) const override
+    [[nodiscard]] std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm,
+                                                      KeyPolicy policy) const override
     {
         const std::string key_name{name};
         if (key_name.empty())
         {
-            mpss::utils::log_warn("Key name cannot be empty.");
+            mpss::utils::log_warning("Key name cannot be empty.");
             return nullptr;
         }
 
         if (unsupported == algorithm)
         {
-            mpss::utils::log_warn("Unsupported algorithm '{}'.", get_algorithm_info(algorithm).type_str);
+            mpss::utils::log_warning("Unsupported algorithm '{}'.", get_algorithm_info(algorithm).type_str);
             return nullptr;
         }
 
@@ -104,7 +105,7 @@ class YubiKeyBackend : public Backend
         const std::uint8_t yk_algorithm = utils::mpss_to_yk_algorithm(algorithm);
         if (0 == yk_algorithm)
         {
-            mpss::utils::log_warn("Algorithm not supported by YubiKey PIV.");
+            mpss::utils::log_warning("Algorithm not supported by YubiKey PIV.");
             return nullptr;
         }
 
@@ -120,7 +121,7 @@ class YubiKeyBackend : public Backend
         // Check if key already exists on the device.
         if (piv.has_key_with_name(name))
         {
-            mpss::utils::log_warn("Key '{}' already exists.", name);
+            mpss::utils::log_warning("Key '{}' already exists.", name);
             return nullptr;
         }
 
@@ -132,9 +133,13 @@ class YubiKeyBackend : public Backend
             return nullptr;
         }
 
+        // Resolve the PIN and touch policies from the KeyPolicy bitmask, falling back to env vars / defaults.
+        const std::uint8_t pin_policy = utils::resolve_pin_policy(policy);
+        const std::uint8_t touch_policy = utils::resolve_touch_policy(policy);
+
         // Try generating the key without PIN authentication first (succeeds when the management key is available
         // without PIN, e.g., via MPSS_YUBIKEY_MGM_KEY or the factory default).
-        bool key_generated = piv.generate_key(slot, yk_algorithm);
+        bool key_generated = piv.generate_key(slot, yk_algorithm, pin_policy, touch_policy);
 
         if (!key_generated)
         {
@@ -146,7 +151,7 @@ class YubiKeyBackend : public Backend
             }
 
             // PIN is already verified on this connection.
-            key_generated = piv.generate_key(slot, yk_algorithm);
+            key_generated = piv.generate_key(slot, yk_algorithm, pin_policy, touch_policy);
             if (!key_generated)
             {
                 return nullptr;
@@ -162,7 +167,8 @@ class YubiKeyBackend : public Backend
             // consumed until manually cleared.
             if (!piv.delete_key(slot))
             {
-                mpss::utils::log_warn("Failed to clean up slot {} after labeling failure.", utils::get_slot_name(slot));
+                mpss::utils::log_warning("Failed to clean up slot {} after labeling failure.",
+                                         utils::get_slot_name(slot));
             }
             return nullptr;
         }
@@ -176,7 +182,7 @@ class YubiKeyBackend : public Backend
         const std::string key_name{name};
         if (key_name.empty())
         {
-            mpss::utils::log_warn("Key name cannot be empty.");
+            mpss::utils::log_warning("Key name cannot be empty.");
             return nullptr;
         }
 
@@ -189,7 +195,7 @@ class YubiKeyBackend : public Backend
         }
 
         // Find the key by name on the device.
-        const auto slot_info = piv.find_slot_by_name(name);
+        const std::optional<YubiKeyPIV::SlotInfo> slot_info = piv.find_slot_by_name(name);
         if (!slot_info)
         {
             mpss::utils::log_debug("Key '{}' not found.", key_name);
@@ -207,13 +213,13 @@ class YubiKeyBackend : public Backend
     {
         if (hash.empty() || public_key.empty() || sig.empty())
         {
-            mpss::utils::log_warn("Hash, public key, and signature cannot be empty.");
+            mpss::utils::log_warning("Hash, public key, and signature cannot be empty.");
             return false;
         }
 
         if (unsupported == algorithm)
         {
-            mpss::utils::log_warn("Unsupported algorithm '{}'.", get_algorithm_info(algorithm).type_str);
+            mpss::utils::log_warning("Unsupported algorithm '{}'.", get_algorithm_info(algorithm).type_str);
             return false;
         }
 

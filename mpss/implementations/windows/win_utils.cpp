@@ -43,13 +43,13 @@ std::size_t decode_raw_signature(std::span<const std::byte> der_sig, Algorithm a
     // Check for obvious problems.
     if (der_sig.empty())
     {
-        mpss::utils::log_warn("Nothing to decode.");
+        mpss::utils::log_warning("Nothing to decode.");
         return 0;
     }
 
     if (unsupported == algorithm)
     {
-        mpss::utils::log_warn("Unsupported algorithm '{}'.", get_algorithm_info(algorithm).type_str);
+        mpss::utils::log_warning("Unsupported algorithm '{}'.", get_algorithm_info(algorithm).type_str);
         return 0;
     }
 
@@ -78,8 +78,8 @@ std::size_t decode_raw_signature(std::span<const std::byte> der_sig, Algorithm a
                                /* PCRYPT_DECODE_PARA */ nullptr,
                                /* pvStructInfo */ nullptr, &ecc_sig_buffer_size))
     {
-        mpss::utils::log_warn("CryptDecodeObjectEx failed to get required buffer size with error code {}.",
-                              mpss::utils::to_hex(::GetLastError()));
+        mpss::utils::log_warning("CryptDecodeObjectEx failed to get required buffer size with error code {}.",
+                                 mpss::utils::to_hex(::GetLastError()));
         return 0;
     }
 
@@ -89,8 +89,8 @@ std::size_t decode_raw_signature(std::span<const std::byte> der_sig, Algorithm a
                                encoded_size, 0 /* dwFlags */,
                                /* PCRYPT_DECODE_PARA */ nullptr, ecc_sig_buffer.get(), &ecc_sig_buffer_size))
     {
-        mpss::utils::log_warn("CryptDecodeObjectEx failed to decode signature with error code {}.",
-                              mpss::utils::to_hex(::GetLastError()));
+        mpss::utils::log_warning("CryptDecodeObjectEx failed to decode signature with error code {}.",
+                                 mpss::utils::to_hex(::GetLastError()));
         return 0;
     }
 
@@ -102,8 +102,8 @@ std::size_t decode_raw_signature(std::span<const std::byte> der_sig, Algorithm a
     // Check that the raw signature has the right size.
     if (ecc_sig->r.cbData > key_bytes || ecc_sig->s.cbData > key_bytes)
     {
-        mpss::utils::log_warn("Invalid signature size: r={} bytes, s={} bytes (expected <= {} bytes each).",
-                              ecc_sig->r.cbData, ecc_sig->s.cbData, key_bytes);
+        mpss::utils::log_warning("Invalid signature size: r={} bytes, s={} bytes (expected <= {} bytes each).",
+                                 ecc_sig->r.cbData, ecc_sig->s.cbData, key_bytes);
         return 0;
     }
 

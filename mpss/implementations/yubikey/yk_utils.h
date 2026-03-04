@@ -4,6 +4,7 @@
 #pragma once
 
 #include "mpss/algorithm.h"
+#include "mpss/key_policy.h"
 #include "mpss/secure_types.h"
 #include <cstddef>
 #include <cstdint>
@@ -34,20 +35,28 @@ std::optional<std::uint32_t> get_serial_from_env();
 SecureByteVector get_mgm_key_from_env();
 
 /**
- * @brief Get the YubiKey PIN policy from the MPSS_YUBIKEY_PINPOLICY environment variable.
+ * @brief Resolve the effective YubiKey PIN policy from a @ref KeyPolicy bitmask.
  *
- * Accepted values: "default", "never", "once", "always", "match_once", "match_always".
- * @return The PIN policy constant, or YKPIV_PINPOLICY_ONCE if not set or invalid.
+ * If the YubiKey PIN policy field (bits 0-3) is non-zero, maps the value to the corresponding
+ * ykpiv constant. Otherwise, falls back to the MPSS_YUBIKEY_PINPOLICY environment variable,
+ * then to the hardcoded default (YKPIV_PINPOLICY_ONCE).
+ *
+ * @param policy The key policy bitmask.
+ * @return The ykpiv PIN policy constant.
  */
-std::uint8_t get_pin_policy_from_env();
+std::uint8_t resolve_pin_policy(KeyPolicy policy);
 
 /**
- * @brief Get the YubiKey touch policy from the MPSS_YUBIKEY_TOUCHPOLICY environment variable.
+ * @brief Resolve the effective YubiKey touch policy from a @ref KeyPolicy bitmask.
  *
- * Accepted values (case-insensitive): "default", "never", "always", "cached", "auto".
- * @return The touch policy constant, or YKPIV_TOUCHPOLICY_NEVER if not set or invalid.
+ * If the YubiKey touch policy field (bits 4-7) is non-zero, maps the value to the corresponding
+ * ykpiv constant. Otherwise, falls back to the MPSS_YUBIKEY_TOUCHPOLICY environment variable,
+ * then to the hardcoded default (YKPIV_TOUCHPOLICY_NEVER).
+ *
+ * @param policy The key policy bitmask.
+ * @return The ykpiv touch policy constant.
  */
-std::uint8_t get_touch_policy_from_env();
+std::uint8_t resolve_touch_policy(KeyPolicy policy);
 
 /**
  * @brief Convert mpss::Algorithm to YubiKey PIV algorithm constant.

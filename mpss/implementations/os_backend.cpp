@@ -19,7 +19,7 @@ namespace os
 
 } // namespace os
 
-std::unique_ptr<KeyPair> OSBackend::create_key(std::string_view name, Algorithm algorithm) const
+std::unique_ptr<KeyPair> OSBackend::create_key(std::string_view name, Algorithm algorithm, KeyPolicy /*policy*/) const
 {
     return os::create_key(name, algorithm);
 }

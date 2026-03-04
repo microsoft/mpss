@@ -107,8 +107,8 @@ bool check_exact_hash_size(std::span<const std::byte> hash, Algorithm algorithm)
     const bool hash_size_ok = (hash.size() == expected_hash_size);
     if (!hash_size_ok)
     {
-        mpss::utils::log_warn("Invalid hash length {} bytes for algorithm {} (expected {} bytes).", hash.size(),
-                              get_algorithm_info(algorithm).type_str, expected_hash_size);
+        mpss::utils::log_warning("Invalid hash length {} bytes for algorithm {} (expected {} bytes).", hash.size(),
+                                 get_algorithm_info(algorithm).type_str, expected_hash_size);
     }
 
     return hash_size_ok;
@@ -120,8 +120,8 @@ bool check_sufficient_signature_buffer_size(std::span<const std::byte> sig, Algo
     const bool sig_size_ok = (sig.size() >= expected_sig_size);
     if (!sig_size_ok)
     {
-        mpss::utils::log_warn("Signature buffer too small: {} bytes for algorithm {} (expected at least {} bytes).",
-                              sig.size(), get_algorithm_info(algorithm).type_str, expected_sig_size);
+        mpss::utils::log_warning("Signature buffer too small: {} bytes for algorithm {} (expected at least {} bytes).",
+                                 sig.size(), get_algorithm_info(algorithm).type_str, expected_sig_size);
     }
 
     return sig_size_ok;
@@ -133,8 +133,8 @@ bool check_sufficient_public_key_buffer_size(std::span<const std::byte> public_k
     const bool pk_size_ok = (public_key.size() >= expected_pk_size);
     if (!pk_size_ok)
     {
-        mpss::utils::log_warn("Public key buffer too small: {} bytes for algorithm {} (expected at least {} bytes).",
-                              public_key.size(), get_algorithm_info(algorithm).type_str, expected_pk_size);
+        mpss::utils::log_warning("Public key buffer too small: {} bytes for algorithm {} (expected at least {} bytes).",
+                                 public_key.size(), get_algorithm_info(algorithm).type_str, expected_pk_size);
     }
 
     return pk_size_ok;

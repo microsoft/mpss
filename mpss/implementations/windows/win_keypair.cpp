@@ -148,7 +148,7 @@ bool WindowsKeyPair::verify(std::span<const std::byte> hash, std::span<const std
 {
     if (hash.empty() || sig.empty())
     {
-        mpss::utils::log_warn("Nothing to verify.");
+        mpss::utils::log_warning("Nothing to verify.");
         return false;
     }
 

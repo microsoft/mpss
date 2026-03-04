@@ -88,7 +88,7 @@ SecKeyAlgorithm GetAlgorithm(int signatureType) {
   case 3: // ECDSA SHA 512
     return kSecKeyAlgorithmECDSASignatureDigestX962SHA512;
   default:
-    mpss_log_warn("Unsupported signature type.");
+    mpss_log_warning("Unsupported signature type.");
     return NULL;
   }
 }
@@ -102,7 +102,7 @@ int GetKeyBitSize(int signatureType) {
   case 3: // ECDSA SHA 512
     return 521;
   default:
-    mpss_log_warn("Unsupported signature type.");
+    mpss_log_warning("Unsupported signature type.");
     return -1;
   }
 }

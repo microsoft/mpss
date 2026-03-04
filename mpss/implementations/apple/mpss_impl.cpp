@@ -19,7 +19,7 @@ std::unique_ptr<KeyPair> open_key(std::string_view name)
     const std::string key_name{name};
     if (key_name.empty())
     {
-        mpss::utils::log_warn("Key name cannot be empty.");
+        mpss::utils::log_warning("Key name cannot be empty.");
         return nullptr;
     }
 
@@ -49,7 +49,7 @@ std::unique_ptr<KeyPair> open_key(std::string_view name)
             algorithm = ecdsa_secp521r1_sha512;
             break;
         default:
-            mpss::utils::log_warn("Opened a key, but it has unsupported bit size: {}", bitSize);
+            mpss::utils::log_warning("Opened a key, but it has unsupported bit size: {}", bitSize);
             MPSS_RemoveKey(key_name.c_str());
             return nullptr;
         }
@@ -68,13 +68,13 @@ std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm)
     const std::string key_name{name};
     if (key_name.empty())
     {
-        mpss::utils::log_warn("Key name cannot be empty.");
+        mpss::utils::log_warning("Key name cannot be empty.");
         return nullptr;
     }
 
     if (unsupported == algorithm)
     {
-        mpss::utils::log_warn("Unsupported algorithm '{}'.", get_algorithm_info(algorithm).type_str);
+        mpss::utils::log_warning("Unsupported algorithm '{}'.", get_algorithm_info(algorithm).type_str);
         return nullptr;
     }
 
@@ -82,7 +82,7 @@ std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm)
     std::unique_ptr<KeyPair> existing_key = open_key(name);
     if (nullptr != existing_key)
     {
-        mpss::utils::log_warn("Key '{}' already exists.", name);
+        mpss::utils::log_warning("Key '{}' already exists.", name);
         return nullptr;
     }
 
@@ -116,13 +116,13 @@ bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_k
 {
     if (hash.empty() || public_key.empty() || sig.empty())
     {
-        mpss::utils::log_warn("Hash, public key, and signature cannot be empty.");
+        mpss::utils::log_warning("Hash, public key, and signature cannot be empty.");
         return false;
     }
 
     if (unsupported == algorithm)
     {
-        mpss::utils::log_warn("Unsupported algorithm '{}'.", get_algorithm_info(algorithm).type_str);
+        mpss::utils::log_warning("Unsupported algorithm '{}'.", get_algorithm_info(algorithm).type_str);
         return false;
     }
 

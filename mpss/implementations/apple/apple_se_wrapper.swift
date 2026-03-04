@@ -158,7 +158,7 @@ private func storeDataInKeychain(data: Data, account: String, service: String) -
         logTrace("Added item to Keychain.")
     } else if status == errSecDuplicateItem {
         // Item already exists.
-        logDebug("Item already exists in Keychain.")
+        logTrace("Item already exists in Keychain.")
     } else {
         // Some other error occurred.
         logDebug("Error adding item to Keychain: \(status)")
@@ -191,7 +191,7 @@ private func retrieveDataFromKeychain(account: String, service: String) -> Data?
         logTrace("Retrieved item from Keychain.")
     } else if status == errSecItemNotFound {
         // Item not found.
-        logDebug("Item not found in Keychain.")
+        logTrace("Item not found in Keychain.")
         return nil
     } else {
         // Some other error occurred.
@@ -225,7 +225,7 @@ private func removeDataFromKeyChain(account: String, service: String) -> Bool {
         return true
     } else if status == errSecItemNotFound {
         // Item not found, nothing to delete.
-        logDebug("Item not found in Keychain, nothing to delete.")
+        logTrace("Item not found in Keychain, nothing to delete.")
         return true
     } else {
         // Some other error occurred.

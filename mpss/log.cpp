@@ -76,18 +76,18 @@ mpss::LogLevel to_cpp_level(mpss_log_level_t level)
     switch (level)
     {
     case MPSS_LOG_LEVEL_TRACE:
-        return TRACE;
+        return trace;
     case MPSS_LOG_LEVEL_DEBUG:
-        return DEBUG;
+        return debug;
     case MPSS_LOG_LEVEL_INFO:
-        return INFO;
-    case MPSS_LOG_LEVEL_WARN:
-        return WARN;
-    case MPSS_LOG_LEVEL_ERR:
-        return ERR;
+        return info;
+    case MPSS_LOG_LEVEL_WARNING:
+        return warning;
+    case MPSS_LOG_LEVEL_ERROR:
+        return error;
     case MPSS_LOG_LEVEL_SUPPRESS:
     default:
-        return SUPPRESS;
+        return suppress;
     }
 }
 
@@ -95,17 +95,17 @@ mpss_log_level_t to_c_level(mpss::LogLevel level)
 {
     switch (level)
     {
-    case TRACE:
+    case trace:
         return MPSS_LOG_LEVEL_TRACE;
-    case DEBUG:
+    case debug:
         return MPSS_LOG_LEVEL_DEBUG;
-    case INFO:
+    case info:
         return MPSS_LOG_LEVEL_INFO;
-    case WARN:
-        return MPSS_LOG_LEVEL_WARN;
-    case ERR:
-        return MPSS_LOG_LEVEL_ERR;
-    case SUPPRESS:
+    case warning:
+        return MPSS_LOG_LEVEL_WARNING;
+    case error:
+        return MPSS_LOG_LEVEL_ERROR;
+    case suppress:
     default:
         return MPSS_LOG_LEVEL_SUPPRESS;
     }
@@ -160,14 +160,14 @@ void mpss_log_info(const char *message)
     mpss_log(MPSS_LOG_LEVEL_INFO, message);
 }
 
-void mpss_log_warn(const char *message)
+void mpss_log_warning(const char *message)
 {
-    mpss_log(MPSS_LOG_LEVEL_WARN, message);
+    mpss_log(MPSS_LOG_LEVEL_WARNING, message);
 }
 
-void mpss_log_err(const char *message)
+void mpss_log_error(const char *message)
 {
-    mpss_log(MPSS_LOG_LEVEL_ERR, message);
+    mpss_log(MPSS_LOG_LEVEL_ERROR, message);
 }
 
 void mpss_log_flush(void)

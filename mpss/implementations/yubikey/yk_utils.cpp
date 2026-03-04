@@ -22,70 +22,7 @@ std::string to_lower(std::string_view str)
     return result;
 }
 
-} // namespace
-
-namespace mpss::impl::yubikey::utils
-{
-
-using enum mpss::Algorithm;
-
-std::optional<std::uint32_t> get_serial_from_env()
-{
-    const char *serial = std::getenv("MPSS_YUBIKEY_SERIAL");
-    if (nullptr == serial)
-    {
-        return std::nullopt;
-    }
-
-    char *end = nullptr;
-    const unsigned long value = std::strtoul(serial, &end, 10);
-    if (end == serial || *end != '\0' || 0 == value)
-    {
-        mpss::utils::log_warn("MPSS_YUBIKEY_SERIAL value '{}' is not a valid serial number.", serial);
-        return std::nullopt;
-    }
-
-    if (value > std::numeric_limits<std::uint32_t>::max())
-    {
-        mpss::utils::log_warn("MPSS_YUBIKEY_SERIAL value '{}' is out of range.", serial);
-        return std::nullopt;
-    }
-
-    return static_cast<std::uint32_t>(value);
-}
-
-SecureByteVector get_mgm_key_from_env()
-{
-    const char *env_ptr = std::getenv("MPSS_YUBIKEY_MGM_KEY");
-    if (nullptr == env_ptr)
-    {
-        mpss::utils::log_trace("MPSS_YUBIKEY_MGM_KEY environment variable not set.");
-        return {};
-    }
-
-    // Use string_view to avoid copying the environment string.
-    const std::string_view hex_str{env_ptr};
-
-    // Validate length for AES-128 (32), AES-192/TDES (48), or AES-256 (64).
-    const std::size_t len = hex_str.size();
-    if (len != 32 && len != 48 && len != 64)
-    {
-        mpss::utils::log_warn("MPSS_YUBIKEY_MGM_KEY has invalid length ({}). Expected 32, 48, or 64 hex characters.",
-                              len);
-        return {};
-    }
-
-    auto key_opt = mpss::utils::hex_string_to_bytes<SecureByteVector>(hex_str);
-    if (!key_opt)
-    {
-        mpss::utils::log_warn("MPSS_YUBIKEY_MGM_KEY contains invalid hex characters.");
-        return {};
-    }
-
-    // std::move is required here to extract from the optional without copying.
-    return std::move(*key_opt);
-}
-
+/** @brief Read YubiKey PIN policy from the MPSS_YUBIKEY_PINPOLICY environment variable. */
 std::uint8_t get_pin_policy_from_env()
 {
     const char *env_ptr = std::getenv("MPSS_YUBIKEY_PINPOLICY");
@@ -112,21 +49,13 @@ std::uint8_t get_pin_policy_from_env()
     {
         return YKPIV_PINPOLICY_ALWAYS;
     }
-    if ("match_once" == value)
-    {
-        return YKPIV_PINPOLICY_MATCH_ONCE;
-    }
-    if ("match_always" == value)
-    {
-        return YKPIV_PINPOLICY_MATCH_ALWAYS;
-    }
-
-    mpss::utils::log_warn("MPSS_YUBIKEY_PINPOLICY has unrecognized value '{}'. "
-                          "Expected: default, never, once, always, match_once, match_always. Defaulting to 'once'.",
-                          env_ptr);
+    mpss::utils::log_warning("MPSS_YUBIKEY_PINPOLICY has unrecognized value '{}'. "
+                             "Expected: default, never, once, always. Defaulting to 'once'.",
+                             env_ptr);
     return YKPIV_PINPOLICY_ONCE;
 }
 
+/** @brief Read YubiKey touch policy from the MPSS_YUBIKEY_TOUCHPOLICY environment variable. */
 std::uint8_t get_touch_policy_from_env()
 {
     const char *env_ptr = std::getenv("MPSS_YUBIKEY_TOUCHPOLICY");
@@ -158,10 +87,121 @@ std::uint8_t get_touch_policy_from_env()
         return YKPIV_TOUCHPOLICY_AUTO;
     }
 
-    mpss::utils::log_warn("MPSS_YUBIKEY_TOUCHPOLICY has unrecognized value '{}'. "
-                          "Expected: default, never, always, cached, auto. Defaulting to 'never'.",
-                          env_ptr);
+    mpss::utils::log_warning("MPSS_YUBIKEY_TOUCHPOLICY has unrecognized value '{}'. "
+                             "Expected: default, never, always, cached, auto. Defaulting to 'never'.",
+                             env_ptr);
     return YKPIV_TOUCHPOLICY_NEVER;
+}
+
+} // namespace
+
+namespace mpss::impl::yubikey::utils
+{
+
+using enum mpss::Algorithm;
+
+std::optional<std::uint32_t> get_serial_from_env()
+{
+    const char *serial = std::getenv("MPSS_YUBIKEY_SERIAL");
+    if (nullptr == serial)
+    {
+        return std::nullopt;
+    }
+
+    char *end = nullptr;
+    const unsigned long value = std::strtoul(serial, &end, 10);
+    if (end == serial || *end != '\0' || 0 == value)
+    {
+        mpss::utils::log_warning("MPSS_YUBIKEY_SERIAL value '{}' is not a valid serial number.", serial);
+        return std::nullopt;
+    }
+
+    if (value > std::numeric_limits<std::uint32_t>::max())
+    {
+        mpss::utils::log_warning("MPSS_YUBIKEY_SERIAL value '{}' is out of range.", serial);
+        return std::nullopt;
+    }
+
+    return static_cast<std::uint32_t>(value);
+}
+
+SecureByteVector get_mgm_key_from_env()
+{
+    const char *env_ptr = std::getenv("MPSS_YUBIKEY_MGM_KEY");
+    if (nullptr == env_ptr)
+    {
+        mpss::utils::log_trace("MPSS_YUBIKEY_MGM_KEY environment variable not set.");
+        return {};
+    }
+
+    // Use string_view to avoid copying the environment string.
+    const std::string_view hex_str{env_ptr};
+
+    // Validate length for AES-128 (32), AES-192/TDES (48), or AES-256 (64).
+    const std::size_t len = hex_str.size();
+    if (len != 32 && len != 48 && len != 64)
+    {
+        mpss::utils::log_warning("MPSS_YUBIKEY_MGM_KEY has invalid length ({}). Expected 32, 48, or 64 hex characters.",
+                                 len);
+        return {};
+    }
+
+    auto key_opt = mpss::utils::hex_string_to_bytes<SecureByteVector>(hex_str);
+    if (!key_opt)
+    {
+        mpss::utils::log_warning("MPSS_YUBIKEY_MGM_KEY contains invalid hex characters.");
+        return {};
+    }
+
+    // std::move is required here to extract from the optional without copying.
+    return std::move(*key_opt);
+}
+
+std::uint8_t resolve_pin_policy(KeyPolicy policy)
+{
+    const std::uint32_t field = static_cast<std::uint32_t>(policy & yubikey_pin_mask);
+    if (0 == field)
+    {
+        // No programmatic policy specified — fall back to env var / default.
+        return get_pin_policy_from_env();
+    }
+
+    switch (field)
+    {
+    case 1:
+        return YKPIV_PINPOLICY_NEVER;
+    case 2:
+        return YKPIV_PINPOLICY_ONCE;
+    case 3:
+        return YKPIV_PINPOLICY_ALWAYS;
+    default:
+        mpss::utils::log_warning("Unrecognized YubiKey PIN policy value {} in KeyPolicy. Defaulting to 'once'.", field);
+        return YKPIV_PINPOLICY_ONCE;
+    }
+}
+
+std::uint8_t resolve_touch_policy(KeyPolicy policy)
+{
+    const std::uint32_t field = static_cast<std::uint32_t>(policy & yubikey_touch_mask) >> 4;
+    if (0 == field)
+    {
+        // No programmatic policy specified — fall back to env var / default.
+        return get_touch_policy_from_env();
+    }
+
+    switch (field)
+    {
+    case 1:
+        return YKPIV_TOUCHPOLICY_NEVER;
+    case 2:
+        return YKPIV_TOUCHPOLICY_ALWAYS;
+    case 3:
+        return YKPIV_TOUCHPOLICY_CACHED;
+    default:
+        mpss::utils::log_warning("Unrecognized YubiKey touch policy value {} in KeyPolicy. Defaulting to 'never'.",
+                                 field);
+        return YKPIV_TOUCHPOLICY_NEVER;
+    }
 }
 
 std::uint8_t mpss_to_yk_algorithm(Algorithm algorithm)

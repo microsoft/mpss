@@ -254,7 +254,7 @@ std::unique_ptr<KeyPair> open_key(std::string_view name)
 {
     if (name.empty())
     {
-        mpss::utils::log_warn("Key name cannot be empty.");
+        mpss::utils::log_warning("Key name cannot be empty.");
         return {};
     }
 
@@ -299,13 +299,13 @@ std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm)
     const std::string key_name{name};
     if (key_name.empty())
     {
-        mpss::utils::log_warn("Key name cannot be empty.");
+        mpss::utils::log_warning("Key name cannot be empty.");
         return nullptr;
     }
 
     if (unsupported == algorithm)
     {
-        mpss::utils::log_warn("Unsupported algorithm '{}'.", get_algorithm_info(algorithm).type_str);
+        mpss::utils::log_warning("Unsupported algorithm '{}'.", get_algorithm_info(algorithm).type_str);
         return nullptr;
     }
 
@@ -313,7 +313,7 @@ std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm)
     std::unique_ptr<KeyPair> existing_key = open_key(name);
     if (nullptr != existing_key)
     {
-        mpss::utils::log_warn("Key '{}' already exists.", name);
+        mpss::utils::log_warning("Key '{}' already exists.", name);
         return nullptr;
     }
 
@@ -351,13 +351,13 @@ bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_k
 {
     if (hash.empty() || public_key.empty() || sig.empty())
     {
-        mpss::utils::log_warn("Hash, public key, and signature cannot be empty.");
+        mpss::utils::log_warning("Hash, public key, and signature cannot be empty.");
         return false;
     }
 
     if (unsupported == algorithm)
     {
-        mpss::utils::log_warn("Unsupported algorithm '{}'.", get_algorithm_info(algorithm).type_str);
+        mpss::utils::log_warning("Unsupported algorithm '{}'.", get_algorithm_info(algorithm).type_str);
         return false;
     }
 
@@ -370,7 +370,7 @@ bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_k
     // Check compression indicator
     if (public_key[0] != std::byte{0x04})
     {
-        mpss::utils::log_warn("Invalid public key format.");
+        mpss::utils::log_warning("Invalid public key format.");
         return false;
     }
 
@@ -381,7 +381,7 @@ bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_k
     crypto_params const *const crypto = utils::get_crypto_params(algorithm);
     if (nullptr == crypto)
     {
-        mpss::utils::log_warn("Unsupported algorithm '{}'.", info.type_str);
+        mpss::utils::log_warning("Unsupported algorithm '{}'.", info.type_str);
         return false;
     }
 

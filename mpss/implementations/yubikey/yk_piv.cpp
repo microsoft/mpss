@@ -67,7 +67,7 @@ bool YubiKeyPIV::connect()
         rc = ykpiv_connect(state_, reader);
         if (YKPIV_OK != rc)
         {
-            mpss::utils::log_warn("Reader '{}': connection failed ({}).", reader, ykpiv_strerror(rc));
+            mpss::utils::log_warning("Reader '{}': connection failed ({}).", reader, ykpiv_strerror(rc));
             reader += std::strlen(reader) + 1;
             continue;
         }
@@ -75,7 +75,8 @@ bool YubiKeyPIV::connect()
         rc = ykpiv_get_serial(state_, &serial_);
         if (YKPIV_OK != rc)
         {
-            mpss::utils::log_warn("Reader '{}': connected but failed to get serial ({}).", reader, ykpiv_strerror(rc));
+            mpss::utils::log_warning("Reader '{}': connected but failed to get serial ({}).", reader,
+                                     ykpiv_strerror(rc));
             ykpiv_disconnect(state_);
             reader += std::strlen(reader) + 1;
             continue;
@@ -148,7 +149,7 @@ PinResult YubiKeyPIV::authenticate_pin(std::string_view pin)
         return PinResult::locked;
     }
 
-    mpss::utils::log_warn("PIN verification failed: {} ({} tries remaining).", ykpiv_strerror(rc), tries);
+    mpss::utils::log_warning("PIN verification failed: {} ({} tries remaining).", ykpiv_strerror(rc), tries);
     return PinResult::wrong_pin;
 }
 
@@ -171,7 +172,7 @@ bool YubiKeyPIV::authenticate_mgm_key()
             mpss::utils::log_trace("Authenticated with PIN-protected management key.");
             return true;
         }
-        mpss::utils::log_warn("PIN-protected management key authentication failed: {}", ykpiv_strerror(rc));
+        mpss::utils::log_warning("PIN-protected management key authentication failed: {}", ykpiv_strerror(rc));
     }
 
     // Try management key from environment variable.
@@ -184,7 +185,7 @@ bool YubiKeyPIV::authenticate_mgm_key()
             mpss::utils::log_trace("Authenticated with management key from MPSS_YUBIKEY_MGM_KEY.");
             return true;
         }
-        mpss::utils::log_warn("Management key from MPSS_YUBIKEY_MGM_KEY failed: {}", ykpiv_strerror(rc));
+        mpss::utils::log_warning("Management key from MPSS_YUBIKEY_MGM_KEY failed: {}", ykpiv_strerror(rc));
     }
 
     // Fall back to default YubiKey management key (3DES, 24 bytes).
@@ -193,27 +194,25 @@ bool YubiKeyPIV::authenticate_mgm_key()
     rc = ykpiv_authenticate(state_, default_mgm_key);
     if (YKPIV_OK == rc)
     {
-        mpss::utils::log_warn(
+        mpss::utils::log_warning(
             "Authenticated with default management key. Consider setting MPSS_YUBIKEY_MGM_KEY or enabling "
             "PIN-protected management key mode.");
         return true;
     }
 
-    mpss::utils::log_warn("Management key authentication failed. PIN-protected management key requires prior PIN "
-                          "verification.");
+    mpss::utils::log_warning("Management key authentication failed. PIN-protected management key requires prior PIN "
+                             "verification.");
     return false;
 }
 
-bool YubiKeyPIV::generate_key(std::uint8_t slot, std::uint8_t algorithm)
+bool YubiKeyPIV::generate_key(std::uint8_t slot, std::uint8_t algorithm, std::uint8_t pin_policy,
+                              std::uint8_t touch_policy)
 {
     if (nullptr == state_)
     {
         mpss::utils::log_and_set_error("YubiKey not connected.");
         return false;
     }
-
-    const std::uint8_t pin_policy = utils::get_pin_policy_from_env();
-    const std::uint8_t touch_policy = utils::get_touch_policy_from_env();
 
     // Output parameters required by ykpiv_util_generate_key.
     // We don't use these values (public key is retrieved separately via metadata),
@@ -229,7 +228,7 @@ bool YubiKeyPIV::generate_key(std::uint8_t slot, std::uint8_t algorithm)
     auto free_ykpiv_buf = [state = state_](std::uint8_t *&ptr) {
         if (nullptr == state)
         {
-            mpss::utils::log_warn("YubiKey state is null in free_ykpiv_buf. Potential memory leak.");
+            mpss::utils::log_warning("YubiKey state is null in free_ykpiv_buf. Potential memory leak.");
             return;
         }
         if (nullptr != ptr)
@@ -237,7 +236,7 @@ bool YubiKeyPIV::generate_key(std::uint8_t slot, std::uint8_t algorithm)
             ykpiv_rc rc = ykpiv_util_free(state, ptr);
             if (YKPIV_OK != rc)
             {
-                mpss::utils::log_warn("Failed to free ykpiv buffer: {}", ykpiv_strerror(rc));
+                mpss::utils::log_warning("Failed to free ykpiv buffer: {}", ykpiv_strerror(rc));
             }
             ptr = nullptr;
         }
@@ -395,7 +394,8 @@ bool YubiKeyPIV::delete_key(std::uint8_t slot)
     }
 
     // Overwrite the private key material by generating a dummy key in the slot.
-    if (!generate_key(slot, YKPIV_ALGO_ECCP256))
+    // Policy is irrelevant for the dummy key — use device defaults.
+    if (!generate_key(slot, YKPIV_ALGO_ECCP256, YKPIV_PINPOLICY_DEFAULT, YKPIV_TOUCHPOLICY_DEFAULT))
     {
         return false;
     }
@@ -403,8 +403,8 @@ bool YubiKeyPIV::delete_key(std::uint8_t slot)
     // Write a marker certificate so the slot is recognized as available for reuse.
     if (!write_slot_label(slot, available_slot_label))
     {
-        mpss::utils::log_warn("Private key overwritten but failed to write availability marker for slot {}.",
-                              utils::get_slot_name(slot));
+        mpss::utils::log_warning("Private key overwritten but failed to write availability marker for slot {}.",
+                                 utils::get_slot_name(slot));
 
         // The slot is now effectively unusable since the metadata is required to recognize it as free, but the key
         // material has been overwritten so it can't be used maliciously. We log a warning but return success since

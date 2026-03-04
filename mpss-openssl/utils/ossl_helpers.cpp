@@ -43,7 +43,7 @@ std::size_t mpss_sign_as_der(const std::unique_ptr<KeyPair> &key_pair, std::span
     // Check that signature_size is not greater than the output buffer size.
     if (signature_size > out.size())
     {
-        GetLogger()->err("DER signature size is larger than output buffer.");
+        GetLogger()->error("DER signature size is larger than output buffer.");
         return 0;
     }
 
@@ -66,7 +66,7 @@ std::size_t mpss_sign_as_der(const std::unique_ptr<KeyPair> &key_pair, std::span
     const bool res = key_pair->verify(hash_tbs, der_sig);
     if (!res)
     {
-        GetLogger()->err("Failed to verify raw signature.");
+        GetLogger()->error("Failed to verify raw signature.");
     }
 
     return res;

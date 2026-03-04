@@ -20,18 +20,18 @@ namespace mpss
  */
 enum class LogLevel : std::size_t
 {
-    TRACE,
-    DEBUG,
-    INFO,
-    WARN,
-    ERR,
-    SUPPRESS,
+    trace,
+    debug,
+    info,
+    warning,
+    error,
+    suppress,
 };
 
 /**
- * @brief The number of actionable log levels (excludes SUPPRESS).
+ * @brief The number of actionable log levels (excludes suppress).
  */
-constexpr std::size_t log_level_count = static_cast<std::size_t>(LogLevel::SUPPRESS);
+constexpr std::size_t log_level_count = static_cast<std::size_t>(LogLevel::suppress);
 
 /**
  * @brief Callback type for log handlers.
@@ -58,7 +58,7 @@ class Logger
     /**
      * @brief Creates a logger with the given callback handlers.
      * @param[in] log_handlers Array of log handler callbacks, one per log level
-     *   (TRACE, DEBUG, INFO, WARN, ERR). Pass an empty callback for any level that is not needed.
+     *   (trace, debug, info, warning, error). Pass an empty callback for any level that is not needed.
      * @param[in] flush_handlers Array of flush handler callbacks, one per log level.
      * @param[in] close_handlers Array of close handler callbacks, one per log level.
      * @return A shared pointer to the new logger.
@@ -113,9 +113,9 @@ class Logger
      */
     void set_level(LogLevel level)
     {
-        if (level > LogLevel::SUPPRESS)
+        if (level > LogLevel::suppress)
         {
-            level = LogLevel::SUPPRESS;
+            level = LogLevel::suppress;
         }
         std::lock_guard<std::mutex> lock{mtx_};
         log_level_ = level;
@@ -140,53 +140,53 @@ class Logger
     }
 
     /**
-     * @brief Logs a formatted message at TRACE level.
+     * @brief Logs a formatted message at trace level.
      * @param[in] fmt_str The format string.
      * @param[in] args The format arguments.
      */
     template <typename... Args> void trace(std::format_string<Args...> fmt_str, Args &&...args) const
     {
-        log(LogLevel::TRACE, fmt_str, std::forward<Args>(args)...);
+        log(LogLevel::trace, fmt_str, std::forward<Args>(args)...);
     }
 
     /**
-     * @brief Logs a formatted message at DEBUG level.
+     * @brief Logs a formatted message at debug level.
      * @param[in] fmt_str The format string.
      * @param[in] args The format arguments.
      */
     template <typename... Args> void debug(std::format_string<Args...> fmt_str, Args &&...args) const
     {
-        log(LogLevel::DEBUG, fmt_str, std::forward<Args>(args)...);
+        log(LogLevel::debug, fmt_str, std::forward<Args>(args)...);
     }
 
     /**
-     * @brief Logs a formatted message at INFO level.
+     * @brief Logs a formatted message at info level.
      * @param[in] fmt_str The format string.
      * @param[in] args The format arguments.
      */
     template <typename... Args> void info(std::format_string<Args...> fmt_str, Args &&...args) const
     {
-        log(LogLevel::INFO, fmt_str, std::forward<Args>(args)...);
+        log(LogLevel::info, fmt_str, std::forward<Args>(args)...);
     }
 
     /**
-     * @brief Logs a formatted message at WARN level.
+     * @brief Logs a formatted message at warning level.
      * @param[in] fmt_str The format string.
      * @param[in] args The format arguments.
      */
-    template <typename... Args> void warn(std::format_string<Args...> fmt_str, Args &&...args) const
+    template <typename... Args> void warning(std::format_string<Args...> fmt_str, Args &&...args) const
     {
-        log(LogLevel::WARN, fmt_str, std::forward<Args>(args)...);
+        log(LogLevel::warning, fmt_str, std::forward<Args>(args)...);
     }
 
     /**
-     * @brief Logs a formatted message at ERR level.
+     * @brief Logs a formatted message at error level.
      * @param[in] fmt_str The format string.
      * @param[in] args The format arguments.
      */
-    template <typename... Args> void err(std::format_string<Args...> fmt_str, Args &&...args) const
+    template <typename... Args> void error(std::format_string<Args...> fmt_str, Args &&...args) const
     {
-        log(LogLevel::ERR, fmt_str, std::forward<Args>(args)...);
+        log(LogLevel::error, fmt_str, std::forward<Args>(args)...);
     }
 
   private:
@@ -206,7 +206,7 @@ class Logger
 
     mutable std::mutex mtx_;
 
-    LogLevel log_level_ = LogLevel::INFO;
+    LogLevel log_level_ = LogLevel::info;
 
     std::array<log_handler_t, log_level_count> log_handlers_{};
 

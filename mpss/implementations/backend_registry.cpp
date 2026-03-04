@@ -83,14 +83,14 @@ class BackendRegistry
     {
         if (nullptr == backend)
         {
-            utils::log_warn("Attempted to register null backend.");
+            utils::log_warning("Attempted to register null backend.");
             return;
         }
 
         const std::string backend_name = backend->name();
         if (backends_.contains(backend_name))
         {
-            utils::log_warn("Backend '{}' already registered, ignoring.", backend_name);
+            utils::log_warning("Backend '{}' already registered, ignoring.", backend_name);
             return;
         }
         backends_[backend_name] = backend;
@@ -239,7 +239,7 @@ void register_backend(std::shared_ptr<Backend> backend)
 // Default-backend free functions.
 bool is_algorithm_available(Algorithm algorithm)
 {
-    const auto backend = BackendRegistry::Instance().get_active_backend();
+    const std::shared_ptr<Backend> backend = BackendRegistry::Instance().get_active_backend();
     if (nullptr == backend)
     {
         return false;
@@ -247,20 +247,20 @@ bool is_algorithm_available(Algorithm algorithm)
     return backend->is_algorithm_available(algorithm);
 }
 
-std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm)
+std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm, KeyPolicy policy)
 {
     if (name.empty())
     {
-        utils::log_warn("Key name cannot be empty.");
+        utils::log_warning("Key name cannot be empty.");
         return nullptr;
     }
     if (name.size() > max_key_name_length)
     {
-        utils::log_warn("Key name exceeds maximum length of {} characters.", max_key_name_length);
+        utils::log_warning("Key name exceeds maximum length of {} characters.", max_key_name_length);
         return nullptr;
     }
 
-    const auto backend = BackendRegistry::Instance().get_active_backend();
+    const std::shared_ptr<Backend> backend = BackendRegistry::Instance().get_active_backend();
     if (nullptr == backend)
     {
         utils::log_and_set_error("No active backend available for creating key '{}'.", name);
@@ -269,7 +269,7 @@ std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm)
 
     utils::log_trace("Creating key '{}' with algorithm '{}' using backend '{}'.", name,
                      get_algorithm_info(algorithm).type_str, backend->name());
-    auto key = backend->create_key(name, algorithm);
+    auto key = backend->create_key(name, algorithm, policy);
     if (nullptr != key)
     {
         utils::log_trace("Key '{}' created on backend '{}'.", name, backend->name());
@@ -282,16 +282,16 @@ std::unique_ptr<KeyPair> open_key(std::string_view name)
 {
     if (name.empty())
     {
-        utils::log_warn("Key name cannot be empty.");
+        utils::log_warning("Key name cannot be empty.");
         return nullptr;
     }
     if (name.size() > max_key_name_length)
     {
-        utils::log_warn("Key name exceeds maximum length of {} characters.", max_key_name_length);
+        utils::log_warning("Key name exceeds maximum length of {} characters.", max_key_name_length);
         return nullptr;
     }
 
-    const auto backend = BackendRegistry::Instance().get_active_backend();
+    const std::shared_ptr<Backend> backend = BackendRegistry::Instance().get_active_backend();
     if (nullptr == backend)
     {
         utils::log_and_set_error("No active backend available for opening key '{}'.", name);
@@ -311,7 +311,7 @@ std::unique_ptr<KeyPair> open_key(std::string_view name)
 bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_key, Algorithm algorithm,
             std::span<const std::byte> sig)
 {
-    const auto backend = BackendRegistry::Instance().get_active_backend();
+    const std::shared_ptr<Backend> backend = BackendRegistry::Instance().get_active_backend();
     if (nullptr == backend)
     {
         utils::log_and_set_error("No active backend available for verification.");
@@ -322,28 +322,29 @@ bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_k
 }
 
 // Explicit-backend-name overloads.
-std::unique_ptr<KeyPair> create_key(std::string_view backend_name, std::string_view name, Algorithm algorithm)
+std::unique_ptr<KeyPair> create_key(std::string_view backend_name, std::string_view name, Algorithm algorithm,
+                                    KeyPolicy policy)
 {
     if (name.empty())
     {
-        utils::log_warn("Key name cannot be empty.");
+        utils::log_warning("Key name cannot be empty.");
         return nullptr;
     }
     if (name.size() > max_key_name_length)
     {
-        utils::log_warn("Key name exceeds maximum length of {} characters.", max_key_name_length);
+        utils::log_warning("Key name exceeds maximum length of {} characters.", max_key_name_length);
         return nullptr;
     }
 
-    auto &registry = BackendRegistry::Instance();
-    const auto backend = registry.get_backend(backend_name);
+    BackendRegistry &registry = BackendRegistry::Instance();
+    const std::shared_ptr<Backend> backend = registry.get_backend(backend_name);
     if (nullptr == backend || !backend->is_available())
     {
         utils::log_and_set_error("Backend '{}' not available.", backend_name);
         return nullptr;
     }
 
-    auto key = backend->create_key(name, algorithm);
+    auto key = backend->create_key(name, algorithm, policy);
     if (nullptr != key)
     {
         BackendNameSetter::set(*key, backend->name());
@@ -355,17 +356,17 @@ std::unique_ptr<KeyPair> open_key(std::string_view backend_name, std::string_vie
 {
     if (name.empty())
     {
-        utils::log_warn("Key name cannot be empty.");
+        utils::log_warning("Key name cannot be empty.");
         return nullptr;
     }
     if (name.size() > max_key_name_length)
     {
-        utils::log_warn("Key name exceeds maximum length of {} characters.", max_key_name_length);
+        utils::log_warning("Key name exceeds maximum length of {} characters.", max_key_name_length);
         return nullptr;
     }
 
-    auto &registry = BackendRegistry::Instance();
-    const auto backend = registry.get_backend(backend_name);
+    BackendRegistry &registry = BackendRegistry::Instance();
+    const std::shared_ptr<Backend> backend = registry.get_backend(backend_name);
     if (nullptr == backend || !backend->is_available())
     {
         utils::log_and_set_error("Backend '{}' not available.", backend_name);
@@ -383,8 +384,8 @@ std::unique_ptr<KeyPair> open_key(std::string_view backend_name, std::string_vie
 bool verify(std::string_view backend_name, std::span<const std::byte> hash, std::span<const std::byte> public_key,
             Algorithm algorithm, std::span<const std::byte> sig)
 {
-    auto &registry = BackendRegistry::Instance();
-    const auto backend = registry.get_backend(backend_name);
+    BackendRegistry &registry = BackendRegistry::Instance();
+    const std::shared_ptr<Backend> backend = registry.get_backend(backend_name);
     if (nullptr == backend || !backend->is_available())
     {
         utils::log_and_set_error("Backend '{}' not available.", backend_name);
@@ -402,8 +403,8 @@ std::vector<std::string> get_available_backends()
 
 std::string get_default_backend_name()
 {
-    auto &registry = BackendRegistry::Instance();
-    const auto active = registry.get_active_backend();
+    BackendRegistry &registry = BackendRegistry::Instance();
+    const std::shared_ptr<Backend> active = registry.get_active_backend();
     if (nullptr != active)
     {
         return active->name();
@@ -421,7 +422,7 @@ bool Backend::is_algorithm_available(Algorithm algorithm) const
 
     // Sample a random name for a key and try creating it.
     const std::string random_key = "MPSS_TEST_KEY_" + random_string(16) + "_CAN_DELETE";
-    std::unique_ptr<KeyPair> key = create_key(random_key, algorithm);
+    std::unique_ptr<KeyPair> key = create_key(random_key, algorithm, KeyPolicy::none);
 
     // Could we even create a key?
     if (nullptr == key)
