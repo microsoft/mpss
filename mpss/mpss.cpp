@@ -2,7 +2,7 @@
 // Licensed under the MIT license.
 
 #include "mpss/mpss.h"
-#include "mpss/implementations/backend_registry.h"
+#include "mpss/impl/backend_registry.h"
 #include "mpss/utils/utilities.h"
 #include <array>
 #include <mutex>

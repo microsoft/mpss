@@ -1,8 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#include "mpss/implementations/os_backend.h"
-#include "mpss/implementations/backend_registry.h"
+#include "mpss/impl/os_backend.h"
+#include "mpss/impl/backend_registry.h"
 
 namespace mpss::impl
 {

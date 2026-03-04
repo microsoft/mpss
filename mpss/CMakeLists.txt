@@ -13,7 +13,7 @@ list(APPEND mpss_SOURCE_FILES
     "${CMAKE_CURRENT_LIST_DIR}/stdout_log.cpp"
 )
 
-add_subdirectory(implementations)
+add_subdirectory(impl)
 add_subdirectory(utils)
 
 install(

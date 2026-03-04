@@ -1,8 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#include "mpss/implementations/yubikey/yk_piv.h"
-#include "mpss/implementations/yubikey/yk_utils.h"
+#include "mpss/impl/yubikey/yk_piv.h"
+#include "mpss/impl/yubikey/yk_utils.h"
 #include "mpss/interaction_handler.h"
 #include "mpss/utils/scope_guard.h"
 #include "mpss/utils/utilities.h"

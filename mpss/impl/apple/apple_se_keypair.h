@@ -3,22 +3,22 @@
 
 #pragma once
 
-#include "mpss/implementations/apple/apple_keypair.h"
+#include "mpss/impl/apple/apple_keypair.h"
 
 namespace mpss::impl::os
 {
 
 /**
- * @brief Key pair implementation that uses the Apple Keychain for storage and operations.
+ * @brief Key pair implementation that uses the Apple Secure Enclave for storage and operations.
  *
- * This class provides functionality to manage cryptographic key pairs stored in the Apple Keychain.
- * It implements key deletion, signing, verification, and public key extraction using the Apple Keychain APIs.
+ * This class provides functionality to manage cryptographic key pairs stored in the Apple Secure Enclave.
+ * It implements key deletion, signing, verification, and public key extraction using the Apple Secure Enclave APIs.
  */
-class AppleKeychainKeyPair : public AppleKeyPairBase
+class AppleSEKeyPair : public AppleKeyPairBase
 {
   public:
-    AppleKeychainKeyPair(std::string_view name, Algorithm algorithm);
-    ~AppleKeychainKeyPair() override;
+    AppleSEKeyPair(std::string_view name, Algorithm algorithm);
+    ~AppleSEKeyPair() override;
 
   protected:
     bool do_delete_key() override;

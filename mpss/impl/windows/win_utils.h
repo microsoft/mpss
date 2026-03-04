@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "mpss/implementations/windows/crypto_params.h"
+#include "mpss/impl/windows/crypto_params.h"
 #include "mpss/mpss.h"
 
 namespace mpss::impl::os::utils

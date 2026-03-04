@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#include "mpss/implementations/apple/apple_keypair.h"
+#include "mpss/impl/apple/apple_keypair.h"
 #include "mpss/utils/utilities.h"
 
 namespace mpss::impl::os

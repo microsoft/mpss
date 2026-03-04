@@ -2,11 +2,11 @@
 // Licensed under the MIT license.
 
 #include "mpss/algorithm.h"
-#include "mpss/implementations/apple/apple_api_wrapper.h"
-#include "mpss/implementations/apple/apple_keychain_keypair.h"
-#include "mpss/implementations/apple/apple_se_keypair.h"
-#include "mpss/implementations/apple/apple_se_wrapper.h"
-#include "mpss/implementations/apple/apple_utils.h"
+#include "mpss/impl/apple/apple_api_wrapper.h"
+#include "mpss/impl/apple/apple_keychain_keypair.h"
+#include "mpss/impl/apple/apple_se_keypair.h"
+#include "mpss/impl/apple/apple_se_wrapper.h"
+#include "mpss/impl/apple/apple_utils.h"
 #include "mpss/utils/utilities.h"
 
 namespace mpss::impl::os

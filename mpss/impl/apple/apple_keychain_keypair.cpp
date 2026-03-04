@@ -1,8 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#include "mpss/implementations/apple/apple_keychain_keypair.h"
-#include "mpss/implementations/apple/apple_api_wrapper.h"
+#include "mpss/impl/apple/apple_keychain_keypair.h"
+#include "mpss/impl/apple/apple_api_wrapper.h"
 #include "mpss/utils/utilities.h"
 
 namespace

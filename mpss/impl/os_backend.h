@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "mpss/implementations/backend_registry.h"
+#include "mpss/impl/backend_registry.h"
 
 namespace mpss::impl
 {

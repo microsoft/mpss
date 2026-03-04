@@ -1,8 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#include "mpss/implementations/android/android_utils.h"
-#include "mpss/implementations/android/JNIObject.h"
+#include "mpss/impl/android/android_utils.h"
+#include "mpss/impl/android/JNIObject.h"
 #include "mpss/utils/utilities.h"
 
 namespace mpss::impl::os::utils

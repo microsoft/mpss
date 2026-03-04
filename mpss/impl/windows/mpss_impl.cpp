@@ -1,8 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#include "mpss/implementations/windows/win_keypair.h"
-#include "mpss/implementations/windows/win_utils.h"
+#include "mpss/impl/windows/win_keypair.h"
+#include "mpss/impl/windows/win_utils.h"
 #include "mpss/utils/scope_guard.h"
 #include "mpss/utils/utilities.h"
 #include <Windows.h>

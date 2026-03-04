@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "mpss/implementations/android/JNIHelper.h"
+#include "mpss/impl/android/JNIHelper.h"
 #include "mpss/mpss.h"
 
 namespace mpss::impl::os
