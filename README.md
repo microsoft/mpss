@@ -259,7 +259,7 @@ if (!is_algorithm_available(Algorithm::ecdsa_secp256r1_sha256)) {
     return;
 }
 
-// Create a new key pair.
+// Create a new key pair. Key names must not exceed 64 characters.
 auto key_pair = KeyPair::Create("my-key", Algorithm::ecdsa_secp256r1_sha256);
 if (!key_pair) {
     std::string error = get_error();
@@ -535,6 +535,8 @@ Once all slots are full, you cannot create new keys until you delete existing on
 
 1. **Physical Device**: The YubiKey must be plugged in for all operations except standalone verification (which uses software ECDSA).
 
+1. **Key Name Length**: Key names must not exceed 64 characters. This limit is enforced across all backends because the YubiKey backend stores names in the X.509 Common Name (CN) field, which is limited to 64 characters by the X.520 standard.
+
 1. **Key Name Mapping**: MPSS stores key names directly on the YubiKey by writing a minimal X.509 certificate into each slot's certificate object. This means the name-to-slot mapping travels with the device and works on any machine without additional configuration. Note that this uses the certificate object in each PIV slot, so external certificates cannot be stored alongside MPSS-managed keys.
 
 1. **Performance**: Operations are slower than OS-native backends due to USB communication overhead. MPSS does not persist the connection to the YubiKey, but creates a new connection for each operation.
@@ -700,7 +702,7 @@ The MPSS OpenSSL provider exposes custom parameters through `OSSL_PARAM` for key
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `mpss_key_name` | UTF-8 string | Yes | A persistent name under which the key is stored in the secure environment. Must be unique. |
+| `mpss_key_name` | UTF-8 string | Yes | A persistent name under which the key is stored in the secure environment. Must be unique and must not exceed 64 characters. |
 | `mpss_algorithm` | UTF-8 string | Yes (on key generation) | The signature algorithm suite, e.g., `"ecdsa_secp256r1_sha256"`. Omit when opening an existing key. |
 | `mpss_backend` | UTF-8 string | No | The backend to use (e.g., `"os"` or `"yubikey"`). If omitted, the default backend is used. Use `mpss_get_available_backends()` to list available backends. |
 

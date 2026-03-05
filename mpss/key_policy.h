@@ -13,7 +13,7 @@ namespace mpss
  * @brief Policy flags for key creation.
  *
  * KeyPolicy is a bitmask of packed multi-bit fields. Each field encodes a single policy aspect
- * (e.g., YubiKey PIN policy, YubiKey touch policy). Within each field, zero means "unset" — the
+ * (e.g., YubiKey PIN policy, YubiKey touch policy). Within each field, zero means "unset" - the
  * backend falls back to environment variables or its hardcoded default. Non-YubiKey backends
  * ignore YubiKey-specific fields.
  *

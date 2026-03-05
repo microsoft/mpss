@@ -38,6 +38,13 @@ std::string random_string(std::size_t length)
 namespace mpss::impl
 {
 
+/**
+ * @brief Friend-based accessor for setting KeyPair::backend_name_.
+ *
+ * KeyPair::backend_name_ is private with no public setter. BackendNameSetter is
+ * declared as a friend of KeyPair, allowing the registry to stamp each key with
+ * its backend name after creation or opening without exposing a public setter.
+ */
 class BackendNameSetter
 {
   public:
@@ -47,9 +54,10 @@ class BackendNameSetter
     }
 };
 
-// Maximum key name length. The YubiKey backend stores the name in an X.509 certificate's CN field
-// and reads it back into a fixed-size buffer, so names beyond this limit would be silently truncated.
-constexpr std::size_t max_key_name_length = 255;
+// Maximum key name length. The YubiKey backend stores the name in an X.509 certificate's CN field.
+// OpenSSL enforces the X.520 upper bound for Common Name (ub-common-name = 64), which limits the
+// CN to 64 characters.
+constexpr std::size_t max_key_name_length = 64;
 
 #ifdef MPSS_BACKEND_YUBIKEY
 // Forward declaration for YubiKey backend registration.
@@ -93,7 +101,7 @@ class BackendRegistry
             utils::log_warning("Backend '{}' already registered, ignoring.", backend_name);
             return;
         }
-        backends_[backend_name] = backend;
+        backends_[backend_name] = std::move(backend);
         utils::log_trace("Registered backend '{}'.", backend_name);
     }
 

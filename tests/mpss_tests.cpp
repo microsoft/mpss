@@ -581,6 +581,79 @@ TEST(BackendTest, VerifyWithInvalidBackend)
     EXPECT_FALSE(result);
 }
 
+// --- Key name length limit tests ---
+
+TEST(KeyNameLimitTest, KeyNameTooLongCreate)
+{
+    const std::string long_name(65, 'x');
+    auto key = mpss::KeyPair::Create(long_name, ecdsa_secp256r1_sha256);
+    EXPECT_EQ(nullptr, key);
+}
+
+TEST(KeyNameLimitTest, KeyNameTooLongOpen)
+{
+    const std::string long_name(65, 'x');
+    auto key = mpss::KeyPair::Open(long_name);
+    EXPECT_EQ(nullptr, key);
+}
+
+TEST_F(MPSS, KeyNameMaxLength)
+{
+    if (!mpss::is_algorithm_available(ecdsa_secp256r1_sha256))
+    {
+        GTEST_SKIP() << "Algorithm not supported by current backend";
+    }
+
+    const std::string key_name(64, 'k');
+    MPSS::DeleteKey(key_name);
+
+    auto handle = MPSS::CreateKey(key_name, ecdsa_secp256r1_sha256);
+    ASSERT_NE(nullptr, handle);
+
+    handle->delete_key();
+}
+
+TEST_F(MPSS, KeyNameMaxLengthDistinguished)
+{
+    if (!mpss::is_algorithm_available(ecdsa_secp256r1_sha256))
+    {
+        GTEST_SKIP() << "Algorithm not supported by current backend";
+    }
+
+    // Two names at the maximum length that differ only in the last character.
+    // If the backend silently truncates, these would collide.
+    std::string name_a(64, 'k');
+    std::string name_b(64, 'k');
+    name_a.back() = 'a';
+    name_b.back() = 'b';
+
+    MPSS::DeleteKey(name_a);
+    MPSS::DeleteKey(name_b);
+
+    auto handle_a = MPSS::CreateKey(name_a, ecdsa_secp256r1_sha256);
+    ASSERT_NE(nullptr, handle_a);
+
+    auto handle_b = MPSS::CreateKey(name_b, ecdsa_secp256r1_sha256);
+    ASSERT_NE(nullptr, handle_b);
+
+    // Sign with key A.
+    const std::vector<std::byte> hash(32, static_cast<std::byte>('z'));
+    const std::size_t sig_size = handle_a->sign_hash(hash, {});
+    std::vector<std::byte> signature(sig_size);
+    const std::size_t written = handle_a->sign_hash(hash, signature);
+    ASSERT_GT(written, std::size_t{0});
+    signature.resize(written);
+
+    // Verify with key A succeeds.
+    EXPECT_TRUE(handle_a->verify(hash, signature));
+
+    // Verify with key B fails - these are distinct keys.
+    EXPECT_FALSE(handle_b->verify(hash, signature));
+
+    handle_a->delete_key();
+    handle_b->delete_key();
+}
+
 class CrossBackendTest : public ::testing::Test
 {
   protected:

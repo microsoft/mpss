@@ -162,7 +162,7 @@ std::uint8_t resolve_pin_policy(KeyPolicy policy)
     const std::uint32_t field = static_cast<std::uint32_t>(policy & yubikey_pin_mask);
     if (0 == field)
     {
-        // No programmatic policy specified — fall back to env var / default.
+        // No programmatic policy specified - fall back to env var / default.
         return get_pin_policy_from_env();
     }
 
@@ -185,7 +185,7 @@ std::uint8_t resolve_touch_policy(KeyPolicy policy)
     const std::uint32_t field = static_cast<std::uint32_t>(policy & yubikey_touch_mask) >> 4;
     if (0 == field)
     {
-        // No programmatic policy specified — fall back to env var / default.
+        // No programmatic policy specified - fall back to env var / default.
         return get_touch_policy_from_env();
     }
 

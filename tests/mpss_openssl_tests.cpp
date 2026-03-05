@@ -209,7 +209,7 @@ TEST(MPSS_OpenSSL, DefaultBackendReturned)
     ASSERT_EQ(1, EVP_PKEY_generate(ctx, &pkey));
     EVP_PKEY_CTX_free(ctx);
 
-    // Query mpss_backend — should return the default backend even though we didn't set it.
+    // Query mpss_backend - should return the default backend even though we didn't set it.
     char backend_buf[256] = {0};
     OSSL_PARAM get_params[] = {OSSL_PARAM_construct_utf8_string("mpss_backend", backend_buf, sizeof(backend_buf)),
                                OSSL_PARAM_END};
