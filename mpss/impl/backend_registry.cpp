@@ -7,9 +7,11 @@
 #include "mpss/utils/scope_guard.h"
 #include "mpss/utils/utilities.h"
 #include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
 #include <random>
 #include <unordered_map>
 
@@ -164,11 +166,16 @@ class BackendRegistry
      */
     void initialize_if_needed()
     {
-        if (initialized_)
+        if (initialized_.load(std::memory_order_acquire))
         {
             return;
         }
-        initialized_ = true;
+
+        std::scoped_lock lock{init_mutex_};
+        if (initialized_.load(std::memory_order_relaxed))
+        {
+            return;
+        }
 
         // Register available backends.
 #if defined(_WIN32) || defined(__APPLE__) || defined(__ANDROID__)
@@ -183,11 +190,11 @@ class BackendRegistry
         if (nullptr != env_backend && std::strlen(env_backend) > 0)
         {
             const std::string requested{env_backend};
-            const std::string backend_name{requested};
-            const auto it = backends_.find(backend_name);
+            const auto it = backends_.find(requested);
             if (backends_.end() != it && it->second->is_available())
             {
                 active_backend_ = it->second;
+                initialized_.store(true, std::memory_order_release);
                 utils::log_trace("Using backend '{}' from MPSS_DEFAULT_BACKEND.", requested);
                 return;
             }
@@ -203,6 +210,7 @@ class BackendRegistry
             if (backends_.end() != it && it->second->is_available())
             {
                 active_backend_ = it->second;
+                initialized_.store(true, std::memory_order_release);
                 utils::log_trace("Using default backend '{}'.", default_name);
                 return;
             }
@@ -216,7 +224,8 @@ class BackendRegistry
 
     std::unordered_map<std::string, std::shared_ptr<Backend>> backends_;
     std::shared_ptr<Backend> active_backend_;
-    bool initialized_ = false;
+    std::atomic<bool> initialized_{false};
+    std::mutex init_mutex_;
 
     /**
      * @brief Get the platform-specific default backend name.
