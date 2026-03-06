@@ -9,7 +9,9 @@
 
 #include "mpss/secure_types.h"
 #include <memory>
+#include <mutex>
 #include <optional>
+#include <shared_mutex>
 #include <string_view>
 
 namespace mpss
@@ -21,8 +23,7 @@ namespace mpss
  * Applications can implement this interface to provide custom PIN entry (e.g., GUI dialog) and touch notification
  * behavior. A custom interaction handler is installed with @ref GetOrSetInteractionHandler.
  *
- * @note The handler must be set before concurrent use begins (typically at application startup). Concurrent reads
- * are safe; concurrent writes are not.
+ * @note Getting and setting the handler are both thread-safe.
  */
 class InteractionHandler
 {
@@ -54,16 +55,21 @@ std::shared_ptr<InteractionHandler> NewDefaultInteractionHandler();
  * @brief Gets or replaces the global interaction handler.
  * @param[in] new_handler If non-null, replaces the current global handler. If null, the current global handler is
  * returned without replacing it.
- * @return A reference to the global interaction handler.
+ * @return The current global interaction handler (after any replacement).
+ * @note This function is thread-safe for both reading and writing.
  */
 inline std::shared_ptr<InteractionHandler> GetOrSetInteractionHandler(
     std::shared_ptr<InteractionHandler> new_handler = nullptr)
 {
+    static std::shared_mutex mtx;
     static std::shared_ptr<InteractionHandler> handler = NewDefaultInteractionHandler();
     if (nullptr != new_handler)
     {
+        std::unique_lock lock{mtx};
         handler = std::move(new_handler);
+        return handler;
     }
+    std::shared_lock lock{mtx};
     return handler;
 }
 

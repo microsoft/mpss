@@ -4,22 +4,27 @@
 #include "mpss/log.h"
 
 #include <cstddef>
+#include <shared_mutex>
 #include <string>
 
 namespace mpss
 {
 
-std::shared_ptr<Logger> GetOrSetLogger(std::shared_ptr<Logger> new_logger = nullptr)
+std::shared_ptr<Logger> GetOrSetLogger(std::shared_ptr<Logger> new_logger)
 {
+    static std::shared_mutex mtx;
     static std::shared_ptr<Logger> logger = NewDefaultLogger();
     if (nullptr != new_logger)
     {
+        std::unique_lock lock{mtx};
         logger = std::move(new_logger);
+        return logger;
     }
+    std::shared_lock lock{mtx};
     return logger;
 }
 
-void Logger::log(LogLevel level, std::string msg) const
+void Logger::log(LogLevel level, const std::string &msg) const
 {
     const std::size_t level_index = static_cast<std::size_t>(level);
     const std::size_t min_level_index = static_cast<std::size_t>(log_level_);
@@ -29,10 +34,10 @@ void Logger::log(LogLevel level, std::string msg) const
         return;
     }
 
-    std::lock_guard<std::mutex> lock{mtx_};
+    std::scoped_lock lock{mtx_};
     if (log_handlers_[level_index])
     {
-        log_handlers_[level_index](std::move(msg));
+        log_handlers_[level_index](msg);
     }
 }
 

@@ -18,7 +18,7 @@ namespace mpss
 /**
  * @brief Log level constants for the logger.
  */
-enum class LogLevel : std::size_t
+enum class LogLevel : std::uint8_t
 {
     trace,
     debug,
@@ -37,7 +37,7 @@ constexpr std::size_t log_level_count = static_cast<std::size_t>(LogLevel::suppr
  * @brief Callback type for log handlers.
  * @param msg The log message string.
  */
-using log_handler_t = std::function<void(std::string)>;
+using log_handler_t = std::function<void(const std::string &)>;
 
 /**
  * @brief Callback type for flush handlers.
@@ -73,8 +73,14 @@ class Logger
 
     ~Logger()
     {
-        std::lock_guard<std::mutex> lock{mtx_};
-        close_internal();
+        try
+        {
+            std::scoped_lock lock{mtx_};
+            close_internal();
+        }
+        catch (...) // NOLINT(bugprone-empty-catch)
+        {
+        }
     }
 
     /**
@@ -82,7 +88,7 @@ class Logger
      */
     void flush() const
     {
-        std::lock_guard<std::mutex> lock{mtx_};
+        std::scoped_lock lock{mtx_};
         flush_internal();
     }
 
@@ -93,7 +99,7 @@ class Logger
      */
     void close()
     {
-        std::lock_guard<std::mutex> lock{mtx_};
+        std::scoped_lock lock{mtx_};
         close_internal();
     }
 
@@ -101,9 +107,10 @@ class Logger
      * @brief Gets the current log level of the logger.
      * @return The current log level.
      */
+    [[nodiscard]]
     LogLevel get_level() const
     {
-        std::lock_guard<std::mutex> lock{mtx_};
+        std::scoped_lock lock{mtx_};
         return log_level_;
     }
 
@@ -113,11 +120,8 @@ class Logger
      */
     void set_level(LogLevel level)
     {
-        if (level > LogLevel::suppress)
-        {
-            level = LogLevel::suppress;
-        }
-        std::lock_guard<std::mutex> lock{mtx_};
+        level = std::min(level, LogLevel::suppress);
+        std::scoped_lock lock{mtx_};
         log_level_ = level;
     }
 
@@ -126,7 +130,7 @@ class Logger
      * @param[in] level The log level for the message.
      * @param[in] msg The message string to log.
      */
-    void log(LogLevel level, std::string msg) const;
+    void log(LogLevel level, const std::string &msg) const;
 
     /**
      * @brief Logs a formatted message at the given level.
@@ -189,16 +193,16 @@ class Logger
         log(LogLevel::error, fmt_str, std::forward<Args>(args)...);
     }
 
+    Logger(const Logger &) = delete;
+
+    Logger &operator=(const Logger &) = delete;
+
   private:
     Logger(std::array<log_handler_t, log_level_count> log_handlers,
            std::array<flush_handler_t, log_level_count> flush_handlers,
            std::array<close_handler_t, log_level_count> close_handlers)
         : log_handlers_{std::move(log_handlers)}, flush_handlers_{std::move(flush_handlers)},
           close_handlers_{std::move(close_handlers)} {};
-
-    Logger(const Logger &) = delete;
-
-    Logger &operator=(const Logger &) = delete;
 
     void flush_internal() const;
 
@@ -225,9 +229,10 @@ std::shared_ptr<Logger> NewDefaultLogger();
  * @brief Gets or replaces the global logger.
  * @param[in] new_logger If non-null, replaces the current global logger. If null, the current
  *   global logger is returned without replacing it.
- * @return The new global logger.
+ * @return The current global logger (after any replacement).
+ * @note This function is thread-safe for both reading and writing.
  */
-std::shared_ptr<Logger> GetOrSetLogger(std::shared_ptr<Logger> new_logger);
+std::shared_ptr<Logger> GetOrSetLogger(std::shared_ptr<Logger> new_logger = nullptr);
 
 /**
  * @brief Gets the current global logger.
