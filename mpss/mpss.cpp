@@ -71,6 +71,17 @@ bool is_algorithm_available(Algorithm algorithm)
     return available;
 }
 
+bool is_algorithm_available(Algorithm algorithm, std::string_view backend_name)
+{
+    const AlgorithmInfo info = get_algorithm_info(algorithm);
+    if (0 == info.key_bits)
+    {
+        return false;
+    }
+    utils::log_trace("Checking algorithm availability for '{}' on backend '{}'.", info.type_str, backend_name);
+    return impl::is_algorithm_available(backend_name, algorithm);
+}
+
 std::vector<Algorithm> get_available_algorithms()
 {
     std::vector<Algorithm> result;

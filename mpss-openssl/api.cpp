@@ -32,6 +32,24 @@ bool mpss_delete_key(const char *key_name)
     return true;
 }
 
+bool mpss_delete_key_from_backend(const char *key_name, const char *backend_name)
+{
+    if (nullptr == key_name || nullptr == backend_name)
+    {
+        return false;
+    }
+
+    // Try to open the key from the specified backend.
+    const std::unique_ptr<mpss::KeyPair> key_pair = mpss::KeyPair::Open(key_name, backend_name);
+    if (nullptr == key_pair)
+    {
+        return false;
+    }
+
+    // Delete the key.
+    return key_pair->delete_key();
+}
+
 bool mpss_is_algorithm_available(const char *algorithm_name)
 {
     if (nullptr == algorithm_name)
@@ -44,6 +62,20 @@ bool mpss_is_algorithm_available(const char *algorithm_name)
         return false;
     }
     return mpss::is_algorithm_available(algorithm);
+}
+
+bool mpss_is_algorithm_available_in_backend(const char *algorithm_name, const char *backend_name)
+{
+    if (nullptr == algorithm_name || nullptr == backend_name)
+    {
+        return false;
+    }
+    const mpss::Algorithm algorithm = mpss_openssl::utils::try_get_mpss_algorithm(algorithm_name);
+    if (mpss::Algorithm::unsupported == algorithm)
+    {
+        return false;
+    }
+    return mpss::is_algorithm_available(algorithm, backend_name);
 }
 
 const char **mpss_get_available_algorithms()

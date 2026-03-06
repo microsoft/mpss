@@ -260,6 +260,17 @@ bool is_algorithm_available(Algorithm algorithm)
     return backend->is_algorithm_available(algorithm);
 }
 
+bool is_algorithm_available(std::string_view backend_name, Algorithm algorithm)
+{
+    const std::shared_ptr<Backend> backend = BackendRegistry::Instance().get_backend(backend_name);
+    if (nullptr == backend)
+    {
+        utils::log_warning("Backend '{}' not found.", backend_name);
+        return false;
+    }
+    return backend->is_algorithm_available(algorithm);
+}
+
 // Explicit-backend functions - the real implementations.
 std::unique_ptr<KeyPair> create_key(std::string_view backend_name, std::string_view name, Algorithm algorithm,
                                     KeyPolicy policy)

@@ -76,6 +76,8 @@ class Backend
 [[nodiscard]] bool verify(std::string_view backend_name, std::span<const std::byte> hash,
                           std::span<const std::byte> public_key, Algorithm algorithm, std::span<const std::byte> sig);
 
+[[nodiscard]] bool is_algorithm_available(std::string_view backend_name, Algorithm algorithm);
+
 // Default-backend overloads that resolve the default backend and delegate to the above.
 [[nodiscard]] bool is_algorithm_available(Algorithm algorithm);
 

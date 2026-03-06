@@ -25,6 +25,14 @@ extern "C"
     MPSS_OPENSSL_DECOR bool mpss_delete_key(const char *key_name);
 
     /**
+     * @brief Deletes the key with the given name from the specified backend.
+     * @param[in] key_name The name of the key to delete.
+     * @param[in] backend_name The backend to delete the key from.
+     * @return True if the key was successfully deleted, false otherwise.
+     */
+    MPSS_OPENSSL_DECOR bool mpss_delete_key_from_backend(const char *key_name, const char *backend_name);
+
+    /**
      * @brief Initializes the MPSS OpenSSL provider.
      * @param[in] handle The OpenSSL core handle.
      * @param[in] in The dispatch table from OpenSSL.
@@ -41,6 +49,15 @@ extern "C"
      * @return True if the algorithm is available, false otherwise.
      */
     MPSS_OPENSSL_DECOR bool mpss_is_algorithm_available(const char *algorithm_name);
+
+    /**
+     * @brief Checks whether an algorithm is available in the specified backend.
+     * @param[in] algorithm_name The algorithm name (e.g. "ecdsa_secp256r1_sha256").
+     * @param[in] backend_name The backend to check (e.g. "os", "yubikey").
+     * @return True if the algorithm is available in the given backend, false otherwise.
+     */
+    MPSS_OPENSSL_DECOR bool mpss_is_algorithm_available_in_backend(const char *algorithm_name,
+                                                                   const char *backend_name);
 
     /**
      * @brief Returns all algorithm names available in the default backend.

@@ -41,6 +41,14 @@ class BackendNameSetter;
 [[nodiscard]] MPSS_DECOR bool is_algorithm_available(Algorithm algorithm);
 
 /**
+ * @brief Determines whether the given signature algorithm is available in a specific backend.
+ * @param algorithm The signature algorithm to check.
+ * @param backend_name The backend to check (e.g., "os", "yubikey").
+ * @return true if the algorithm is available, false otherwise.
+ */
+[[nodiscard]] MPSS_DECOR bool is_algorithm_available(Algorithm algorithm, std::string_view backend_name);
+
+/**
  * @brief Returns all signature algorithms available in the default backend.
  * @return A vector of available @ref Algorithm values.
  */
