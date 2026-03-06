@@ -36,14 +36,14 @@ extern "C"
                            void **provctx);
 
     /**
-     * @brief Checks whether an algorithm is available in the active backend.
+     * @brief Checks whether an algorithm is available in the default backend.
      * @param[in] algorithm_name The algorithm name (e.g. "ecdsa_secp256r1_sha256").
      * @return True if the algorithm is available, false otherwise.
      */
     MPSS_OPENSSL_DECOR bool mpss_is_algorithm_available(const char *algorithm_name);
 
     /**
-     * @brief Returns all algorithm names available in the active backend.
+     * @brief Returns all algorithm names available in the default backend.
      * @return A null-terminated array of algorithm name strings. The returned pointer and strings are
      * valid for the lifetime of the process.
      */

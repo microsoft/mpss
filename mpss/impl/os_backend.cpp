@@ -35,15 +35,6 @@ bool OSBackend::verify(std::span<const std::byte> hash, std::span<const std::byt
     return os::verify(hash, public_key, algorithm, sig);
 }
 
-bool OSBackend::is_available() const
-{
-#if defined(_WIN32) || defined(__APPLE__) || defined(__ANDROID__)
-    return true;
-#else
-    return false;
-#endif
-}
-
 void register_os_backend()
 {
     auto backend = std::make_shared<OSBackend>();

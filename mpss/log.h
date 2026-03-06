@@ -117,6 +117,7 @@ class Logger
     /**
      * @brief Sets the log level of the logger.
      * @param[in] level The new log level. Messages below this level are ignored.
+     *                   Values above `suppress` are clamped to `suppress`.
      */
     void set_level(LogLevel level)
     {

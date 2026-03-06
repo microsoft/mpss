@@ -53,6 +53,7 @@ extern "C"
     /**
      * @brief Sets the log level of the global logger.
      * @param[in] level The new log level. Messages below this level are ignored.
+     *                   Unrecognized values are treated as `MPSS_LOG_LEVEL_SUPPRESS`.
      */
     MPSS_DECOR void mpss_log_set_level(mpss_log_level_t level);
 

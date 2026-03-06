@@ -70,7 +70,7 @@ void register_yubikey_backend();
  * @brief Registry for managing multiple backend implementations.
  *
  * The registry allows registration of multiple backends and selection
- * of the active backend based on environment variables or system defaults.
+ * of the default backend based on environment variables or system defaults.
  * This class is an implementation detail and is not exposed in the public API.
  */
 class BackendRegistry
@@ -108,19 +108,19 @@ class BackendRegistry
     }
 
     /**
-     * @brief Get the currently active backend.
-     * @return Pointer to the active backend, or nullptr if none is selected.
+     * @brief Get the default backend.
+     * @return Pointer to the default backend, or nullptr if none is selected.
      */
-    [[nodiscard]] std::shared_ptr<Backend> get_active_backend()
+    [[nodiscard]] std::shared_ptr<Backend> get_default_backend()
     {
         initialize_if_needed();
 
-        if (nullptr == active_backend_)
+        if (nullptr == default_backend_)
         {
-            utils::log_and_set_error("No active backend available.");
+            utils::log_and_set_error("No default backend available.");
         }
 
-        return active_backend_;
+        return default_backend_;
     }
 
     /**
@@ -153,16 +153,13 @@ class BackendRegistry
         std::vector<std::string> names;
         for (const auto &[name, backend] : backends_)
         {
-            if (backend->is_available())
-            {
-                names.push_back(name);
-            }
+            names.push_back(name);
         }
         return names;
     }
 
     /**
-     * @brief Ensure backends are registered and the active backend is selected.
+     * @brief Ensure backends are registered and the default backend is selected.
      */
     void initialize_if_needed()
     {
@@ -191,14 +188,14 @@ class BackendRegistry
         {
             const std::string requested{env_backend};
             const auto it = backends_.find(requested);
-            if (backends_.end() != it && it->second->is_available())
+            if (backends_.end() != it)
             {
-                active_backend_ = it->second;
+                default_backend_ = it->second;
                 initialized_.store(true, std::memory_order_release);
                 utils::log_trace("Using backend '{}' from MPSS_DEFAULT_BACKEND.", requested);
                 return;
             }
-            utils::log_and_set_error("Requested backend '{}' not available or not found.", requested);
+            utils::log_and_set_error("Requested backend '{}' not found.", requested);
             return;
         }
 
@@ -207,9 +204,9 @@ class BackendRegistry
         if (!default_name.empty())
         {
             const auto it = backends_.find(default_name);
-            if (backends_.end() != it && it->second->is_available())
+            if (backends_.end() != it)
             {
-                active_backend_ = it->second;
+                default_backend_ = it->second;
                 initialized_.store(true, std::memory_order_release);
                 utils::log_trace("Using default backend '{}'.", default_name);
                 return;
@@ -223,7 +220,7 @@ class BackendRegistry
     BackendRegistry() = default;
 
     std::unordered_map<std::string, std::shared_ptr<Backend>> backends_;
-    std::shared_ptr<Backend> active_backend_;
+    std::shared_ptr<Backend> default_backend_;
     std::atomic<bool> initialized_{false};
     std::mutex init_mutex_;
 
@@ -253,10 +250,9 @@ void register_backend(std::shared_ptr<Backend> backend)
     BackendRegistry::Instance().register_backend(std::move(backend));
 }
 
-// Default-backend free functions.
 bool is_algorithm_available(Algorithm algorithm)
 {
-    const std::shared_ptr<Backend> backend = BackendRegistry::Instance().get_active_backend();
+    const std::shared_ptr<Backend> backend = BackendRegistry::Instance().get_default_backend();
     if (nullptr == backend)
     {
         return false;
@@ -264,81 +260,7 @@ bool is_algorithm_available(Algorithm algorithm)
     return backend->is_algorithm_available(algorithm);
 }
 
-std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm, KeyPolicy policy)
-{
-    if (name.empty())
-    {
-        utils::log_warning("Key name cannot be empty.");
-        return nullptr;
-    }
-    if (name.size() > max_key_name_length)
-    {
-        utils::log_warning("Key name exceeds maximum length of {} characters.", max_key_name_length);
-        return nullptr;
-    }
-
-    const std::shared_ptr<Backend> backend = BackendRegistry::Instance().get_active_backend();
-    if (nullptr == backend)
-    {
-        utils::log_and_set_error("No active backend available for creating key '{}'.", name);
-        return nullptr;
-    }
-
-    utils::log_trace("Creating key '{}' with algorithm '{}' using backend '{}'.", name,
-                     get_algorithm_info(algorithm).type_str, backend->name());
-    auto key = backend->create_key(name, algorithm, policy);
-    if (nullptr != key)
-    {
-        utils::log_trace("Key '{}' created on backend '{}'.", name, backend->name());
-        BackendNameSetter::set(*key, backend->name());
-    }
-    return key;
-}
-
-std::unique_ptr<KeyPair> open_key(std::string_view name)
-{
-    if (name.empty())
-    {
-        utils::log_warning("Key name cannot be empty.");
-        return nullptr;
-    }
-    if (name.size() > max_key_name_length)
-    {
-        utils::log_warning("Key name exceeds maximum length of {} characters.", max_key_name_length);
-        return nullptr;
-    }
-
-    const std::shared_ptr<Backend> backend = BackendRegistry::Instance().get_active_backend();
-    if (nullptr == backend)
-    {
-        utils::log_and_set_error("No active backend available for opening key '{}'.", name);
-        return nullptr;
-    }
-
-    utils::log_trace("Opening key '{}' using backend '{}'.", name, backend->name());
-    auto key = backend->open_key(name);
-    if (nullptr != key)
-    {
-        utils::log_trace("Key '{}' opened on backend '{}'.", name, backend->name());
-        BackendNameSetter::set(*key, backend->name());
-    }
-    return key;
-}
-
-bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_key, Algorithm algorithm,
-            std::span<const std::byte> sig)
-{
-    const std::shared_ptr<Backend> backend = BackendRegistry::Instance().get_active_backend();
-    if (nullptr == backend)
-    {
-        utils::log_and_set_error("No active backend available for verification.");
-        return false;
-    }
-
-    return backend->verify(hash, public_key, algorithm, sig);
-}
-
-// Explicit-backend-name overloads.
+// Explicit-backend functions - the real implementations.
 std::unique_ptr<KeyPair> create_key(std::string_view backend_name, std::string_view name, Algorithm algorithm,
                                     KeyPolicy policy)
 {
@@ -355,15 +277,18 @@ std::unique_ptr<KeyPair> create_key(std::string_view backend_name, std::string_v
 
     BackendRegistry &registry = BackendRegistry::Instance();
     const std::shared_ptr<Backend> backend = registry.get_backend(backend_name);
-    if (nullptr == backend || !backend->is_available())
+    if (nullptr == backend)
     {
-        utils::log_and_set_error("Backend '{}' not available.", backend_name);
+        utils::log_and_set_error("Backend '{}' not found.", backend_name);
         return nullptr;
     }
 
+    utils::log_trace("Creating key '{}' with algorithm '{}' using backend '{}'.", name,
+                     get_algorithm_info(algorithm).type_str, backend->name());
     auto key = backend->create_key(name, algorithm, policy);
     if (nullptr != key)
     {
+        utils::log_trace("Key '{}' created on backend '{}'.", name, backend->name());
         BackendNameSetter::set(*key, backend->name());
     }
     return key;
@@ -384,15 +309,17 @@ std::unique_ptr<KeyPair> open_key(std::string_view backend_name, std::string_vie
 
     BackendRegistry &registry = BackendRegistry::Instance();
     const std::shared_ptr<Backend> backend = registry.get_backend(backend_name);
-    if (nullptr == backend || !backend->is_available())
+    if (nullptr == backend)
     {
-        utils::log_and_set_error("Backend '{}' not available.", backend_name);
+        utils::log_and_set_error("Backend '{}' not found.", backend_name);
         return nullptr;
     }
 
+    utils::log_trace("Opening key '{}' using backend '{}'.", name, backend->name());
     auto key = backend->open_key(name);
     if (nullptr != key)
     {
+        utils::log_trace("Key '{}' opened on backend '{}'.", name, backend->name());
         BackendNameSetter::set(*key, backend->name());
     }
     return key;
@@ -403,13 +330,48 @@ bool verify(std::string_view backend_name, std::span<const std::byte> hash, std:
 {
     BackendRegistry &registry = BackendRegistry::Instance();
     const std::shared_ptr<Backend> backend = registry.get_backend(backend_name);
-    if (nullptr == backend || !backend->is_available())
+    if (nullptr == backend)
     {
-        utils::log_and_set_error("Backend '{}' not available.", backend_name);
+        utils::log_and_set_error("Backend '{}' not found.", backend_name);
         return false;
     }
 
     return backend->verify(hash, public_key, algorithm, sig);
+}
+
+// Default-backend functions - delegate to the explicit-backend overloads.
+std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm, KeyPolicy policy)
+{
+    const std::shared_ptr<Backend> backend = BackendRegistry::Instance().get_default_backend();
+    if (nullptr == backend)
+    {
+        utils::log_and_set_error("No default backend available for creating key '{}'.", name);
+        return nullptr;
+    }
+    return create_key(backend->name(), name, algorithm, policy);
+}
+
+std::unique_ptr<KeyPair> open_key(std::string_view name)
+{
+    const std::shared_ptr<Backend> backend = BackendRegistry::Instance().get_default_backend();
+    if (nullptr == backend)
+    {
+        utils::log_and_set_error("No default backend available for opening key '{}'.", name);
+        return nullptr;
+    }
+    return open_key(backend->name(), name);
+}
+
+bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_key, Algorithm algorithm,
+            std::span<const std::byte> sig)
+{
+    const std::shared_ptr<Backend> backend = BackendRegistry::Instance().get_default_backend();
+    if (nullptr == backend)
+    {
+        utils::log_and_set_error("No default backend available for verification.");
+        return false;
+    }
+    return verify(backend->name(), hash, public_key, algorithm, sig);
 }
 
 // Discovery functions.
@@ -421,7 +383,7 @@ std::vector<std::string> get_available_backends()
 std::string get_default_backend_name()
 {
     BackendRegistry &registry = BackendRegistry::Instance();
-    const std::shared_ptr<Backend> active = registry.get_active_backend();
+    const std::shared_ptr<Backend> active = registry.get_default_backend();
     if (nullptr != active)
     {
         return active->name();

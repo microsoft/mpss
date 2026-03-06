@@ -33,8 +33,6 @@ class OSBackend : public Backend
 
     [[nodiscard]] bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_key,
                               Algorithm algorithm, std::span<const std::byte> sig) const override;
-
-    [[nodiscard]] bool is_available() const override;
 };
 
 /**

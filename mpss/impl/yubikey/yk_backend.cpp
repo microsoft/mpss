@@ -239,11 +239,4 @@ bool YubiKeyBackend::verify(std::span<const std::byte> hash, std::span<const std
     return true;
 }
 
-bool YubiKeyBackend::is_available() const
-{
-    // Try to connect to a YubiKey.
-    YubiKeyPIV piv;
-    return piv.is_connected();
-}
-
 } // namespace mpss::impl::yubikey

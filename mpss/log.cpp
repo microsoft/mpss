@@ -92,6 +92,7 @@ mpss::LogLevel to_cpp_level(mpss_log_level_t level)
         return error;
     case MPSS_LOG_LEVEL_SUPPRESS:
     default:
+        // Unrecognized C API values are mapped to suppress (silences all output).
         return suppress;
     }
 }

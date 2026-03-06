@@ -30,7 +30,7 @@ class BackendNameSetter;
 [[nodiscard]] MPSS_DECOR std::string get_error();
 
 /**
- * @brief Determines whether the given signature algorithm is available in the active backend.
+ * @brief Determines whether the given signature algorithm is available in the default backend.
  *
  * This performs a runtime probe (key creation, signing, verification, deletion) to check that
  * the algorithm works end-to-end. Results are cached after the first call per algorithm.
@@ -41,7 +41,7 @@ class BackendNameSetter;
 [[nodiscard]] MPSS_DECOR bool is_algorithm_available(Algorithm algorithm);
 
 /**
- * @brief Returns all signature algorithms available in the active backend.
+ * @brief Returns all signature algorithms available in the default backend.
  * @return A vector of available @ref Algorithm values.
  */
 [[nodiscard]] MPSS_DECOR std::vector<Algorithm> get_available_algorithms();

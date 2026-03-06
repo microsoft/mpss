@@ -61,7 +61,7 @@ bool is_algorithm_available(Algorithm algorithm)
         }
     }
 
-    // Delegate to the active backend.
+    // Delegate to the default backend.
     utils::log_trace("Probing algorithm availability for '{}'.", info.type_str);
     const bool available = impl::is_algorithm_available(algorithm);
 

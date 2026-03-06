@@ -65,15 +65,18 @@ class Backend
      * @return true if the algorithm is supported, false otherwise.
      */
     [[nodiscard]] virtual bool is_algorithm_available(Algorithm algorithm) const;
-
-    /**
-     * @brief Check if this backend is available on the current system.
-     * @return true if the backend can be used, false otherwise.
-     */
-    [[nodiscard]] virtual bool is_available() const = 0;
 };
 
-// Helper functions that delegate to the active (default) backend.
+// Explicit-backend functions. The default-backend overloads below delegate to these.
+[[nodiscard]] std::unique_ptr<KeyPair> create_key(std::string_view backend_name, std::string_view name,
+                                                  Algorithm algorithm, KeyPolicy policy);
+
+[[nodiscard]] std::unique_ptr<KeyPair> open_key(std::string_view backend_name, std::string_view name);
+
+[[nodiscard]] bool verify(std::string_view backend_name, std::span<const std::byte> hash,
+                          std::span<const std::byte> public_key, Algorithm algorithm, std::span<const std::byte> sig);
+
+// Default-backend overloads that resolve the default backend and delegate to the above.
 [[nodiscard]] bool is_algorithm_available(Algorithm algorithm);
 
 [[nodiscard]] std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm, KeyPolicy policy);
@@ -82,15 +85,6 @@ class Backend
 
 [[nodiscard]] bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_key, Algorithm algorithm,
                           std::span<const std::byte> sig);
-
-// Overloads that take an explicit backend name.
-[[nodiscard]] std::unique_ptr<KeyPair> create_key(std::string_view backend_name, std::string_view name,
-                                                  Algorithm algorithm, KeyPolicy policy);
-
-[[nodiscard]] std::unique_ptr<KeyPair> open_key(std::string_view backend_name, std::string_view name);
-
-[[nodiscard]] bool verify(std::string_view backend_name, std::span<const std::byte> hash,
-                          std::span<const std::byte> public_key, Algorithm algorithm, std::span<const std::byte> sig);
 
 /// @brief Get the names of all available backends.
 [[nodiscard]] std::vector<std::string> get_available_backends();
