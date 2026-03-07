@@ -618,6 +618,9 @@ OSSL_PARAM params[] = {
     OSSL_PARAM_construct_utf8_string("mpss_algorithm", algorithm, 0),
     // Optionally specify a backend (e.g., "os" or "yubikey"). If omitted, the default backend is used.
     // OSSL_PARAM_construct_utf8_string("mpss_backend", backend_name, 0),
+    // Optionally specify a key policy (e.g., YubiKey PIN/touch policy). If omitted, env vars / backend defaults apply.
+    // uint64_t policy = MPSS_KEY_POLICY_YUBIKEY_PIN_ONCE | MPSS_KEY_POLICY_YUBIKEY_TOUCH_CACHED;
+    // OSSL_PARAM_construct_uint64("mpss_key_policy", &policy),
     OSSL_PARAM_END};
 EVP_PKEY_CTX_set_params(ctx, params);
 
@@ -705,6 +708,7 @@ The MPSS OpenSSL provider exposes custom parameters through `OSSL_PARAM` for key
 | `mpss_key_name` | UTF-8 string | Yes | A persistent name under which the key is stored in the secure environment. Must be unique and must not exceed 64 characters. |
 | `mpss_algorithm` | UTF-8 string | Yes (on key generation) | The signature algorithm suite, e.g., `"ecdsa_secp256r1_sha256"`. Omit when opening an existing key. |
 | `mpss_backend` | UTF-8 string | No | The backend to use (e.g., `"os"` or `"yubikey"`). If omitted, the default backend is used. Use `mpss_get_available_backends()` to list available backends. |
+| `mpss_key_policy` | uint64 | No | Backend-specific key policy flags (e.g., YubiKey PIN/touch policy). Use the `MPSS_KEY_POLICY_*` constants from `mpss-openssl/api.h`. If omitted, defaults to `MPSS_KEY_POLICY_NONE` (env vars / backend defaults apply). |
 
 **Gettable parameters** (queried via `EVP_PKEY_get_params` on an existing key):
 

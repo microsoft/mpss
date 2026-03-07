@@ -2,7 +2,9 @@
 // Licensed under the MIT license.
 
 #include "mpss-openssl/api.h"
+#include "mpss/key_policy.h"
 #include <algorithm>
+#include <cstdint>
 #include <gtest/gtest.h>
 #include <openssl/core.h>
 #include <openssl/decoder.h>
@@ -328,6 +330,75 @@ TEST(MPSS_OpenSSL, DeleteKeyFromBackend)
     {
         GTEST_SKIP() << "No backends support ecdsa_secp256r1_sha256.";
     }
+}
+
+// --- KeyPolicy C define / C++ enum agreement tests ---
+
+TEST(KeyPolicyDefines, NoneMatchesCppEnum)
+{
+    static_assert(MPSS_KEY_POLICY_NONE == static_cast<std::uint64_t>(mpss::KeyPolicy::none));
+}
+
+#ifdef MPSS_BACKEND_YUBIKEY
+
+TEST(KeyPolicyDefines, YubikeyPinDefinesMatchCppEnum)
+{
+    static_assert(MPSS_KEY_POLICY_YUBIKEY_PIN_NEVER == static_cast<std::uint64_t>(mpss::KeyPolicy::yubikey_pin_never));
+    static_assert(MPSS_KEY_POLICY_YUBIKEY_PIN_ONCE == static_cast<std::uint64_t>(mpss::KeyPolicy::yubikey_pin_once));
+    static_assert(MPSS_KEY_POLICY_YUBIKEY_PIN_ALWAYS ==
+                  static_cast<std::uint64_t>(mpss::KeyPolicy::yubikey_pin_always));
+}
+
+TEST(KeyPolicyDefines, YubikeyTouchDefinesMatchCppEnum)
+{
+    static_assert(MPSS_KEY_POLICY_YUBIKEY_TOUCH_NEVER ==
+                  static_cast<std::uint64_t>(mpss::KeyPolicy::yubikey_touch_never));
+    static_assert(MPSS_KEY_POLICY_YUBIKEY_TOUCH_ALWAYS ==
+                  static_cast<std::uint64_t>(mpss::KeyPolicy::yubikey_touch_always));
+    static_assert(MPSS_KEY_POLICY_YUBIKEY_TOUCH_CACHED ==
+                  static_cast<std::uint64_t>(mpss::KeyPolicy::yubikey_touch_cached));
+}
+
+#endif // MPSS_BACKEND_YUBIKEY
+
+// --- KeyPolicy provider parameter pass-through test ---
+
+TEST(MPSS_OpenSSL, CreateKeyWithPolicyParam)
+{
+    if (!mpss_is_algorithm_available("ecdsa_secp256r1_sha256"))
+    {
+        GTEST_SKIP() << "Algorithm not supported by current backend";
+    }
+
+    const char *key_name = "test_key_policy_provider";
+    const bool _ = mpss_delete_key(key_name);
+
+    OSSL_LIB_CTX *mpss_libctx = OSSL_LIB_CTX_new();
+    ASSERT_NE(nullptr, mpss_libctx);
+    ASSERT_NE(0, OSSL_PROVIDER_add_builtin(mpss_libctx, "mpss", OSSL_provider_init));
+    OSSL_PROVIDER *mpss_prov = OSSL_PROVIDER_load(mpss_libctx, "mpss");
+    ASSERT_NE(nullptr, mpss_prov);
+
+    EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_from_name(mpss_libctx, "EC", "provider=mpss");
+    ASSERT_NE(nullptr, ctx);
+    ASSERT_EQ(1, EVP_PKEY_keygen_init(ctx));
+
+    // Pass mpss_key_policy = MPSS_KEY_POLICY_NONE through the provider parameter.
+    std::uint64_t policy = MPSS_KEY_POLICY_NONE;
+    OSSL_PARAM params[] = {
+        OSSL_PARAM_construct_utf8_string("mpss_key_name", const_cast<char *>(key_name), 0),
+        OSSL_PARAM_construct_utf8_string("mpss_algorithm", const_cast<char *>("ecdsa_secp256r1_sha256"), 0),
+        OSSL_PARAM_construct_uint64("mpss_key_policy", &policy), OSSL_PARAM_END};
+    ASSERT_EQ(1, EVP_PKEY_CTX_set_params(ctx, params));
+    EVP_PKEY *pkey = nullptr;
+    ASSERT_EQ(1, EVP_PKEY_generate(ctx, &pkey));
+    ASSERT_NE(nullptr, pkey);
+    EVP_PKEY_CTX_free(ctx);
+    EVP_PKEY_free(pkey);
+
+    ASSERT_TRUE(mpss_delete_key(key_name));
+    ASSERT_NE(0, OSSL_PROVIDER_unload(mpss_prov));
+    OSSL_LIB_CTX_free(mpss_libctx);
 }
 
 class CreateAndDeleteKeyTest : public ::testing::TestWithParam<const char *>

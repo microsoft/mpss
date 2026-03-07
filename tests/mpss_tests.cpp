@@ -1,8 +1,10 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+#include "mpss/key_policy.h"
 #include "mpss/log.h"
 #include "mpss/mpss.h"
+#include <cstdint>
 #include <gtest/gtest.h>
 #include <memory>
 #include <string>
@@ -579,6 +581,112 @@ TEST(BackendTest, VerifyWithInvalidBackend)
     std::vector<std::byte> dummy(32, static_cast<std::byte>('x'));
     const bool result = mpss::verify(dummy, dummy, ecdsa_secp256r1_sha256, dummy, "nonexistent");
     EXPECT_FALSE(result);
+}
+
+// --- KeyPolicy tests ---
+
+TEST(KeyPolicyTest, NoneIsZero)
+{
+    static_assert(KeyPolicy::none == KeyPolicy{0});
+    static_assert(static_cast<std::uint64_t>(KeyPolicy::none) == 0);
+}
+
+TEST(KeyPolicyTest, SizeIs64Bits)
+{
+    static_assert(sizeof(KeyPolicy) == sizeof(std::uint64_t));
+}
+
+TEST(KeyPolicyTest, OrWithNoneIsIdentity)
+{
+    static_assert((KeyPolicy::none | KeyPolicy::none) == KeyPolicy::none);
+}
+
+TEST(KeyPolicyTest, AndWithNoneIsNone)
+{
+    static_assert((KeyPolicy::none & KeyPolicy::none) == KeyPolicy::none);
+}
+
+TEST(KeyPolicyTest, RoundTripThroughUint64)
+{
+    // Exercises the C API cast path.
+    constexpr auto policy = KeyPolicy{0xDEAD'BEEF'CAFE'1234ULL};
+    constexpr auto raw = static_cast<std::uint64_t>(policy);
+    constexpr auto back = static_cast<KeyPolicy>(raw);
+    static_assert(back == policy);
+}
+
+#ifdef MPSS_BACKEND_YUBIKEY
+
+TEST(KeyPolicyTest, YubikeyPinFieldValues)
+{
+    static_assert(static_cast<std::uint64_t>(KeyPolicy::yubikey_pin_never) == 1);
+    static_assert(static_cast<std::uint64_t>(KeyPolicy::yubikey_pin_once) == 2);
+    static_assert(static_cast<std::uint64_t>(KeyPolicy::yubikey_pin_always) == 3);
+}
+
+TEST(KeyPolicyTest, YubikeyTouchFieldValues)
+{
+    static_assert(static_cast<std::uint64_t>(KeyPolicy::yubikey_touch_never) == (1U << 4U));
+    static_assert(static_cast<std::uint64_t>(KeyPolicy::yubikey_touch_always) == (2U << 4U));
+    static_assert(static_cast<std::uint64_t>(KeyPolicy::yubikey_touch_cached) == (3U << 4U));
+}
+
+TEST(KeyPolicyTest, PinMaskExtractsPinOnly)
+{
+    constexpr auto combined = KeyPolicy::yubikey_pin_once | KeyPolicy::yubikey_touch_cached;
+    static_assert((combined & yubikey_pin_mask) == KeyPolicy::yubikey_pin_once);
+}
+
+TEST(KeyPolicyTest, TouchMaskExtractsTouchOnly)
+{
+    constexpr auto combined = KeyPolicy::yubikey_pin_once | KeyPolicy::yubikey_touch_cached;
+    static_assert((combined & yubikey_touch_mask) == KeyPolicy::yubikey_touch_cached);
+}
+
+TEST(KeyPolicyTest, FieldsDoNotInterfere)
+{
+    // Setting PIN policy does not affect touch field and vice versa.
+    constexpr auto pin_only = KeyPolicy::yubikey_pin_always;
+    static_assert((pin_only & yubikey_touch_mask) == KeyPolicy::none);
+
+    constexpr auto touch_only = KeyPolicy::yubikey_touch_always;
+    static_assert((touch_only & yubikey_pin_mask) == KeyPolicy::none);
+}
+
+TEST(KeyPolicyTest, CombineAndExtractAllFields)
+{
+    constexpr auto combined = KeyPolicy::yubikey_pin_always | KeyPolicy::yubikey_touch_cached;
+    constexpr auto pin = static_cast<std::uint64_t>(combined & yubikey_pin_mask);
+    constexpr auto touch = static_cast<std::uint64_t>(combined & yubikey_touch_mask) >> 4;
+    static_assert(3 == pin);
+    static_assert(3 == touch);
+}
+
+#endif // MPSS_BACKEND_YUBIKEY
+
+TEST(KeyPolicyTest, CreateKeyWithPolicyNone)
+{
+    if (!mpss::is_algorithm_available(ecdsa_secp256r1_sha256))
+    {
+        GTEST_SKIP() << "Algorithm not supported by current backend";
+    }
+
+    const std::string key_name = "test_key_policy_none";
+    MPSS::DeleteKey(key_name);
+
+    auto key = mpss::KeyPair::Create(key_name, ecdsa_secp256r1_sha256, KeyPolicy::none);
+    ASSERT_NE(nullptr, key);
+
+    // Verify the key works.
+    const std::vector<std::byte> hash(32, static_cast<std::byte>('p'));
+    const std::size_t sig_size = key->sign_hash(hash, {});
+    std::vector<std::byte> signature(sig_size);
+    const std::size_t written = key->sign_hash(hash, signature);
+    ASSERT_GT(written, std::size_t{0});
+    signature.resize(written);
+    EXPECT_TRUE(key->verify(hash, signature));
+
+    key->delete_key();
 }
 
 // --- Key name length limit tests ---

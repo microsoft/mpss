@@ -12,6 +12,18 @@
 
 #include <stddef.h>
 
+/** @brief Key policy constants for use with the "mpss_key_policy" provider parameter. */
+#define MPSS_KEY_POLICY_NONE 0U
+
+#ifdef MPSS_BACKEND_YUBIKEY
+#define MPSS_KEY_POLICY_YUBIKEY_PIN_NEVER 1U
+#define MPSS_KEY_POLICY_YUBIKEY_PIN_ONCE 2U
+#define MPSS_KEY_POLICY_YUBIKEY_PIN_ALWAYS 3U
+#define MPSS_KEY_POLICY_YUBIKEY_TOUCH_NEVER (1U << 4U)
+#define MPSS_KEY_POLICY_YUBIKEY_TOUCH_ALWAYS (2U << 4U)
+#define MPSS_KEY_POLICY_YUBIKEY_TOUCH_CACHED (3U << 4U)
+#endif
+
 #ifdef __cplusplus
 extern "C"
 {

@@ -13,6 +13,9 @@
 namespace
 {
 
+constexpr std::uint8_t default_pin_policy = YKPIV_PINPOLICY_ONCE;
+constexpr std::uint8_t default_touch_policy = YKPIV_TOUCHPOLICY_CACHED;
+
 /** @brief Convert a string to lowercase. */
 std::string to_lower(std::string_view str)
 {
@@ -29,7 +32,7 @@ std::uint8_t get_pin_policy_from_env()
     if (nullptr == env_ptr)
     {
         mpss::utils::log_trace("MPSS_YUBIKEY_PINPOLICY environment variable not set. Defaulting to 'once' policy.");
-        return YKPIV_PINPOLICY_ONCE;
+        return default_pin_policy;
     }
 
     const std::string value = to_lower(env_ptr);
@@ -52,7 +55,7 @@ std::uint8_t get_pin_policy_from_env()
     mpss::utils::log_warning("MPSS_YUBIKEY_PINPOLICY has unrecognized value '{}'. "
                              "Expected: default, never, once, always. Defaulting to 'once'.",
                              env_ptr);
-    return YKPIV_PINPOLICY_ONCE;
+    return default_pin_policy;
 }
 
 /** @brief Read YubiKey touch policy from the MPSS_YUBIKEY_TOUCHPOLICY environment variable. */
@@ -62,7 +65,7 @@ std::uint8_t get_touch_policy_from_env()
     if (nullptr == env_ptr)
     {
         mpss::utils::log_trace("MPSS_YUBIKEY_TOUCHPOLICY environment variable not set. Defaulting to 'cached' policy.");
-        return YKPIV_TOUCHPOLICY_CACHED;
+        return default_touch_policy;
     }
 
     const std::string value = to_lower(env_ptr);
@@ -90,7 +93,7 @@ std::uint8_t get_touch_policy_from_env()
     mpss::utils::log_warning("MPSS_YUBIKEY_TOUCHPOLICY has unrecognized value '{}'. "
                              "Expected: default, never, always, cached, auto. Defaulting to 'cached'.",
                              env_ptr);
-    return YKPIV_TOUCHPOLICY_CACHED;
+    return default_touch_policy;
 }
 
 } // namespace
@@ -159,7 +162,7 @@ SecureByteVector get_mgm_key_from_env()
 
 std::uint8_t resolve_pin_policy(KeyPolicy policy)
 {
-    const std::uint32_t field = static_cast<std::uint32_t>(policy & yubikey_pin_mask);
+    const std::uint64_t field = static_cast<std::uint64_t>(policy & yubikey_pin_mask);
     if (0 == field)
     {
         // No programmatic policy specified - fall back to env var / default.
@@ -176,13 +179,13 @@ std::uint8_t resolve_pin_policy(KeyPolicy policy)
         return YKPIV_PINPOLICY_ALWAYS;
     default:
         mpss::utils::log_warning("Unrecognized YubiKey PIN policy value {} in KeyPolicy. Defaulting to 'once'.", field);
-        return YKPIV_PINPOLICY_ONCE;
+        return default_pin_policy;
     }
 }
 
 std::uint8_t resolve_touch_policy(KeyPolicy policy)
 {
-    const std::uint32_t field = static_cast<std::uint32_t>(policy & yubikey_touch_mask) >> 4;
+    const std::uint64_t field = static_cast<std::uint64_t>(policy & yubikey_touch_mask) >> 4;
     if (0 == field)
     {
         // No programmatic policy specified - fall back to env var / default.
@@ -200,7 +203,7 @@ std::uint8_t resolve_touch_policy(KeyPolicy policy)
     default:
         mpss::utils::log_warning("Unrecognized YubiKey touch policy value {} in KeyPolicy. Defaulting to 'cached'.",
                                  field);
-        return YKPIV_TOUCHPOLICY_CACHED;
+        return default_touch_policy;
     }
 }
 

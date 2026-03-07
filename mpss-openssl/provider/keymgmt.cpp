@@ -21,11 +21,12 @@ struct mpss_keymgmt_gen_ctx
     std::string key_name;
     std::string mpss_algorithm;
     std::optional<std::string> mpss_backend = std::nullopt;
+    std::uint64_t key_policy = 0;
     int selection;
 };
 
 mpss_key::mpss_key(std::string_view key_name, std::optional<std::string> &mpss_algorithm,
-                   const std::optional<std::string> &mpss_backend)
+                   const std::optional<std::string> &mpss_backend, mpss::KeyPolicy policy)
 {
     if (key_name.empty())
     {
@@ -66,11 +67,11 @@ mpss_key::mpss_key(std::string_view key_name, std::optional<std::string> &mpss_a
         {
             if (mpss_backend)
             {
-                key_pair = mpss::KeyPair::Create(key_name, algorithm, mpss_backend.value());
+                key_pair = mpss::KeyPair::Create(key_name, algorithm, mpss_backend.value(), policy);
             }
             else
             {
-                key_pair = mpss::KeyPair::Create(key_name, algorithm);
+                key_pair = mpss::KeyPair::Create(key_name, algorithm, policy);
             }
             this->mpss_algorithm = mpss::get_algorithm_info(algorithm).type_str;
         }
@@ -200,7 +201,8 @@ extern "C" const OSSL_PARAM *mpss_keymgmt_gen_settable_params([[maybe_unused]] v
 {
     static const OSSL_PARAM ret[] = {OSSL_PARAM_utf8_string("mpss_key_name", nullptr, 0),
                                      OSSL_PARAM_utf8_string("mpss_algorithm", nullptr, 0),
-                                     OSSL_PARAM_utf8_string("mpss_backend", nullptr, 0), OSSL_PARAM_END};
+                                     OSSL_PARAM_utf8_string("mpss_backend", nullptr, 0),
+                                     OSSL_PARAM_uint64("mpss_key_policy", nullptr), OSSL_PARAM_END};
 
     return ret;
 }
@@ -246,6 +248,15 @@ extern "C" int mpss_keymgmt_gen_set_params(void *genctx, const OSSL_PARAM params
             return 0;
         }
         ctx->mpss_backend = value_str;
+    }
+
+    p = OSSL_PARAM_locate_const(params, "mpss_key_policy");
+    if (nullptr != p)
+    {
+        if (!OSSL_PARAM_get_uint64(p, &ctx->key_policy))
+        {
+            return 0;
+        }
     }
 
     return 1;
@@ -400,7 +411,8 @@ extern "C" void *mpss_keymgmt_gen(void *genctx, [[maybe_unused]] OSSL_CALLBACK *
 
     // Set up the new mpss_key struct with the right info.
     std::optional<std::string> mpss_algorithm = ctx->mpss_algorithm;
-    mpss_key *pkey = mpss_new<mpss_key>(ctx->key_name, mpss_algorithm, ctx->mpss_backend);
+    const auto policy = static_cast<mpss::KeyPolicy>(ctx->key_policy);
+    mpss_key *pkey = mpss_new<mpss_key>(ctx->key_name, mpss_algorithm, ctx->mpss_backend, policy);
     if (nullptr == pkey)
     {
         return nullptr;

@@ -19,9 +19,9 @@ namespace mpss
  * Bit layout:
  * - Bits 0–3:  YubiKey PIN policy (4-bit field).
  * - Bits 4–7:  YubiKey touch policy (4-bit field).
- * - Bits 8–31: Reserved for other backends.
+ * - Bits 8–63: Reserved for other backends.
  */
-enum class MPSS_DECOR KeyPolicy : std::uint32_t
+enum class MPSS_DECOR KeyPolicy : std::uint64_t
 {
     /** @brief No policy specified. All fields fall back to env var / backend defaults. */
     none = 0,
@@ -62,19 +62,19 @@ inline constexpr KeyPolicy yubikey_touch_mask = KeyPolicy{0xFU << 4U};
 /** @brief Bitwise OR for combining policy fields. */
 constexpr KeyPolicy operator|(KeyPolicy a, KeyPolicy b) noexcept
 {
-    return static_cast<KeyPolicy>(static_cast<std::uint32_t>(a) | static_cast<std::uint32_t>(b));
+    return static_cast<KeyPolicy>(static_cast<std::uint64_t>(a) | static_cast<std::uint64_t>(b));
 }
 
 /** @brief Bitwise AND for extracting policy fields. */
 constexpr KeyPolicy operator&(KeyPolicy a, KeyPolicy b) noexcept
 {
-    return static_cast<KeyPolicy>(static_cast<std::uint32_t>(a) & static_cast<std::uint32_t>(b));
+    return static_cast<KeyPolicy>(static_cast<std::uint64_t>(a) & static_cast<std::uint64_t>(b));
 }
 
 /** @brief Bitwise NOT. */
 constexpr KeyPolicy operator~(KeyPolicy a) noexcept
 {
-    return static_cast<KeyPolicy>(~static_cast<std::uint32_t>(a));
+    return static_cast<KeyPolicy>(~static_cast<std::uint64_t>(a));
 }
 
 /** @brief Bitwise OR assignment. */
