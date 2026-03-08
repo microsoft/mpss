@@ -121,7 +121,7 @@ class Logger
      */
     void set_level(LogLevel level)
     {
-        level = std::min(level, LogLevel::suppress);
+        level = (std::min)(level, LogLevel::suppress);
         std::scoped_lock lock{mtx_};
         log_level_ = level;
     }
