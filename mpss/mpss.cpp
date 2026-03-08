@@ -52,12 +52,14 @@ bool is_algorithm_available(Algorithm algorithm)
 
     const int idx = static_cast<int>(algorithm);
     {
-        std::lock_guard lock{cache_mutex};
+        std::scoped_lock lock{cache_mutex};
         if (cache[idx])
         {
+            // NOLINTBEGIN(bugprone-unchecked-optional-access) - guarded by the if above.
             utils::log_trace("Algorithm availability for '{}' returned from cache: {}.", info.type_str,
                              *cache[idx] ? "available" : "unavailable");
             return *cache[idx];
+            // NOLINTEND(bugprone-unchecked-optional-access)
         }
     }
 
@@ -65,7 +67,7 @@ bool is_algorithm_available(Algorithm algorithm)
     utils::log_trace("Probing algorithm availability for '{}'.", info.type_str);
     const bool available = impl::is_algorithm_available(algorithm);
 
-    std::lock_guard lock{cache_mutex};
+    std::scoped_lock lock{cache_mutex};
     cache[idx] = available;
     utils::log_trace("Algorithm '{}' is {}.", info.type_str, available ? "available" : "unavailable");
     return available;

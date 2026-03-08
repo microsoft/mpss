@@ -22,6 +22,7 @@ std::string random_string(std::size_t length)
 {
     // Note: This function is not cryptographically secure. It is only used for generating random key names for
     // probing algorithm support, so this is sufficient for our purposes.
+    // NOLINTNEXTLINE(*-avoid-c-arrays) - char array initialized from string literal.
     static constexpr char chars[] = "0123456789"
                                     "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
                                     "abcdefghijklmnopqrstuvwxyz";
@@ -151,6 +152,7 @@ class BackendRegistry
         initialize_if_needed();
 
         std::vector<std::string> names;
+        names.reserve(backends_.size());
         for (const auto &[name, backend] : backends_)
         {
             names.push_back(name);
@@ -183,7 +185,7 @@ class BackendRegistry
 #endif
 
         // Check MPSS_DEFAULT_BACKEND environment variable.
-        const char *env_backend = std::getenv("MPSS_DEFAULT_BACKEND");
+        const char *env_backend = std::getenv("MPSS_DEFAULT_BACKEND"); // NOLINT(concurrency-mt-unsafe)
         if (nullptr != env_backend && std::strlen(env_backend) > 0)
         {
             const std::string requested{env_backend};
@@ -229,7 +231,7 @@ class BackendRegistry
      */
     [[nodiscard]] std::string platform_default_backend_name() const
     {
-#if defined(_WIN32)
+#ifdef _WIN32
         return "os";
 #elif defined(__APPLE__)
         return "os";
@@ -438,12 +440,7 @@ bool Backend::is_algorithm_available(Algorithm algorithm) const
 
     std::vector<std::byte> sig(sig_size);
     const std::size_t written = key->sign_hash(hash, sig);
-    if (0 == written)
-    {
-        return false;
-    }
-
-    return true;
+    return 0 != written;
 }
 
 } // namespace mpss::impl

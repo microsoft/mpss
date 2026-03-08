@@ -59,6 +59,10 @@ inline constexpr KeyPolicy yubikey_touch_mask = KeyPolicy{0xFU << 4U};
 
 #endif // MPSS_BACKEND_YUBIKEY
 
+// NOLINTBEGIN(readability-redundant-casting,misc-no-recursion)
+// readability-redundant-casting: outer static_cast from uint64_t to enum class is required.
+// misc-no-recursion: false positive — compound-assignment operators call binary operators, not themselves.
+
 /** @brief Bitwise OR for combining policy fields. */
 constexpr KeyPolicy operator|(KeyPolicy a, KeyPolicy b) noexcept
 {
@@ -90,5 +94,7 @@ constexpr KeyPolicy &operator&=(KeyPolicy &a, KeyPolicy b) noexcept
     a = a & b;
     return a;
 }
+
+// NOLINTEND(readability-redundant-casting,misc-no-recursion)
 
 } // namespace mpss

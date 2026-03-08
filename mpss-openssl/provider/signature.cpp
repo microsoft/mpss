@@ -127,6 +127,7 @@ extern "C" int mpss_signature_get_ctx_params(void *ctx, OSSL_PARAM params[])
     }
 
     // Get the algorithm ID from the name string we constructed above.
+    // NOLINTNEXTLINE(bugprone-unchecked-optional-access) - guaranteed by has_valid_key() check above.
     ASN1_OBJECT *obj = OBJ_txt2obj(sctx->pkey->alg_name->c_str(), 0);
     X509_ALGOR *alg = nullptr;
     unsigned char *alg_der = nullptr;
@@ -194,6 +195,7 @@ extern "C" int mpss_signature_sign_init(void *ctx, void *provkey, [[maybe_unused
     return 1;
 }
 
+// NOLINTNEXTLINE(readability-non-const-parameter) — sig is an output buffer written via std::transform.
 extern "C" int mpss_signature_sign(void *ctx, unsigned char *sig, ::size_t *siglen, ::size_t sigsize,
                                    const unsigned char *tbs, ::size_t tbslen,
                                    [[maybe_unused]] const OSSL_PARAM params[])

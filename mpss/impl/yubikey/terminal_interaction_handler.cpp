@@ -126,6 +126,7 @@ class TerminalInteractionHandler : public mpss::InteractionHandler
 
     void notify_touch_complete() override
     {
+        // NOLINTNEXTLINE(performance-avoid-endl) - flush is intentional for interactive terminal output.
         std::cerr << "done." << std::endl;
     }
 };

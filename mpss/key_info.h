@@ -5,12 +5,14 @@
 
 #include "mpss/defines.h"
 
+#ifdef __cplusplus
 namespace mpss
 {
 
 /**
  * @brief Structure to hold information about a key.
  */
+// NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members,*-non-private-member-variables-in-classes)
 struct MPSS_DECOR KeyInfo
 {
     KeyInfo(bool hardware_backed, const char *storage_description)
@@ -28,5 +30,7 @@ struct MPSS_DECOR KeyInfo
      */
     const char *storage_description;
 };
+// NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members,*-non-private-member-variables-in-classes)
 
 } // namespace mpss
+#endif // __cplusplus

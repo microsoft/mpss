@@ -221,7 +221,7 @@ class MPSS_DECOR KeyPair
      * @note If the operation fails, public_key is not modified. There is no way to retrieve the
      * secret (signing) key.
      */
-    virtual std::size_t extract_key(std::span<std::byte> public_key) const = 0;
+    [[nodiscard]] virtual std::size_t extract_key(std::span<std::byte> public_key) const = 0;
 
     /**
      * @brief A convenience method to return the required public (verification) key buffer size.
@@ -240,10 +240,12 @@ class MPSS_DECOR KeyPair
     virtual void release_key() = 0;
 
   protected:
+    // NOLINTBEGIN(*-non-private-member-variables-in-classes) - subclasses need direct access.
     Algorithm algorithm_;
     AlgorithmInfo info_;
     KeyInfo key_info_;
     std::string backend_name_;
+    // NOLINTEND(*-non-private-member-variables-in-classes)
 
     KeyPair(Algorithm algorithm, bool hardware_backed, const char *storage_description);
 };

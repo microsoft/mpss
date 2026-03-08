@@ -61,7 +61,7 @@ extern "C" int mpss_encoder_get_params(OSSL_PARAM params[])
         return 0;
     }
 
-    OSSL_PARAM *p;
+    OSSL_PARAM *p{nullptr};
     if ((p = OSSL_PARAM_locate(params, "output")) && !OSSL_PARAM_set_utf8_string(p, "DER"))
     {
         return 0;
@@ -102,7 +102,7 @@ extern "C" int mpss_encoder_encode([[maybe_unused]] void *ctx, OSSL_CORE_BIO *co
 
     struct param_cb_data_t
     {
-        OSSL_LIB_CTX *libctx;
+        OSSL_LIB_CTX *libctx{nullptr};
         byte_vector spki;
     } cb_data;
     cb_data.libctx = ectx->libctx;

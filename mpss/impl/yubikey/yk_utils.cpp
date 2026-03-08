@@ -20,8 +20,7 @@ constexpr std::uint8_t default_touch_policy = YKPIV_TOUCHPOLICY_CACHED;
 std::string to_lower(std::string_view str)
 {
     std::string result{str};
-    std::transform(result.begin(), result.end(), result.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    std::ranges::transform(result, result.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return result;
 }
 
@@ -125,7 +124,7 @@ std::optional<std::uint32_t> get_serial_from_env()
         return std::nullopt;
     }
 
-    return static_cast<std::uint32_t>(value);
+    return static_cast<std::uint32_t>(value); // NOLINT(*-narrowing-conversions)
 }
 
 SecureByteVector get_mgm_key_from_env()

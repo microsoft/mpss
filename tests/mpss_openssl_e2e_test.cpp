@@ -201,7 +201,7 @@ TEST_P(CertificateChainSerializationTest, CertificateChainSerialization)
     // they need to use.
     const std::optional<std::string> hash_name = mpss_openssl::utils::try_get_hash_func(mpss_algorithm);
     ASSERT_TRUE(hash_name.has_value());
-    const EVP_MD *hash_func = EVP_get_digestbyname(hash_name->c_str());
+    const EVP_MD *hash_func = EVP_get_digestbyname(hash_name->c_str()); // NOLINT(bugprone-unchecked-optional-access)
     ASSERT_NE(nullptr, hash_func);
     ASSERT_GT(X509_sign(ca_cert, ca_pkey, hash_func), 0);
 
@@ -341,7 +341,7 @@ INSTANTIATE_TEST_SUITE_P(MPSSCertChain, CertificateChainSerializationTest,
                                            "ecdsa_secp521r1_sha512"),
                          [](const ::testing::TestParamInfo<const char *> &info) {
                              std::string name(info.param);
-                             std::replace_if(name.begin(), name.end(), [](char c) { return !std::isalnum(c); }, '_');
+                             std::ranges::replace_if(name, [](char c) { return !std::isalnum(c); }, '_');
                              return name;
                          });
 

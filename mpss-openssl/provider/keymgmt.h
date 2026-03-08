@@ -28,7 +28,7 @@ struct mpss_key
     mpss_key(std::string_view key_name, std::optional<std::string> &mpss_algorithm,
              const std::optional<std::string> &mpss_backend, mpss::KeyPolicy policy = mpss::KeyPolicy::none);
 
-    ~mpss_key();
+    ~mpss_key() = default;
 
     [[nodiscard]] bool has_valid_key() const noexcept;
 };

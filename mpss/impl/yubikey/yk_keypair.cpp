@@ -161,7 +161,8 @@ std::size_t YubiKeyKeyPair::extract_key(std::span<std::byte> public_key) const
     {
         return mpss::utils::get_public_key_size(algorithm());
     }
-    else if (!mpss::utils::check_sufficient_public_key_buffer_size(public_key, algorithm()))
+
+    if (!mpss::utils::check_sufficient_public_key_buffer_size(public_key, algorithm()))
     {
         return 0;
     }

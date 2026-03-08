@@ -1,6 +1,9 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+// NOLINTBEGIN(modernize-use-using,cppcoreguidelines-use-enum-class,modernize-redundant-void-arg)
+// This is a C-compatible header: typedef, unscoped enums, and (void) are required.
+
 #pragma once
 
 #include "mpss/defines.h"
@@ -128,3 +131,5 @@ extern "C"
 #ifdef __cplusplus
 } // extern "C"
 #endif
+
+// NOLINTEND(modernize-use-using,cppcoreguidelines-use-enum-class,modernize-redundant-void-arg)

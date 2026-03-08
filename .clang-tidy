@@ -30,7 +30,6 @@ Checks: >
   -misc-const-correctness,
   -performance-enum-size,
   -misc-include-cleaner,
-  -misc-use-anonymous-namespace,
   -misc-multiple-inheritance,
   -misc-use-internal-linkage,
   -modernize-use-auto,
@@ -42,6 +41,6 @@ Checks: >
   -readability-magic-numbers,
   -readability-named-parameter
 
-WarningsAsErrors: ''
-HeaderFilterRegex: '.*'
+WarningsAsErrors: '*,-cppcoreguidelines-init-variables,-cppcoreguidelines-pro-type-member-init,-hicpp-member-init,-readability-simplify-boolean-expr'
+HeaderFilterRegex: '(mpss|mpss-openssl|tests)/'
 FormatStyle: microsoft

@@ -21,7 +21,7 @@ using std::operator""s;
 class MPSS : public ::testing::Test
 {
   public:
-    static void DeleteKey(std::string name)
+    static void DeleteKey(const std::string &name)
     {
         while (true)
         {
@@ -598,12 +598,12 @@ TEST(KeyPolicyTest, SizeIs64Bits)
 
 TEST(KeyPolicyTest, OrWithNoneIsIdentity)
 {
-    static_assert((KeyPolicy::none | KeyPolicy::none) == KeyPolicy::none);
+    static_assert((KeyPolicy::none | KeyPolicy::none) == KeyPolicy::none); // NOLINT(misc-redundant-expression)
 }
 
 TEST(KeyPolicyTest, AndWithNoneIsNone)
 {
-    static_assert((KeyPolicy::none & KeyPolicy::none) == KeyPolicy::none);
+    static_assert((KeyPolicy::none & KeyPolicy::none) == KeyPolicy::none); // NOLINT(misc-redundant-expression)
 }
 
 TEST(KeyPolicyTest, RoundTripThroughUint64)

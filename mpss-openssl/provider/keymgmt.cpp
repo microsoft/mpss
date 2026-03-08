@@ -22,7 +22,7 @@ struct mpss_keymgmt_gen_ctx
     std::string mpss_algorithm;
     std::optional<std::string> mpss_backend = std::nullopt;
     std::uint64_t key_policy = 0;
-    int selection;
+    int selection{0};
 };
 
 mpss_key::mpss_key(std::string_view key_name, std::optional<std::string> &mpss_algorithm,
@@ -94,11 +94,6 @@ mpss_key::mpss_key(std::string_view key_name, std::optional<std::string> &mpss_a
     alg_name = try_get_algorithm_name(key_pair);
 }
 
-mpss_key::~mpss_key()
-{
-    key_pair.reset();
-}
-
 [[nodiscard]] bool mpss_key::has_valid_key() const noexcept
 {
     return key_pair && (key_pair->algorithm() != mpss::Algorithm::unsupported) && name && sig_name && group_name &&
@@ -136,6 +131,7 @@ extern "C" int mpss_keymgmt_export(void *keydata, int selection, OSSL_CALLBACK *
     // For a parameter export, we just return the group type string.
     if (selection & OSSL_KEYMGMT_SELECT_ALL_PARAMETERS)
     {
+        // NOLINTNEXTLINE(bugprone-unchecked-optional-access) - guaranteed by has_valid_key() check above.
         char *group_name = pkey->group_name->data();
         *p++ = OSSL_PARAM_construct_utf8_string(OSSL_PKEY_PARAM_GROUP_NAME, group_name, 0);
     }
@@ -315,7 +311,7 @@ extern "C" int mpss_keymgmt_get_params(void *pkey, OSSL_PARAM params[])
         }
     }
 
-    OSSL_PARAM *p;
+    OSSL_PARAM *p{nullptr};
     if ((p = OSSL_PARAM_locate(params, "mpss_key_name")) && !OSSL_PARAM_set_utf8_string(p, key_name.data()))
     {
         return 0;

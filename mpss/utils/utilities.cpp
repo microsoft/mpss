@@ -50,7 +50,7 @@ std::size_t get_max_signature_size(Algorithm algorithm)
         // 1 additional byte if the highest order bit of the first byte of 's' is 1
         //
         // So in total, we have a maximum overhead of 9 bytes to encode two scalars of size key_bits.
-        max_sig_size = ((info.key_bits + 7) / 8) * 2 + 9;
+        max_sig_size = (((info.key_bits + 7) / 8) * 2) + 9;
         break;
     case Algorithm::unsupported:
         max_sig_size = 0;
@@ -79,7 +79,7 @@ std::size_t get_public_key_size(Algorithm algorithm)
         // 1 byte for the compression indicator (0x04 for uncompressed)
         // key_bits / 8 bytes for the X coordinate
         // key_bits / 8 bytes for the Y coordinate
-        pk_size = ((info.key_bits + 7) / 8) * 2 + 1;
+        pk_size = (((info.key_bits + 7) / 8) * 2) + 1;
         break;
     case Algorithm::unsupported:
         pk_size = 0;
@@ -101,7 +101,7 @@ std::size_t get_hash_size(Algorithm algorithm) noexcept
     return ((info.hash_bits + 7) / 8);
 }
 
-bool check_exact_hash_size(std::span<const std::byte> hash, Algorithm algorithm) noexcept
+bool check_exact_hash_size(std::span<const std::byte> hash, Algorithm algorithm)
 {
     const std::size_t expected_hash_size = get_hash_size(algorithm);
     const bool hash_size_ok = (hash.size() == expected_hash_size);
@@ -114,7 +114,7 @@ bool check_exact_hash_size(std::span<const std::byte> hash, Algorithm algorithm)
     return hash_size_ok;
 }
 
-bool check_sufficient_signature_buffer_size(std::span<const std::byte> sig, Algorithm algorithm) noexcept
+bool check_sufficient_signature_buffer_size(std::span<const std::byte> sig, Algorithm algorithm)
 {
     const std::size_t expected_sig_size = get_max_signature_size(algorithm);
     const bool sig_size_ok = (sig.size() >= expected_sig_size);
@@ -127,7 +127,7 @@ bool check_sufficient_signature_buffer_size(std::span<const std::byte> sig, Algo
     return sig_size_ok;
 }
 
-bool check_sufficient_public_key_buffer_size(std::span<const std::byte> public_key, Algorithm algorithm) noexcept
+bool check_sufficient_public_key_buffer_size(std::span<const std::byte> public_key, Algorithm algorithm)
 {
     const std::size_t expected_pk_size = get_public_key_size(algorithm);
     const bool pk_size_ok = (public_key.size() >= expected_pk_size);

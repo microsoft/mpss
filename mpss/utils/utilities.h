@@ -239,7 +239,7 @@ std::size_t get_hash_size(Algorithm algorithm) noexcept;
  * @param algorithm The algorithm to check the hash buffer size for.
  * @return true if the hash buffer has exactly the expected size for the given algorithm, false otherwise.
  */
-bool check_exact_hash_size(std::span<const std::byte> hash, Algorithm algorithm) noexcept;
+bool check_exact_hash_size(std::span<const std::byte> hash, Algorithm algorithm);
 
 /**
  * @brief Check that the given signature buffer has at least the expected size for the given algorithm.
@@ -248,7 +248,7 @@ bool check_exact_hash_size(std::span<const std::byte> hash, Algorithm algorithm)
  * @return true if the signature buffer has at least the expected size for the given algorithm, false
  * otherwise.
  */
-bool check_sufficient_signature_buffer_size(std::span<const std::byte> sig, Algorithm algorithm) noexcept;
+bool check_sufficient_signature_buffer_size(std::span<const std::byte> sig, Algorithm algorithm);
 
 /**
  * @brief Check that the given public key buffer has at least the expected size for the given algorithm.
@@ -257,6 +257,6 @@ bool check_sufficient_signature_buffer_size(std::span<const std::byte> sig, Algo
  * @return true if the public key buffer has at least the expected size for the given algorithm, false
  * otherwise.
  */
-bool check_sufficient_public_key_buffer_size(std::span<const std::byte> public_key, Algorithm algorithm) noexcept;
+bool check_sufficient_public_key_buffer_size(std::span<const std::byte> public_key, Algorithm algorithm);
 
 } // namespace mpss::utils

@@ -196,20 +196,18 @@ mpss::Algorithm GetAlgorithmFromName(NCRYPT_KEY_HANDLE key_handle)
     {
         return ecdsa_secp256r1_sha256;
     }
-    else if (algorithm_name.starts_with(NCRYPT_ECDSA_P384_ALGORITHM))
+    if (algorithm_name.starts_with(NCRYPT_ECDSA_P384_ALGORITHM))
     {
         return ecdsa_secp384r1_sha384;
     }
-    else if (algorithm_name.starts_with(NCRYPT_ECDSA_P521_ALGORITHM))
+    if (algorithm_name.starts_with(NCRYPT_ECDSA_P521_ALGORITHM))
     {
         return ecdsa_secp521r1_sha512;
     }
-    else
-    {
-        std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
-        const std::string alg_name = converter.to_bytes(algorithm_name);
-        return unsupported;
-    }
+
+    std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
+    const std::string alg_name = converter.to_bytes(algorithm_name);
+    return unsupported;
 }
 
 std::size_t GetKeyLength(NCRYPT_KEY_HANDLE key_handle)
@@ -260,7 +258,7 @@ std::unique_ptr<KeyPair> open_key(std::string_view name)
 
     mpss::utils::log_trace("Attempting to open key '{}' on Windows backend.", name);
 
-    Algorithm algorithm;
+    Algorithm algorithm{unsupported};
 
     const char *storage_description = nullptr;
     NCRYPT_KEY_HANDLE key_handle = GetKey(name, &storage_description);

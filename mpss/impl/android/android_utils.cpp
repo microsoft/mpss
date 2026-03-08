@@ -30,6 +30,7 @@ jbyteArray ToJByteArray(JNIEnv *env, std::span<const std::byte> bytes)
     return array;
 }
 
+// NOLINTNEXTLINE(readability-non-const-parameter) — JNI requires non-const JNIEnv.
 std::size_t CopyJByteArrayToSpan(JNIEnv *env, jbyteArray array, std::span<std::byte> output)
 {
     const jsize len = env->GetArrayLength(array);
@@ -67,6 +68,7 @@ bool UnboxBoolean(JNIEnv *env, jobject booleanObj)
     return (JNI_TRUE == env->CallBooleanMethod(booleanObj, mid));
 }
 
+// NOLINTNEXTLINE(readability-non-const-parameter) — JNI requires non-const JNIEnv.
 std::string GetError(JNIEnv *env)
 {
     if (nullptr == env)
@@ -97,6 +99,7 @@ std::string GetError(JNIEnv *env)
     return result;
 }
 
+// NOLINTNEXTLINE(readability-non-const-parameter) — JNI requires non-const JNIEnv.
 std::string GetString(JNIEnv *env, jstring str)
 {
     if (nullptr == env)

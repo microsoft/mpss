@@ -103,7 +103,7 @@ std::size_t mpss_sign_as_der(const std::unique_ptr<KeyPair> &key_pair, std::span
         {
             break;
         }
-        if (1 != EVP_PKEY_fromdata(ctx, &pkey, EVP_PKEY_KEY_PARAMETERS | EVP_PKEY_PUBLIC_KEY, params_clone))
+        if (1 != EVP_PKEY_fromdata(ctx, &pkey, EVP_PKEY_PUBLIC_KEY, params_clone))
         {
             break;
         }

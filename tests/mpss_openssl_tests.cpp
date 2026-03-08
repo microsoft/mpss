@@ -57,8 +57,10 @@ class MPSSDigest : public ::testing::Test
 
     void TestDigest(const char *hash_name, const EVP_MD *(*evp_md_func)(), std::string_view in)
     {
-        unsigned char mpss_digest[EVP_MAX_MD_SIZE], default_digest[EVP_MAX_MD_SIZE];
-        unsigned int mpss_digest_len = 0, default_digest_len = 0;
+        unsigned char mpss_digest[EVP_MAX_MD_SIZE];
+        unsigned char default_digest[EVP_MAX_MD_SIZE];
+        unsigned int mpss_digest_len = 0;
+        unsigned int default_digest_len = 0;
 
         EVP_MD *md = EVP_MD_fetch(mpss_libctx, hash_name, "provider=mpss");
         ASSERT_NE(nullptr, md);
@@ -82,7 +84,8 @@ class MPSSDigest : public ::testing::Test
         EVP_MD_CTX_free(mdctx);
 
         ASSERT_EQ(mpss_digest_len, default_digest_len);
-        ASSERT_TRUE(std::equal(mpss_digest, mpss_digest + mpss_digest_len, default_digest));
+        ASSERT_TRUE(
+            std::equal(mpss_digest, mpss_digest + mpss_digest_len, default_digest)); // NOLINT(modernize-use-ranges)
     }
 };
 
@@ -98,7 +101,7 @@ TEST_F(MPSSDigest, SHA256)
     {
         const std::size_t size = rd() % (1024 * 1024);
         std::string input_data(size, '\0');
-        std::generate(input_data.begin(), input_data.end(), [&rd]() { return static_cast<char>(rd() % 256); });
+        std::ranges::generate(input_data, [&rd]() { return static_cast<char>(rd() % 256); });
         TestDigest("SHA256", EVP_sha256, input_data);
     }
 }
@@ -110,7 +113,7 @@ TEST_F(MPSSDigest, SHA384)
     {
         const std::size_t size = rd() % (1024 * 1024);
         std::string input_data(size, '\0');
-        std::generate(input_data.begin(), input_data.end(), [&rd]() { return static_cast<char>(rd() % 256); });
+        std::ranges::generate(input_data, [&rd]() { return static_cast<char>(rd() % 256); });
         TestDigest("SHA384", EVP_sha384, input_data);
     }
 }
@@ -122,7 +125,7 @@ TEST_F(MPSSDigest, SHA512)
     {
         const std::size_t size = rd() % (1024 * 1024);
         std::string input_data(size, '\0');
-        std::generate(input_data.begin(), input_data.end(), [&rd]() { return static_cast<char>(rd() % 256); });
+        std::ranges::generate(input_data, [&rd]() { return static_cast<char>(rd() % 256); });
         TestDigest("SHA512", EVP_sha512, input_data);
     }
 }
@@ -448,7 +451,7 @@ INSTANTIATE_TEST_SUITE_P(MPSSCreateDelete, CreateAndDeleteKeyTest,
                                            "ECDSA with P521 and SHA2-512"),
                          [](const ::testing::TestParamInfo<const char *> &info) {
                              std::string name(info.param);
-                             std::replace_if(name.begin(), name.end(), [](char c) { return !std::isalnum(c); }, '_');
+                             std::ranges::replace_if(name, [](char c) { return !std::isalnum(c); }, '_');
                              return name;
                          });
 

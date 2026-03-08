@@ -27,7 +27,7 @@ constexpr std::array<std::uint8_t, 20> usable_slots = {
 // with a dummy key. Slots bearing this label are treated as free by find_free_slot.
 constexpr std::string_view available_slot_label = "(available)";
 
-YubiKeyPIV::YubiKeyPIV() : state_{nullptr}, serial_{0}
+YubiKeyPIV::YubiKeyPIV()
 {
     connect();
 }
@@ -493,7 +493,7 @@ bool YubiKeyPIV::write_slot_label(std::uint8_t slot, std::string_view name)
     // Generate an ephemeral EC P-256 key for the certificate.
     // This key is only used to create a syntactically valid self-signed cert;
     // the actual signing key lives in the YubiKey slot.
-    EVP_PKEY *ephemeral_key = EVP_EC_gen("P-256");
+    EVP_PKEY *ephemeral_key = EVP_EC_gen("P-256"); // NOLINT(cppcoreguidelines-pro-type-cstyle-cast)
     if (nullptr == ephemeral_key)
     {
         mpss::utils::log_and_set_error("Failed to generate ephemeral key for slot label.");
@@ -742,7 +742,7 @@ auto YubiKeyPIV::find_slot_by_name(std::string_view name) -> std::optional<SlotI
             return std::nullopt;
         }
 
-        return SlotInfo{slot, algorithm};
+        return SlotInfo{.slot = slot, .algorithm = algorithm};
     }
 
     return std::nullopt;

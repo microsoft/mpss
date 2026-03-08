@@ -75,7 +75,7 @@ class YubiKeyPIV
      * @brief Get the YubiKey serial number.
      * @return The serial number.
      */
-    std::uint32_t get_serial() const;
+    [[nodiscard]] std::uint32_t get_serial() const;
 
     /**
      * @brief Authenticate with the PIN.
@@ -172,8 +172,8 @@ class YubiKeyPIV
      */
     struct SlotInfo
     {
-        std::uint8_t slot;
-        Algorithm algorithm;
+        std::uint8_t slot{0};
+        Algorithm algorithm{Algorithm::unsupported};
     };
 
     /**
@@ -224,8 +224,8 @@ class YubiKeyPIV
     bool has_key_with_name(std::string_view name);
 
   private:
-    ykpiv_state *state_;
-    std::uint32_t serial_;
+    ykpiv_state *state_{nullptr};
+    std::uint32_t serial_{0};
 
     bool connect();
     void disconnect();

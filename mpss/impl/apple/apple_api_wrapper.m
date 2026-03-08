@@ -7,8 +7,8 @@
 #include "mpss/log_c.h"
 
 // Global dictionary to store SecKeyRef instances.
-static dispatch_queue_t _keyStoreQueue;
-static NSMutableDictionary<NSString *, id> *_keyStore;
+static dispatch_queue_t _keyStoreQueue; // NOLINT(bugprone-reserved-identifier)
+static NSMutableDictionary<NSString *, id> *_keyStore; // NOLINT(bugprone-reserved-identifier)
 
 void InitializeKeyStore() {
   static dispatch_once_t onceToken;
@@ -153,10 +153,10 @@ bool MPSS_OpenExistingKey(const char *keyName, int *bitSize) {
 
       *bitSize = GetKeySize(keyRef);
       return true;
-    } else {
-      NSString *error = [NSString stringWithFormat:@"Failed to retrieve key with status: %d", (int)status];
-      SetThreadLocalError(error);
     }
+
+    NSString *error = [NSString stringWithFormat:@"Failed to retrieve key with status: %d", (int)status];
+    SetThreadLocalError(error);
 
     return false;
   }
@@ -190,7 +190,7 @@ bool MPSS_CreateKey(const char *keyName, int bitSize) {
     mpss_log_debug([[NSString stringWithFormat:@"Creating key with bit size %d", keyBitSize] UTF8String]);
     NSDictionary *keyAttributes = @{
       (id)kSecAttrKeyType : (id)kSecAttrKeyTypeECSECPrimeRandom,
-      (id)kSecAttrKeySizeInBits : @(keyBitSize),
+      (id)kSecAttrKeySizeInBits : @(keyBitSize), // NOLINT(readability-redundant-parentheses)
       (id)kSecAttrIsPermanent : @YES,
       (id)kSecAttrLabel : keyLabel,
       (id)kSecAttrApplicationTag : [keyLabel dataUsingEncoding:NSUTF8StringEncoding]
@@ -207,10 +207,10 @@ bool MPSS_CreateKey(const char *keyName, int bitSize) {
           [NSString stringWithFormat:@"Failed to generate key: %@", err];
       SetThreadLocalError(error);
       return false;
-    } else {
-      mpss_log_trace("Key generated successfully.");
-      StoreKey(keyLabel, keyRef);
     }
+
+    mpss_log_trace("Key generated successfully.");
+    StoreKey(keyLabel, keyRef);
 
     return true;
   }
@@ -364,7 +364,7 @@ bool MPSS_VerifyStandaloneSignature(int signatureType, const uint8_t *hash,
     NSDictionary *keyAttributes = @{
       (id)kSecAttrKeyType : (id)kSecAttrKeyTypeECSECPrimeRandom,
       (id)kSecAttrKeyClass : (id)kSecAttrKeyClassPublic,
-      (id)kSecAttrKeySizeInBits : @(keyBitSize),
+      (id)kSecAttrKeySizeInBits : @(keyBitSize), // NOLINT(readability-redundant-parentheses)
       (id)kSecAttrIsPermanent : @NO
     };
 

@@ -52,7 +52,7 @@ JNIEnv *JNIHelper::GetEnv(bool *did_attach)
         }
         return env;
     }
-    else if (JNI_EDETACHED == result)
+    if (JNI_EDETACHED == result)
     {
         if (0 == java_vm_->AttachCurrentThread(&env, nullptr))
         {
@@ -62,15 +62,9 @@ JNIEnv *JNIHelper::GetEnv(bool *did_attach)
             }
             return env;
         }
-        else
-        {
-            return nullptr;
-        }
-    }
-    else
-    {
         return nullptr;
     }
+    return nullptr;
 }
 
 // RAII Wrapper.

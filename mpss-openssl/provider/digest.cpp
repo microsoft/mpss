@@ -39,11 +39,8 @@ mpss_digest_ctx::~mpss_digest_ctx()
 }
 
 mpss_digest_ctx::mpss_digest_ctx(const mpss_digest_ctx &copy)
+    : libctx{copy.libctx}, md_name{copy.md_name}, state{copy.state}
 {
-    libctx = copy.libctx;
-    md_name = copy.md_name;
-    state = copy.state;
-
     if (nullptr != copy.evp_dctx)
     {
         evp_dctx = EVP_MD_CTX_dup(copy.evp_dctx);
@@ -236,8 +233,7 @@ extern "C" int mpss_digest_final(void *ctx, unsigned char *out, ::size_t *outl, 
     // We must be in finalized state now, because earlier if we ended up in
     // error state we already returned 0.
 
-    std::transform(dctx->digest.begin(), dctx->digest.end(), out,
-                   [](std::byte b) { return static_cast<unsigned char>(b); });
+    std::ranges::transform(dctx->digest, out, [](std::byte b) { return static_cast<unsigned char>(b); });
     *outl = dctx->digest.size();
 
     return 1;
@@ -334,18 +330,16 @@ void *mpss_digest_newctx(void *provctx, const char *mdname)
     {
         return ::mpss_digest_newctx_SHA256(provctx);
     }
-    else if (std::string_view{mdname} == OSSL_DIGEST_NAME_SHA2_384)
+    if (std::string_view{mdname} == OSSL_DIGEST_NAME_SHA2_384)
     {
         return ::mpss_digest_newctx_SHA384(provctx);
     }
-    else if (std::string_view{mdname} == OSSL_DIGEST_NAME_SHA2_512)
+    if (std::string_view{mdname} == OSSL_DIGEST_NAME_SHA2_512)
     {
         return ::mpss_digest_newctx_SHA512(provctx);
     }
-    else
-    {
-        return nullptr;
-    }
+
+    return nullptr;
 }
 
 int mpss_digest_init(void *ctx, [[maybe_unused]] const OSSL_PARAM params[])

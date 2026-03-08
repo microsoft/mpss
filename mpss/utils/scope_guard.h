@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <exception>
 #include <functional>
 
 namespace mpss::utils
@@ -16,14 +17,20 @@ class ScopeGuard
   public:
     ScopeGuard() = delete;
 
-    ScopeGuard(std::function<void()> on_exit)
+    explicit ScopeGuard(std::function<void()> on_exit) : on_exit_{std::move(on_exit)}
     {
-        on_exit_ = on_exit;
     }
 
-    ~ScopeGuard()
+    ~ScopeGuard() // NOLINT(*-use-equals-default)
     {
-        on_exit_();
+        try
+        {
+            on_exit_();
+        }
+        catch (...)
+        {
+            std::terminate();
+        }
     }
 };
 

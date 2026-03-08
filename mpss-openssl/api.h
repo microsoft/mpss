@@ -13,6 +13,7 @@
 #include <stddef.h>
 
 /** @brief Key policy constants for use with the "mpss_key_policy" provider parameter. */
+// NOLINTBEGIN(*-macro-to-enum) - C/C++ dual header; macros required for C compatibility.
 #define MPSS_KEY_POLICY_NONE 0U
 
 #ifdef MPSS_BACKEND_YUBIKEY
@@ -23,6 +24,7 @@
 #define MPSS_KEY_POLICY_YUBIKEY_TOUCH_ALWAYS (2U << 4U)
 #define MPSS_KEY_POLICY_YUBIKEY_TOUCH_CACHED (3U << 4U)
 #endif
+// NOLINTEND(*-macro-to-enum)
 
 #ifdef __cplusplus
 extern "C"
@@ -52,6 +54,7 @@ extern "C"
      * @param[out] provctx The provider context.
      * @return 1 on success, 0 on failure.
      */
+    // NOLINTNEXTLINE(readability-redundant-declaration) - intentional: documents the provider entry point.
     int OSSL_provider_init(const OSSL_CORE_HANDLE *handle, const OSSL_DISPATCH *in, const OSSL_DISPATCH **out,
                            void **provctx);
 

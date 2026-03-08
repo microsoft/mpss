@@ -59,14 +59,14 @@ template <typename T> class JNIObj
         return ref_;
     }
 
-    bool is_null() const
+    [[nodiscard]] bool is_null() const
     {
         return nullptr == ref_;
     }
 
   private:
-    JNIEnv *env_;
-    T ref_;
+    JNIEnv *env_{nullptr};
+    T ref_{};
 };
 
 } // namespace mpss::impl::os::utils

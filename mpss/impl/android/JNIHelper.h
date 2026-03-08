@@ -38,7 +38,6 @@ class JNIEnvGuard
   private:
     JNIEnv *env_ = nullptr;
 
-  private:
     static bool attached_;
     static int ref_count_;
 };

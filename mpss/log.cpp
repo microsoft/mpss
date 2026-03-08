@@ -207,7 +207,7 @@ void mpss_log_set_custom_logger(mpss_log_handler_t log_handlers[MPSS_LOG_LEVEL_C
         if (log_handlers && log_handlers[i])
         {
             mpss_log_handler_t cb = log_handlers[i];
-            cpp_log[i] = [cb](std::string msg) { cb(msg.c_str()); };
+            cpp_log[i] = [cb](const std::string &msg) { cb(msg.c_str()); };
         }
         if (flush_handlers && flush_handlers[i])
         {
