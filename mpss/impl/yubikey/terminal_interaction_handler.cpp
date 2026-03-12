@@ -99,7 +99,8 @@ std::optional<mpss::SecureString> read_secure_line()
 class TerminalInteractionHandler : public mpss::InteractionHandler
 {
   public:
-    [[nodiscard]] std::optional<mpss::SecureString> request_pin(std::string_view context) override
+    [[nodiscard]]
+    std::optional<mpss::SecureString> request_pin(std::string_view context) override
     {
         // Check environment variable first.
         const char *env_pin = std::getenv("MPSS_YUBIKEY_PIN");

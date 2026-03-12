@@ -66,7 +66,8 @@ class YubiKeyPIV
      * @brief Check if the YubiKey is connected.
      * @return true if connected, false otherwise.
      */
-    [[nodiscard]] bool is_connected() const noexcept
+    [[nodiscard]]
+    bool is_connected() const noexcept
     {
         return nullptr != state_;
     }
@@ -75,7 +76,8 @@ class YubiKeyPIV
      * @brief Get the YubiKey serial number.
      * @return The serial number.
      */
-    [[nodiscard]] std::uint32_t get_serial() const;
+    [[nodiscard]]
+    std::uint32_t get_serial() const;
 
     /**
      * @brief Authenticate with the PIN.
@@ -243,6 +245,7 @@ class YubiKeyPIV
  * @param context Human-readable description of the operation (for the PIN prompt).
  * @return true on success, false on failure or cancellation.
  */
-[[nodiscard]] bool authenticate_pin_interactive(YubiKeyPIV &piv, std::string_view context);
+[[nodiscard]]
+bool authenticate_pin_interactive(YubiKeyPIV &piv, std::string_view context);
 
 } // namespace mpss::impl::yubikey

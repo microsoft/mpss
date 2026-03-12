@@ -21,18 +21,21 @@ class OSBackend : public Backend
 
     ~OSBackend() override = default;
 
-    [[nodiscard]] std::string name() const override
+    [[nodiscard]]
+    std::string name() const override
     {
         return "os";
     }
 
-    [[nodiscard]] std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm,
-                                                      KeyPolicy policy) const override;
+    [[nodiscard]]
+    std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm, KeyPolicy policy) const override;
 
-    [[nodiscard]] std::unique_ptr<KeyPair> open_key(std::string_view name) const override;
+    [[nodiscard]]
+    std::unique_ptr<KeyPair> open_key(std::string_view name) const override;
 
-    [[nodiscard]] bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_key,
-                              Algorithm algorithm, std::span<const std::byte> sig) const override;
+    [[nodiscard]]
+    bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_key, Algorithm algorithm,
+                std::span<const std::byte> sig) const override;
 };
 
 /**

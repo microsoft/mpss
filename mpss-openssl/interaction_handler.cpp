@@ -28,7 +28,8 @@ class CInteractionHandler : public mpss::InteractionHandler
     {
     }
 
-    [[nodiscard]] std::optional<mpss::SecureString> request_pin(std::string_view context) override
+    [[nodiscard]]
+    std::optional<mpss::SecureString> request_pin(std::string_view context) override
     {
         if (nullptr == request_pin_)
         {

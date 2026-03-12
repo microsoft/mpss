@@ -24,7 +24,8 @@ class Backend
      * @brief Get the name of this backend.
      * @return Backend name (e.g., "os", "yubikey")
      */
-    [[nodiscard]] virtual std::string name() const = 0;
+    [[nodiscard]]
+    virtual std::string name() const = 0;
 
     /**
      * @brief Create a new key pair.
@@ -33,15 +34,16 @@ class Backend
      * @param[in] policy Backend-specific key policy.
      * @return Key pair if successful, nullptr otherwise.
      */
-    [[nodiscard]] virtual std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm,
-                                                              KeyPolicy policy) const = 0;
+    [[nodiscard]]
+    virtual std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm, KeyPolicy policy) const = 0;
 
     /**
      * @brief Open an existing key pair.
      * @param[in] name The name of the key pair.
      * @return Key pair if successful, nullptr otherwise.
      */
-    [[nodiscard]] virtual std::unique_ptr<KeyPair> open_key(std::string_view name) const = 0;
+    [[nodiscard]]
+    virtual std::unique_ptr<KeyPair> open_key(std::string_view name) const = 0;
 
     /**
      * @brief Verify a signature (standalone, without a key pair object).
@@ -51,8 +53,9 @@ class Backend
      * @param[in] sig The signature to verify.
      * @return true if verification succeeds, false otherwise.
      */
-    [[nodiscard]] virtual bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_key,
-                                      Algorithm algorithm, std::span<const std::byte> sig) const = 0;
+    [[nodiscard]]
+    virtual bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_key, Algorithm algorithm,
+                        std::span<const std::byte> sig) const = 0;
 
     /**
      * @brief Check if the given algorithm is supported by this backend.
@@ -64,35 +67,46 @@ class Backend
      * @param algorithm The algorithm to check.
      * @return true if the algorithm is supported, false otherwise.
      */
-    [[nodiscard]] virtual bool is_algorithm_available(Algorithm algorithm) const;
+    [[nodiscard]]
+    virtual bool is_algorithm_available(Algorithm algorithm) const;
 };
 
 // Explicit-backend functions. The default-backend overloads below delegate to these.
-[[nodiscard]] std::unique_ptr<KeyPair> create_key(std::string_view backend_name, std::string_view name,
-                                                  Algorithm algorithm, KeyPolicy policy);
+[[nodiscard]]
+std::unique_ptr<KeyPair> create_key(std::string_view backend_name, std::string_view name, Algorithm algorithm,
+                                    KeyPolicy policy);
 
-[[nodiscard]] std::unique_ptr<KeyPair> open_key(std::string_view backend_name, std::string_view name);
+[[nodiscard]]
+std::unique_ptr<KeyPair> open_key(std::string_view backend_name, std::string_view name);
 
-[[nodiscard]] bool verify(std::string_view backend_name, std::span<const std::byte> hash,
-                          std::span<const std::byte> public_key, Algorithm algorithm, std::span<const std::byte> sig);
+[[nodiscard]]
+bool verify(std::string_view backend_name, std::span<const std::byte> hash, std::span<const std::byte> public_key,
+            Algorithm algorithm, std::span<const std::byte> sig);
 
-[[nodiscard]] bool is_algorithm_available(std::string_view backend_name, Algorithm algorithm);
+[[nodiscard]]
+bool is_algorithm_available(std::string_view backend_name, Algorithm algorithm);
 
 // Default-backend overloads that resolve the default backend and delegate to the above.
-[[nodiscard]] bool is_algorithm_available(Algorithm algorithm);
+[[nodiscard]]
+bool is_algorithm_available(Algorithm algorithm);
 
-[[nodiscard]] std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm, KeyPolicy policy);
+[[nodiscard]]
+std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm, KeyPolicy policy);
 
-[[nodiscard]] std::unique_ptr<KeyPair> open_key(std::string_view name);
+[[nodiscard]]
+std::unique_ptr<KeyPair> open_key(std::string_view name);
 
-[[nodiscard]] bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_key, Algorithm algorithm,
-                          std::span<const std::byte> sig);
+[[nodiscard]]
+bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_key, Algorithm algorithm,
+            std::span<const std::byte> sig);
 
 /// @brief Get the names of all available backends.
-[[nodiscard]] std::vector<std::string> get_available_backends();
+[[nodiscard]]
+std::vector<std::string> get_available_backends();
 
 /// @brief Get the name of the default backend.
-[[nodiscard]] std::string get_default_backend_name();
+[[nodiscard]]
+std::string get_default_backend_name();
 
 /// @brief Register a backend with the internal registry.
 /// @param[in] backend The backend to register.

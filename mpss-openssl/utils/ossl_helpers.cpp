@@ -53,8 +53,9 @@ std::size_t mpss_sign_as_der(const std::unique_ptr<KeyPair> &key_pair, std::span
     return written;
 }
 
-[[nodiscard]] bool verify_der(const std::unique_ptr<KeyPair> &key_pair, std::span<const std::byte> hash_tbs,
-                              std::span<const std::byte> der_sig)
+[[nodiscard]]
+bool verify_der(const std::unique_ptr<KeyPair> &key_pair, std::span<const std::byte> hash_tbs,
+                std::span<const std::byte> der_sig)
 {
     // Check for obvious problems.
     if (nullptr == key_pair || hash_tbs.empty() || der_sig.empty())
@@ -72,7 +73,8 @@ std::size_t mpss_sign_as_der(const std::unique_ptr<KeyPair> &key_pair, std::span
     return res;
 }
 
-[[nodiscard]] byte_vector mpss_vk_params_to_spki(OSSL_LIB_CTX *libctx, const OSSL_PARAM *params)
+[[nodiscard]]
+byte_vector mpss_vk_params_to_spki(OSSL_LIB_CTX *libctx, const OSSL_PARAM *params)
 {
     if (nullptr == params)
     {

@@ -1,4 +1,5 @@
 ---
-Language:        Cpp
-BasedOnStyle:  Microsoft
+Language: Cpp
+BasedOnStyle: Microsoft
+BreakAfterAttributes: Always
 ...

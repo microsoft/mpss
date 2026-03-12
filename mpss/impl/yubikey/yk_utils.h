@@ -14,9 +14,6 @@
 namespace mpss::impl::yubikey::utils
 {
 
-using mpss::SecureByteVector;
-using mpss::SecureString;
-
 /**
  * @brief Get the target YubiKey serial number from the environment variable MPSS_YUBIKEY_SERIAL.
  *

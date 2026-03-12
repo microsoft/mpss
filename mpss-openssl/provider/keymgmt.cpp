@@ -94,7 +94,8 @@ mpss_key::mpss_key(std::string_view key_name, std::optional<std::string> &mpss_a
     alg_name = try_get_algorithm_name(key_pair);
 }
 
-[[nodiscard]] bool mpss_key::has_valid_key() const noexcept
+[[nodiscard]]
+bool mpss_key::has_valid_key() const noexcept
 {
     return key_pair && (key_pair->algorithm() != mpss::Algorithm::unsupported) && name && sig_name && group_name &&
            hash_name && mpss_algorithm && alg_name;

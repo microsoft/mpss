@@ -112,7 +112,8 @@ class BackendRegistry
      * @brief Get the default backend.
      * @return Pointer to the default backend, or nullptr if none is selected.
      */
-    [[nodiscard]] std::shared_ptr<Backend> get_default_backend()
+    [[nodiscard]]
+    std::shared_ptr<Backend> get_default_backend()
     {
         initialize_if_needed();
 
@@ -129,7 +130,8 @@ class BackendRegistry
      * @param[in] name The backend name.
      * @return Pointer to the backend, or nullptr if not found.
      */
-    [[nodiscard]] std::shared_ptr<Backend> get_backend(std::string_view name)
+    [[nodiscard]]
+    std::shared_ptr<Backend> get_backend(std::string_view name)
     {
         initialize_if_needed();
 
@@ -147,7 +149,8 @@ class BackendRegistry
      * @brief Get the names of all available (registered and usable) backends.
      * @return Vector of backend names.
      */
-    [[nodiscard]] std::vector<std::string> get_available_backend_names()
+    [[nodiscard]]
+    std::vector<std::string> get_available_backend_names()
     {
         initialize_if_needed();
 
@@ -229,7 +232,8 @@ class BackendRegistry
     /**
      * @brief Get the platform-specific default backend name.
      */
-    [[nodiscard]] std::string platform_default_backend_name() const
+    [[nodiscard]]
+    std::string platform_default_backend_name() const
     {
 #ifdef _WIN32
         return "os";

@@ -42,26 +42,43 @@ inline constexpr std::array<const char *, 3> mpss_group_names = {
 inline constexpr std::array<const char *, 3> mpss_algorithm_names = {SN_ecdsa_with_SHA256, SN_ecdsa_with_SHA384,
                                                                      SN_ecdsa_with_SHA512};
 
-[[nodiscard]] std::string_view get_canonical_hash_name(std::string_view name);
-[[nodiscard]] std::string_view get_canonical_sig_name(std::string_view name);
-[[nodiscard]] std::string_view get_canonical_group_name(std::string_view name);
-[[nodiscard]] std::string_view get_canonical_algorithm_name(std::string_view name);
+[[nodiscard]]
+std::string_view get_canonical_hash_name(std::string_view name);
+[[nodiscard]]
+std::string_view get_canonical_sig_name(std::string_view name);
+[[nodiscard]]
+std::string_view get_canonical_group_name(std::string_view name);
+[[nodiscard]]
+std::string_view get_canonical_algorithm_name(std::string_view name);
 
-[[nodiscard]] bool are_same_hash(std::string_view name1, std::string_view name2);
-[[nodiscard]] bool are_same_sig(std::string_view name1, std::string_view name2);
-[[nodiscard]] bool are_same_group(std::string_view name1, std::string_view name2);
+[[nodiscard]]
+bool are_same_hash(std::string_view name1, std::string_view name2);
+[[nodiscard]]
+bool are_same_sig(std::string_view name1, std::string_view name2);
+[[nodiscard]]
+bool are_same_group(std::string_view name1, std::string_view name2);
 
-[[nodiscard]] std::optional<std::string> try_get_ec_group(std::string_view str);
-[[nodiscard]] std::optional<std::string> try_get_hash_func(std::string_view str);
-[[nodiscard]] std::optional<std::string> try_get_signature_scheme(std::string_view str);
-[[nodiscard]] std::optional<std::string> try_get_algorithm_name(std::string_view str);
+[[nodiscard]]
+std::optional<std::string> try_get_ec_group(std::string_view str);
+[[nodiscard]]
+std::optional<std::string> try_get_hash_func(std::string_view str);
+[[nodiscard]]
+std::optional<std::string> try_get_signature_scheme(std::string_view str);
+[[nodiscard]]
+std::optional<std::string> try_get_algorithm_name(std::string_view str);
 
-[[nodiscard]] std::optional<std::string> try_get_ec_group(const std::unique_ptr<mpss::KeyPair> &key_pair);
-[[nodiscard]] std::optional<std::string> try_get_hash_func(const std::unique_ptr<mpss::KeyPair> &key_pair);
-[[nodiscard]] std::optional<std::string> try_get_signature_scheme(const std::unique_ptr<mpss::KeyPair> &key_pair);
-[[nodiscard]] std::optional<std::string> try_get_algorithm_name(const std::unique_ptr<mpss::KeyPair> &key_pair);
+[[nodiscard]]
+std::optional<std::string> try_get_ec_group(const std::unique_ptr<mpss::KeyPair> &key_pair);
+[[nodiscard]]
+std::optional<std::string> try_get_hash_func(const std::unique_ptr<mpss::KeyPair> &key_pair);
+[[nodiscard]]
+std::optional<std::string> try_get_signature_scheme(const std::unique_ptr<mpss::KeyPair> &key_pair);
+[[nodiscard]]
+std::optional<std::string> try_get_algorithm_name(const std::unique_ptr<mpss::KeyPair> &key_pair);
 
-[[nodiscard]] mpss::Algorithm try_get_mpss_algorithm(std::string_view str);
-[[nodiscard]] std::optional<std::string> try_get_mpss_algorithm_name(std::string_view str);
+[[nodiscard]]
+mpss::Algorithm try_get_mpss_algorithm(std::string_view str);
+[[nodiscard]]
+std::optional<std::string> try_get_mpss_algorithm_name(std::string_view str);
 
 } // namespace mpss_openssl::utils

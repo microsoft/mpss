@@ -90,10 +90,10 @@ std::unique_ptr<KeyPair> YubiKeyBackend::create_key(std::string_view name, Algor
         return nullptr;
     }
 
-    // Check if algorithm is supported by YubiKey.
     const std::uint8_t yk_algorithm = utils::mpss_to_yk_algorithm(algorithm);
     if (0 == yk_algorithm)
     {
+        // Algorithm is not supported by YubiKey.
         mpss::utils::log_warning("Algorithm not supported by YubiKey PIV.");
         return nullptr;
     }

@@ -59,7 +59,8 @@ template <typename T> class JNIObj
         return ref_;
     }
 
-    [[nodiscard]] bool is_null() const
+    [[nodiscard]]
+    bool is_null() const
     {
         return nullptr == ref_;
     }

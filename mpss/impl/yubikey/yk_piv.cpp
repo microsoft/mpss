@@ -133,7 +133,7 @@ PinResult YubiKeyPIV::authenticate_pin(std::string_view pin)
     }
 
     // ykpiv_verify requires a null-terminated C string.
-    const utils::SecureString pin_str{pin};
+    const SecureString pin_str{pin};
     int tries = 0;
     ykpiv_rc rc = ykpiv_verify(state_, pin_str.c_str(), &tries);
     if (YKPIV_OK == rc)
@@ -176,7 +176,7 @@ bool YubiKeyPIV::authenticate_mgm_key()
     }
 
     // Try management key from environment variable.
-    const utils::SecureByteVector env_key = utils::get_mgm_key_from_env();
+    const SecureByteVector env_key = utils::get_mgm_key_from_env();
     if (!env_key.empty())
     {
         rc = ykpiv_authenticate(state_, reinterpret_cast<const unsigned char *>(env_key.data()));

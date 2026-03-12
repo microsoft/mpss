@@ -22,7 +22,8 @@ namespace unsafe
 {
 
 template <std::size_t N>
-[[nodiscard]] std::string_view get_canonical_name(std::string_view name, const std::array<const char *, N> &alias_arr)
+[[nodiscard]]
+std::string_view get_canonical_name(std::string_view name, const std::array<const char *, N> &alias_arr)
 {
     // IMPORTANT NOTE: The std::string_view this function returns IS NOT NULL-TERMINATED!
     // THIS FUNCTION IS DANGEROUS TO USE DIRECTLY.
@@ -64,27 +65,31 @@ template <std::size_t N>
 
 } // namespace unsafe
 
-[[nodiscard]] std::string_view get_canonical_hash_name(std::string_view name)
+[[nodiscard]]
+std::string_view get_canonical_hash_name(std::string_view name)
 {
     return unsafe::get_canonical_name(name, mpss_hash_names);
 }
 
-[[nodiscard]] std::string_view get_canonical_sig_name(std::string_view name)
+[[nodiscard]]
+std::string_view get_canonical_sig_name(std::string_view name)
 {
     return unsafe::get_canonical_name(name, mpss_sig_names);
 }
-[[nodiscard]] std::string_view get_canonical_group_name(std::string_view name)
+[[nodiscard]]
+std::string_view get_canonical_group_name(std::string_view name)
 {
     return unsafe::get_canonical_name(name, mpss_group_names);
 }
-[[nodiscard]] std::string_view get_canonical_algorithm_name(std::string_view name)
+[[nodiscard]]
+std::string_view get_canonical_algorithm_name(std::string_view name)
 {
     return unsafe::get_canonical_name(name, mpss_algorithm_names);
 }
 
 template <std::size_t N>
-[[nodiscard]] bool are_aliases(std::string_view name1, std::string_view name2,
-                               const std::array<const char *, N> &alias_arr)
+[[nodiscard]]
+bool are_aliases(std::string_view name1, std::string_view name2, const std::array<const char *, N> &alias_arr)
 {
     if (name1 == name2)
     {
@@ -102,15 +107,18 @@ template <std::size_t N>
     return (canon_name1 == canon_name2);
 }
 
-[[nodiscard]] bool are_same_hash(std::string_view name1, std::string_view name2)
+[[nodiscard]]
+bool are_same_hash(std::string_view name1, std::string_view name2)
 {
     return are_aliases(name1, name2, mpss_hash_names);
 }
-[[nodiscard]] bool are_same_sig(std::string_view name1, std::string_view name2)
+[[nodiscard]]
+bool are_same_sig(std::string_view name1, std::string_view name2)
 {
     return are_aliases(name1, name2, mpss_sig_names);
 }
-[[nodiscard]] bool are_same_group(std::string_view name1, std::string_view name2)
+[[nodiscard]]
+bool are_same_group(std::string_view name1, std::string_view name2)
 {
     return are_aliases(name1, name2, mpss_group_names);
 }
@@ -185,14 +193,16 @@ std::string_view try_extract_canonical_name(std::string_view str, const std::arr
 
 } // namespace unsafe
 
-[[nodiscard]] std::optional<std::string> try_get_ec_group(std::string_view str)
+[[nodiscard]]
+std::optional<std::string> try_get_ec_group(std::string_view str)
 {
     // We wrap the result in std::string. This is now guaranteed to be null-terminated.
     const std::string_view group_name = unsafe::try_extract_canonical_name(str, mpss_group_names);
     return group_name.empty() ? std::nullopt : std::make_optional(std::string{group_name});
 }
 
-[[nodiscard]] std::optional<std::string> try_get_ec_group(const std::unique_ptr<KeyPair> &key_pair)
+[[nodiscard]]
+std::optional<std::string> try_get_ec_group(const std::unique_ptr<KeyPair> &key_pair)
 {
     // Fail if no key is present.
     if (nullptr == key_pair)
@@ -205,14 +215,16 @@ std::string_view try_extract_canonical_name(std::string_view str, const std::arr
     return try_get_ec_group(type_str);
 }
 
-[[nodiscard]] std::optional<std::string> try_get_hash_func(std::string_view str)
+[[nodiscard]]
+std::optional<std::string> try_get_hash_func(std::string_view str)
 {
     // We wrap the result in std::string. This is now guaranteed to be null-terminated.
     const std::string_view hash_name = unsafe::try_extract_canonical_name(str, mpss_hash_names);
     return hash_name.empty() ? std::nullopt : std::make_optional(std::string{hash_name});
 }
 
-[[nodiscard]] std::optional<std::string> try_get_hash_func(const std::unique_ptr<KeyPair> &key_pair)
+[[nodiscard]]
+std::optional<std::string> try_get_hash_func(const std::unique_ptr<KeyPair> &key_pair)
 {
     // Fail if no key is present.
     if (nullptr == key_pair)
@@ -225,14 +237,16 @@ std::string_view try_extract_canonical_name(std::string_view str, const std::arr
     return try_get_hash_func(type_str);
 }
 
-[[nodiscard]] std::optional<std::string> try_get_signature_scheme(std::string_view str)
+[[nodiscard]]
+std::optional<std::string> try_get_signature_scheme(std::string_view str)
 {
     // We wrap the result in std::string. This is now guaranteed to be null-terminated.
     const std::string_view sig_scheme = unsafe::try_extract_canonical_name(str, mpss_sig_names);
     return sig_scheme.empty() ? std::nullopt : std::make_optional(std::string{sig_scheme});
 }
 
-[[nodiscard]] std::optional<std::string> try_get_signature_scheme(const std::unique_ptr<KeyPair> &key_pair)
+[[nodiscard]]
+std::optional<std::string> try_get_signature_scheme(const std::unique_ptr<KeyPair> &key_pair)
 {
     // Fail if no key is present.
     if (nullptr == key_pair)
@@ -245,7 +259,8 @@ std::string_view try_extract_canonical_name(std::string_view str, const std::arr
     return try_get_signature_scheme(type_str);
 }
 
-[[nodiscard]] std::optional<std::string> try_get_algorithm_name(std::string_view str)
+[[nodiscard]]
+std::optional<std::string> try_get_algorithm_name(std::string_view str)
 {
     // Note: The output of this function does *not* indicate curve information!
 
@@ -281,7 +296,8 @@ std::string_view try_extract_canonical_name(std::string_view str, const std::arr
     return std::nullopt;
 }
 
-[[nodiscard]] std::optional<std::string> try_get_algorithm_name(const std::unique_ptr<KeyPair> &key_pair)
+[[nodiscard]]
+std::optional<std::string> try_get_algorithm_name(const std::unique_ptr<KeyPair> &key_pair)
 {
     // Note: The output of this function does *not* indicate curve information!
 
@@ -296,7 +312,8 @@ std::string_view try_extract_canonical_name(std::string_view str, const std::arr
     return try_get_algorithm_name(type_str);
 }
 
-[[nodiscard]] mpss::Algorithm try_get_mpss_algorithm(std::string_view str)
+[[nodiscard]]
+mpss::Algorithm try_get_mpss_algorithm(std::string_view str)
 {
     // This function tries to retrieve the complete mpss algorithm description,
     // which includes the signature scheme descriptor, curve, and hash function.
@@ -334,7 +351,8 @@ std::string_view try_extract_canonical_name(std::string_view str, const std::arr
     return mpss::Algorithm::unsupported;
 }
 
-[[nodiscard]] std::optional<std::string> try_get_mpss_algorithm_name(std::string_view str)
+[[nodiscard]]
+std::optional<std::string> try_get_mpss_algorithm_name(std::string_view str)
 {
     // This function tries to retrieve the complete mpss algorithm description,
     // which includes the signature scheme descriptor, curve, and hash function.

@@ -22,9 +22,12 @@ class AppleKeychainKeyPair : public AppleKeyPairBase
 
   protected:
     bool do_delete_key() override;
-    [[nodiscard]] std::size_t do_sign_hash(std::span<const std::byte> hash, std::span<std::byte> sig) const override;
-    [[nodiscard]] bool do_verify(std::span<const std::byte> hash, std::span<const std::byte> sig) const override;
-    [[nodiscard]] std::size_t do_extract_key(std::span<std::byte> public_key) const override;
+    [[nodiscard]]
+    std::size_t do_sign_hash(std::span<const std::byte> hash, std::span<std::byte> sig) const override;
+    [[nodiscard]]
+    bool do_verify(std::span<const std::byte> hash, std::span<const std::byte> sig) const override;
+    [[nodiscard]]
+    std::size_t do_extract_key(std::span<std::byte> public_key) const override;
     void do_release_key() override;
 };
 

@@ -22,29 +22,36 @@ class AppleKeyPairBase : public mpss::KeyPair
 
     bool delete_key() override;
 
-    [[nodiscard]] std::size_t sign_hash(std::span<const std::byte> hash, std::span<std::byte> sig) const override;
+    [[nodiscard]]
+    std::size_t sign_hash(std::span<const std::byte> hash, std::span<std::byte> sig) const override;
 
-    [[nodiscard]] bool verify(std::span<const std::byte> hash, std::span<const std::byte> sig) const override;
+    [[nodiscard]]
+    bool verify(std::span<const std::byte> hash, std::span<const std::byte> sig) const override;
 
-    [[nodiscard]] std::size_t extract_key(std::span<std::byte> public_key) const override;
+    [[nodiscard]]
+    std::size_t extract_key(std::span<std::byte> public_key) const override;
 
     void release_key() override;
 
   protected:
     AppleKeyPairBase(std::string_view name, Algorithm algorithm, bool hardware_backed, const char *storage_description);
 
-    [[nodiscard]] std::string name() const
+    [[nodiscard]]
+    std::string name() const
     {
         return name_;
     }
 
     virtual bool do_delete_key() = 0;
 
-    [[nodiscard]] virtual std::size_t do_sign_hash(std::span<const std::byte> hash, std::span<std::byte> sig) const = 0;
+    [[nodiscard]]
+    virtual std::size_t do_sign_hash(std::span<const std::byte> hash, std::span<std::byte> sig) const = 0;
 
-    [[nodiscard]] virtual bool do_verify(std::span<const std::byte> hash, std::span<const std::byte> sig) const = 0;
+    [[nodiscard]]
+    virtual bool do_verify(std::span<const std::byte> hash, std::span<const std::byte> sig) const = 0;
 
-    [[nodiscard]] virtual std::size_t do_extract_key(std::span<std::byte> public_key) const = 0;
+    [[nodiscard]]
+    virtual std::size_t do_extract_key(std::span<std::byte> public_key) const = 0;
 
     virtual void do_release_key() = 0;
 

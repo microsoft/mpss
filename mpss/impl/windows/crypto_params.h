@@ -14,19 +14,23 @@ class crypto_params
 {
   public:
     // Signing key type identifier.
-    [[nodiscard]] virtual LPCWSTR key_type_name() const = 0;
+    [[nodiscard]]
+    virtual LPCWSTR key_type_name() const = 0;
 
     // Key blob type.
     using key_blob_t = BCRYPT_ECCKEY_BLOB;
 
     // Public key blob type identifier.
-    [[nodiscard]] virtual LPCWSTR public_key_blob_name() const = 0;
+    [[nodiscard]]
+    virtual LPCWSTR public_key_blob_name() const = 0;
 
     // Private key blob type identifier.
-    [[nodiscard]] virtual LPCWSTR private_key_blob_name() const = 0;
+    [[nodiscard]]
+    virtual LPCWSTR private_key_blob_name() const = 0;
 
     // Public key magic value.
-    [[nodiscard]] virtual DWORD public_key_magic() const = 0;
+    [[nodiscard]]
+    virtual DWORD public_key_magic() const = 0;
 };
 
 #define MPSS_IMPL_WINDOWS_CRYPTO_PARAMS(curve)                                                                         \

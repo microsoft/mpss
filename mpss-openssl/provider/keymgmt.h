@@ -30,7 +30,8 @@ struct mpss_key
 
     ~mpss_key() = default;
 
-    [[nodiscard]] bool has_valid_key() const noexcept;
+    [[nodiscard]]
+    bool has_valid_key() const noexcept;
 };
 
 extern const OSSL_ALGORITHM mpss_keymgmt_algorithms[];

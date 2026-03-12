@@ -30,7 +30,8 @@ class JNIEnvGuard
     {
         return env_;
     }
-    [[nodiscard]] JNIEnv *Env() const
+    [[nodiscard]]
+    JNIEnv *Env() const
     {
         return env_;
     }

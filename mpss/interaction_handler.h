@@ -36,7 +36,8 @@ class InteractionHandler
      * @return The PIN, or std::nullopt if the user cancelled.
      * @warning Implementations must never log or store the returned PIN beyond the immediate operation.
      */
-    [[nodiscard]] virtual std::optional<SecureString> request_pin(std::string_view context) = 0;
+    [[nodiscard]]
+    virtual std::optional<SecureString> request_pin(std::string_view context) = 0;
 
     /** @brief Notify that a touch-requiring operation is starting. */
     virtual void notify_touch_needed() = 0;

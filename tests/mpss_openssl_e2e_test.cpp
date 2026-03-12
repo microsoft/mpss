@@ -15,7 +15,8 @@
 namespace mpss_openssl::utils
 {
 /** @brief Extract the canonical OpenSSL hash name from a vague algorithm string. */
-[[nodiscard]] std::optional<std::string> try_get_hash_func(std::string_view str);
+[[nodiscard]]
+std::optional<std::string> try_get_hash_func(std::string_view str);
 } // namespace mpss_openssl::utils
 
 namespace

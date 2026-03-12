@@ -26,17 +26,21 @@ class AndroidKeyPair : public mpss::KeyPair
 
     bool delete_key() override;
 
-    [[nodiscard]] std::size_t sign_hash(std::span<const std::byte> hash, std::span<std::byte> sig) const override;
+    [[nodiscard]]
+    std::size_t sign_hash(std::span<const std::byte> hash, std::span<std::byte> sig) const override;
 
-    [[nodiscard]] bool verify(std::span<const std::byte> hash, std::span<const std::byte> sig) const override;
+    [[nodiscard]]
+    bool verify(std::span<const std::byte> hash, std::span<const std::byte> sig) const override;
 
-    [[nodiscard]] std::size_t extract_key(std::span<std::byte> public_key) const override;
+    [[nodiscard]]
+    std::size_t extract_key(std::span<std::byte> public_key) const override;
 
     void release_key() noexcept override;
 
   private:
     void close_key();
-    [[nodiscard]] JNIEnv *env() const
+    [[nodiscard]]
+    JNIEnv *env() const
     {
         return guard_.Env();
     };
