@@ -18,7 +18,7 @@ class YubiKeyBackend : public Backend
     ~YubiKeyBackend() override = default;
 
     [[nodiscard]]
-    std::string name() const override;
+    const char *name() const override;
 
     [[nodiscard]]
     bool is_algorithm_available(Algorithm algorithm) const override;

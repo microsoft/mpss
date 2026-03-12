@@ -88,14 +88,14 @@ MPSS_DECOR bool verify(std::span<const std::byte> hash, std::span<const std::byt
  * @return Vector of backend names (e.g., {"os", "yubikey"}).
  */
 [[nodiscard]]
-MPSS_DECOR std::vector<std::string> get_available_backends();
+MPSS_DECOR std::vector<const char *> get_available_backends();
 
 /**
  * @brief Get the name of the default backend.
  * @return The default backend name, or an empty string if none is available.
  */
 [[nodiscard]]
-MPSS_DECOR std::string get_default_backend_name();
+MPSS_DECOR const char *get_default_backend_name();
 
 /**
  * @brief Represents a handle to a key pair in the safe storage system.
@@ -145,7 +145,7 @@ class MPSS_DECOR KeyPair
      * @brief Get the name of the backend that created or opened this key pair.
      */
     [[nodiscard]]
-    std::string_view backend_name() const noexcept
+    const char *backend_name() const noexcept
     {
         return backend_name_;
     }
@@ -263,7 +263,8 @@ class MPSS_DECOR KeyPair
     Algorithm algorithm_;
     AlgorithmInfo info_;
     KeyInfo key_info_;
-    std::string backend_name_;
+    const char *backend_name_{""};
+
     // NOLINTEND(*-non-private-member-variables-in-classes)
 
     KeyPair(Algorithm algorithm, bool hardware_backed, const char *storage_description);

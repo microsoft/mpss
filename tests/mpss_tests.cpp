@@ -4,7 +4,9 @@
 #include "mpss/key_policy.h"
 #include "mpss/log.h"
 #include "mpss/mpss.h"
+#include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <gtest/gtest.h>
 #include <memory>
 #include <string>
@@ -394,15 +396,17 @@ TEST(BackendTest, GetAvailableBackends)
 
 TEST(BackendTest, GetDefaultBackendName)
 {
-    const auto name = mpss::get_default_backend_name();
-    EXPECT_FALSE(name.empty());
+    const char *const name = mpss::get_default_backend_name();
+    ASSERT_NE(nullptr, name);
+    EXPECT_GT(std::strlen(name), std::size_t{0});
     mpss::GetLogger()->info("Default backend: {}", name);
 }
 
 TEST(BackendTest, CreateKeyWithExplicitBackend)
 {
-    const auto default_backend = mpss::get_default_backend_name();
-    ASSERT_FALSE(default_backend.empty());
+    const char *const default_backend = mpss::get_default_backend_name();
+    ASSERT_NE(nullptr, default_backend);
+    ASSERT_GT(std::strlen(default_backend), std::size_t{0});
 
     const std::string key_name = "test_explicit_key";
     MPSS::DeleteKey(key_name);
@@ -418,8 +422,9 @@ TEST(BackendTest, CreateKeyWithExplicitBackend)
 
 TEST(BackendTest, OpenKeyWithExplicitBackend)
 {
-    const auto default_backend = mpss::get_default_backend_name();
-    ASSERT_FALSE(default_backend.empty());
+    const char *const default_backend = mpss::get_default_backend_name();
+    ASSERT_NE(nullptr, default_backend);
+    ASSERT_GT(std::strlen(default_backend), std::size_t{0});
 
     const std::string key_name = "test_explicit_open_key";
     MPSS::DeleteKey(key_name);
@@ -446,8 +451,9 @@ TEST(BackendTest, BackendNameSetOnCreate)
         GTEST_SKIP() << "Algorithm not supported by current backend";
     }
 
-    const auto default_backend = mpss::get_default_backend_name();
-    ASSERT_FALSE(default_backend.empty());
+    const char *const default_backend = mpss::get_default_backend_name();
+    ASSERT_NE(nullptr, default_backend);
+    ASSERT_GT(std::strlen(default_backend), std::size_t{0});
 
     const std::string key_name = "test_backend_name_create";
     MPSS::DeleteKey(key_name);
@@ -455,7 +461,7 @@ TEST(BackendTest, BackendNameSetOnCreate)
     // Create with default backend.
     auto key = mpss::KeyPair::Create(key_name, ecdsa_secp256r1_sha256);
     ASSERT_NE(nullptr, key);
-    EXPECT_EQ(default_backend, key->backend_name());
+    EXPECT_STREQ(default_backend, key->backend_name());
     key->delete_key();
 }
 
@@ -466,8 +472,9 @@ TEST(BackendTest, BackendNameSetOnCreateExplicit)
         GTEST_SKIP() << "Algorithm not supported by current backend";
     }
 
-    const auto default_backend = mpss::get_default_backend_name();
-    ASSERT_FALSE(default_backend.empty());
+    const char *const default_backend = mpss::get_default_backend_name();
+    ASSERT_NE(nullptr, default_backend);
+    ASSERT_GT(std::strlen(default_backend), std::size_t{0});
 
     const std::string key_name = "test_backend_name_create_explicit";
     MPSS::DeleteKey(key_name);
@@ -475,7 +482,7 @@ TEST(BackendTest, BackendNameSetOnCreateExplicit)
     // Create with explicit backend.
     auto key = mpss::KeyPair::Create(key_name, ecdsa_secp256r1_sha256, default_backend);
     ASSERT_NE(nullptr, key);
-    EXPECT_EQ(default_backend, key->backend_name());
+    EXPECT_STREQ(default_backend, key->backend_name());
     key->delete_key();
 }
 
@@ -486,8 +493,9 @@ TEST(BackendTest, BackendNameSetOnOpen)
         GTEST_SKIP() << "Algorithm not supported by current backend";
     }
 
-    const auto default_backend = mpss::get_default_backend_name();
-    ASSERT_FALSE(default_backend.empty());
+    const char *const default_backend = mpss::get_default_backend_name();
+    ASSERT_NE(nullptr, default_backend);
+    ASSERT_GT(std::strlen(default_backend), std::size_t{0});
 
     const std::string key_name = "test_backend_name_open";
     MPSS::DeleteKey(key_name);
@@ -499,7 +507,7 @@ TEST(BackendTest, BackendNameSetOnOpen)
 
     auto opened = mpss::KeyPair::Open(key_name);
     ASSERT_NE(nullptr, opened);
-    EXPECT_EQ(default_backend, opened->backend_name());
+    EXPECT_STREQ(default_backend, opened->backend_name());
     opened->delete_key();
 }
 
@@ -510,8 +518,9 @@ TEST(BackendTest, BackendNameSetOnOpenExplicit)
         GTEST_SKIP() << "Algorithm not supported by current backend";
     }
 
-    const auto default_backend = mpss::get_default_backend_name();
-    ASSERT_FALSE(default_backend.empty());
+    const char *const default_backend = mpss::get_default_backend_name();
+    ASSERT_NE(nullptr, default_backend);
+    ASSERT_GT(std::strlen(default_backend), std::size_t{0});
 
     const std::string key_name = "test_backend_name_open_explicit";
     MPSS::DeleteKey(key_name);
@@ -523,7 +532,7 @@ TEST(BackendTest, BackendNameSetOnOpenExplicit)
 
     auto opened = mpss::KeyPair::Open(key_name, default_backend);
     ASSERT_NE(nullptr, opened);
-    EXPECT_EQ(default_backend, opened->backend_name());
+    EXPECT_STREQ(default_backend, opened->backend_name());
     opened->delete_key();
 }
 
@@ -541,8 +550,9 @@ TEST(BackendTest, OpenKeyWithInvalidBackend)
 
 TEST(BackendTest, VerifyWithExplicitBackend)
 {
-    const auto default_backend = mpss::get_default_backend_name();
-    ASSERT_FALSE(default_backend.empty());
+    const char *const default_backend = mpss::get_default_backend_name();
+    ASSERT_NE(nullptr, default_backend);
+    ASSERT_GT(std::strlen(default_backend), std::size_t{0});
 
     if (!mpss::is_algorithm_available(ecdsa_secp256r1_sha256))
     {
@@ -771,13 +781,13 @@ class CrossBackendTest : public ::testing::Test
         const auto backends = mpss::get_available_backends();
         bool has_os = false;
         bool has_yubikey = false;
-        for (const auto &name : backends)
+        for (const char *name : backends)
         {
-            if ("os" == name)
+            if (0 == std::strcmp("os", name))
             {
                 has_os = true;
             }
-            if ("yubikey" == name)
+            if (0 == std::strcmp("yubikey", name))
             {
                 has_yubikey = true;
             }

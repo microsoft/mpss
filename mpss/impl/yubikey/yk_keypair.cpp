@@ -22,6 +22,7 @@ bool YubiKeyKeyPair::delete_key()
     YubiKeyPIV piv;
     if (!piv.is_connected())
     {
+        mpss::utils::log_trace("Cannot delete key '{}': YubiKey connection failed.", name_);
         return false;
     }
 
@@ -34,6 +35,7 @@ bool YubiKeyKeyPair::delete_key()
         // Deletion failed. We likely need the PIN for management key access.
         if (!authenticate_pin_interactive(piv, "delete key '" + name_ + "'"))
         {
+            mpss::utils::log_trace("Cannot delete key '{}': PIN authentication failed.", name_);
             return false;
         }
 
@@ -44,6 +46,10 @@ bool YubiKeyKeyPair::delete_key()
     if (deleted)
     {
         mpss::utils::log_trace("Key '{}' in slot {} deleted.", name_, utils::get_slot_name(slot_));
+    }
+    else
+    {
+        mpss::utils::log_trace("Failed to delete key '{}' from slot {}.", name_, utils::get_slot_name(slot_));
     }
     return deleted;
 }
@@ -71,6 +77,7 @@ std::size_t YubiKeyKeyPair::sign_hash(std::span<const std::byte> hash, std::span
     YubiKeyPIV piv;
     if (!piv.is_connected())
     {
+        mpss::utils::log_trace("Cannot sign with key '{}': YubiKey connection failed.", name_);
         return 0;
     }
 
@@ -103,6 +110,7 @@ std::size_t YubiKeyKeyPair::sign_hash(std::span<const std::byte> hash, std::span
         // is needed. In either case, we authenticate the PIN now.
         if (!authenticate_pin_interactive(piv, "sign with key '" + name_ + "'"))
         {
+            mpss::utils::log_trace("Cannot sign with key '{}': PIN authentication failed.", name_);
             return 0;
         }
     }
@@ -123,6 +131,10 @@ std::size_t YubiKeyKeyPair::sign_hash(std::span<const std::byte> hash, std::span
     if (0 != written)
     {
         mpss::utils::log_trace("YubiKey sign produced {} byte signature.", written);
+    }
+    else
+    {
+        mpss::utils::log_trace("YubiKey sign failed for key '{}' in slot {}.", name_, utils::get_slot_name(slot_));
     }
 
     return written;
@@ -147,12 +159,18 @@ bool YubiKeyKeyPair::verify(std::span<const std::byte> hash, std::span<const std
     const std::size_t pk_len = extract_key(public_key);
     if (0 == pk_len)
     {
+        mpss::utils::log_trace("Cannot verify with key '{}': public key extraction failed.", name_);
         return false;
     }
     public_key.resize(pk_len);
 
     // Use standalone verification using OpenSSL.
-    return mpss::verify(hash, public_key, algorithm(), sig);
+    const bool verified = mpss::verify(hash, public_key, algorithm(), sig);
+    if (!verified)
+    {
+        mpss::utils::log_trace("Signature verification failed for key '{}'.", name_);
+    }
+    return verified;
 }
 
 std::size_t YubiKeyKeyPair::extract_key(std::span<std::byte> public_key) const
@@ -172,6 +190,7 @@ std::size_t YubiKeyKeyPair::extract_key(std::span<std::byte> public_key) const
     YubiKeyPIV piv;
     if (!piv.is_connected())
     {
+        mpss::utils::log_trace("Cannot extract public key for '{}': YubiKey connection failed.", name_);
         return 0;
     }
 
@@ -180,6 +199,11 @@ std::size_t YubiKeyKeyPair::extract_key(std::span<std::byte> public_key) const
     {
         mpss::utils::log_trace("Extracted {} byte public key from YubiKey slot {}.", pk_size,
                                utils::get_slot_name(slot_));
+    }
+    else
+    {
+        mpss::utils::log_trace("Failed to extract public key from slot {} for key '{}'.", utils::get_slot_name(slot_),
+                               name_);
     }
     return pk_size;
 }

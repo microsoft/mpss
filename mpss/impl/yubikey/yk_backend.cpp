@@ -5,6 +5,7 @@
 #include "mpss/impl/yubikey/yk_keypair.h"
 #include "mpss/impl/yubikey/yk_piv.h"
 #include "mpss/impl/yubikey/yk_utils.h"
+#include "mpss/utils/scope_guard.h"
 #include "mpss/utils/utilities.h"
 #include <openssl/core_names.h>
 #include <openssl/evp.h>
@@ -37,14 +38,15 @@ bool openssl_ecdsa_verify(const char *group_name, std::span<const std::byte> has
         return false;
     }
     EVP_PKEY_CTX_free(build_ctx);
+    SCOPE_GUARD(EVP_PKEY_free(pkey));
 
     // Verify the DER-encoded ECDSA signature against the pre-computed hash.
     EVP_PKEY_CTX *verify_ctx = EVP_PKEY_CTX_new(pkey, nullptr);
     if (nullptr == verify_ctx)
     {
-        EVP_PKEY_free(pkey);
         return false;
     }
+    SCOPE_GUARD(EVP_PKEY_CTX_free(verify_ctx));
 
     int result = -1;
     if (EVP_PKEY_verify_init(verify_ctx) > 0)
@@ -53,8 +55,6 @@ bool openssl_ecdsa_verify(const char *group_name, std::span<const std::byte> has
                                  reinterpret_cast<const unsigned char *>(hash.data()), hash.size());
     }
 
-    EVP_PKEY_CTX_free(verify_ctx);
-    EVP_PKEY_free(pkey);
     return 1 == result;
 }
 
@@ -65,7 +65,7 @@ namespace mpss::impl::yubikey
 
 using enum Algorithm;
 
-std::string YubiKeyBackend::name() const
+const char *YubiKeyBackend::name() const
 {
     return "yubikey";
 }

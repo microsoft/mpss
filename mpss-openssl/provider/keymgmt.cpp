@@ -293,7 +293,7 @@ extern "C" int mpss_keymgmt_get_params(void *pkey, OSSL_PARAM params[])
 
     const std::string key_name = key->name.value_or("");
     const std::string mpss_algorithm = key->mpss_algorithm.value_or("");
-    const std::string mpss_backend{key->has_valid_key() ? key->key_pair->backend_name() : ""};
+    const char *mpss_backend = key->has_valid_key() ? key->key_pair->backend_name() : "";
     std::int32_t bits = 0;
     std::int32_t security_bits = 0;
     const std::string mandatory_digest{key->hash_name.value_or("")};
@@ -321,7 +321,7 @@ extern "C" int mpss_keymgmt_get_params(void *pkey, OSSL_PARAM params[])
     {
         return 0;
     }
-    if ((p = OSSL_PARAM_locate(params, "mpss_backend")) && !OSSL_PARAM_set_utf8_string(p, mpss_backend.data()))
+    if ((p = OSSL_PARAM_locate(params, "mpss_backend")) && !OSSL_PARAM_set_utf8_string(p, mpss_backend))
     {
         return 0;
     }

@@ -22,7 +22,7 @@ class OSBackend : public Backend
     ~OSBackend() override = default;
 
     [[nodiscard]]
-    std::string name() const override
+    const char *name() const override
     {
         return "os";
     }

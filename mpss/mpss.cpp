@@ -117,12 +117,12 @@ bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_k
     return impl::verify(backend_name, hash, public_key, algorithm, sig);
 }
 
-std::vector<std::string> get_available_backends()
+std::vector<const char *> get_available_backends()
 {
     return impl::get_available_backends();
 }
 
-std::string get_default_backend_name()
+const char *get_default_backend_name()
 {
     return impl::get_default_backend_name();
 }

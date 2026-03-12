@@ -51,9 +51,9 @@ namespace mpss::impl
 class BackendNameSetter
 {
   public:
-    static void set(KeyPair &kp, std::string name)
+    static void set(KeyPair &kp, const char *name)
     {
-        kp.backend_name_ = std::move(name);
+        kp.backend_name_ = name;
     }
 };
 
@@ -150,15 +150,15 @@ class BackendRegistry
      * @return Vector of backend names.
      */
     [[nodiscard]]
-    std::vector<std::string> get_available_backend_names()
+    std::vector<const char *> get_available_backend_names()
     {
         initialize_if_needed();
 
-        std::vector<std::string> names;
+        std::vector<const char *> names;
         names.reserve(backends_.size());
         for (const auto &[name, backend] : backends_)
         {
-            names.push_back(name);
+            names.push_back(backend->name());
         }
         return names;
     }
@@ -205,8 +205,8 @@ class BackendRegistry
         }
 
         // Fall back to platform default.
-        const std::string default_name = platform_default_backend_name();
-        if (!default_name.empty())
+        const char *default_name = platform_default_backend_name();
+        if (nullptr != default_name)
         {
             const auto it = backends_.find(default_name);
             if (backends_.end() != it)
@@ -233,7 +233,7 @@ class BackendRegistry
      * @brief Get the platform-specific default backend name.
      */
     [[nodiscard]]
-    std::string platform_default_backend_name() const
+    const char *platform_default_backend_name() const
     {
 #ifdef _WIN32
         return "os";
@@ -245,7 +245,7 @@ class BackendRegistry
         // Linux: prefer YubiKey as it's the only available backend.
         return "yubikey";
 #else
-        return "";
+        return nullptr;
 #endif
     }
 };
@@ -392,12 +392,12 @@ bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_k
 }
 
 // Discovery functions.
-std::vector<std::string> get_available_backends()
+std::vector<const char *> get_available_backends()
 {
     return BackendRegistry::Instance().get_available_backend_names();
 }
 
-std::string get_default_backend_name()
+const char *get_default_backend_name()
 {
     BackendRegistry &registry = BackendRegistry::Instance();
     const std::shared_ptr<Backend> active = registry.get_default_backend();

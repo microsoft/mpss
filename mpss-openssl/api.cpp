@@ -110,11 +110,7 @@ const char **mpss_get_available_backends()
     static std::vector<const char *> ptrs;
     static std::once_flag flag;
     std::call_once(flag, []() {
-        static std::vector<std::string> names = mpss::get_available_backends();
-        for (const std::string &name : names)
-        {
-            ptrs.push_back(name.c_str());
-        }
+        ptrs = mpss::get_available_backends();
         ptrs.push_back(nullptr); // null-terminate
     });
     return ptrs.data();
@@ -122,8 +118,5 @@ const char **mpss_get_available_backends()
 
 const char *mpss_get_default_backend_name()
 {
-    static std::string name;
-
-    name = mpss::get_default_backend_name();
-    return name.c_str();
+    return mpss::get_default_backend_name();
 }

@@ -25,7 +25,7 @@ class Backend
      * @return Backend name (e.g., "os", "yubikey")
      */
     [[nodiscard]]
-    virtual std::string name() const = 0;
+    virtual const char *name() const = 0;
 
     /**
      * @brief Create a new key pair.
@@ -102,11 +102,11 @@ bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_k
 
 /// @brief Get the names of all available backends.
 [[nodiscard]]
-std::vector<std::string> get_available_backends();
+std::vector<const char *> get_available_backends();
 
 /// @brief Get the name of the default backend.
 [[nodiscard]]
-std::string get_default_backend_name();
+const char *get_default_backend_name();
 
 /// @brief Register a backend with the internal registry.
 /// @param[in] backend The backend to register.
