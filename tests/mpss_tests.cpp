@@ -29,20 +29,25 @@ class MPSS : public ::testing::Test
   public:
     static void DeleteKey(const std::string &name)
     {
-        while (true)
+        // Try to delete the key from every available backend, not just the default one.
+        // This ensures cleanup works regardless of the MPSS_DEFAULT_BACKEND setting.
+        for (const char *backend : mpss::get_available_backends())
         {
-            // Check if key exists, delete if it does.
-            std::unique_ptr<mpss::KeyPair> handle = mpss::KeyPair::Open(name);
-            if (nullptr == handle)
+            while (true)
             {
-                break;
+                std::unique_ptr<mpss::KeyPair> handle = mpss::KeyPair::Open(name, backend);
+                if (nullptr == handle)
+                {
+                    break;
+                }
+                const bool deleted = handle->delete_key();
+                if (!deleted)
+                {
+                    mpss::GetLogger()->error("Key could not be deleted from backend '{}': {}", backend,
+                                             mpss::get_error());
+                }
+                ASSERT_TRUE(deleted);
             }
-            const bool deleted = handle->delete_key();
-            if (!deleted)
-            {
-                mpss::GetLogger()->error("Key could not be deleted: {}", mpss::get_error());
-            }
-            ASSERT_TRUE(deleted);
         }
     }
 
@@ -838,6 +843,7 @@ TEST_F(CrossBackendTest, CreateKeyOnEachBackend)
     const std::string yk_key_name = "test_cross_yk_key";
 
     MPSS::DeleteKey(os_key_name);
+    MPSS::DeleteKey(yk_key_name);
 
     // Create a key on the OS backend.
     auto os_key = mpss::KeyPair::Create(os_key_name, ecdsa_secp256r1_sha256, "os");

@@ -73,7 +73,10 @@ bool YubiKeyPIV::connect(std::optional<std::uint32_t> target_serial)
     const char *reader = reader_buf;
     while ('\0' != *reader)
     {
-        rc = ykpiv_connect(state_, reader);
+        // Prefix with '@' to force exact reader name matching in ykpiv_connect,
+        // which otherwise uses a substring match that can connect to the wrong device.
+        const std::string exact_reader = std::string("@") + reader;
+        rc = ykpiv_connect(state_, exact_reader.c_str());
         if (YKPIV_OK != rc)
         {
             mpss::utils::log_warning("Reader '{}': connection failed ({}).", reader, ykpiv_strerror(rc));
@@ -811,16 +814,34 @@ std::vector<std::uint32_t> YubiKeyPIV::available_serials()
     const char *reader = reader_buf;
     while ('\0' != *reader)
     {
-        rc = ykpiv_connect(state, reader);
+        mpss::utils::log_trace("Trying reader '{}'.", reader);
+        const std::string exact_reader = std::string("@") + reader;
+        rc = ykpiv_connect(state, exact_reader.c_str());
         if (YKPIV_OK == rc)
         {
             std::uint32_t serial = 0;
             rc = ykpiv_get_serial(state, &serial);
             if (YKPIV_OK == rc && 0 != serial)
             {
-                serials.push_back(serial);
+                if (std::ranges::find(serials, serial) != serials.end())
+                {
+                    mpss::utils::log_warning("Duplicate serial {} found on reader '{}'.", serial, reader);
+                }
+                else
+                {
+                    mpss::utils::log_trace("Found YubiKey with serial {} on reader '{}'.", serial, reader);
+                    serials.push_back(serial);
+                }
+            }
+            else
+            {
+                mpss::utils::log_trace("Connected to reader '{}' but failed to get serial.", reader);
             }
             ykpiv_disconnect(state);
+        }
+        else
+        {
+            mpss::utils::log_trace("Failed to connect to reader '{}'.", reader);
         }
         reader += std::strlen(reader) + 1;
     }
