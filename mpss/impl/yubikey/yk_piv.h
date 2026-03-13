@@ -10,6 +10,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 // Forward declare ykpiv_state.
 struct ykpiv_state;
@@ -51,6 +52,19 @@ class YubiKeyPIV
      * operations will fail gracefully and return error values.
      */
     YubiKeyPIV();
+
+    /**
+     * @brief Constructs a YubiKeyPIV object and connects to the YubiKey with the specified serial number.
+     *
+     * Iterates through available smart card readers and connects to the YubiKey whose serial number matches.
+     * The MPSS_YUBIKEY_SERIAL environment variable is ignored when an explicit serial is provided.
+     *
+     * If connection fails, the object is left in a disconnected state. All subsequent
+     * operations will fail gracefully and return error values.
+     *
+     * @param serial The serial number of the target YubiKey.
+     */
+    explicit YubiKeyPIV(std::uint32_t serial);
 
     /**
      * @brief Destruct the YubiKeyPIV. Automatically disconnects and performs clean-up.
@@ -176,6 +190,7 @@ class YubiKeyPIV
     {
         std::uint8_t slot{0};
         Algorithm algorithm{Algorithm::unsupported};
+        std::uint32_t serial{0};
     };
 
     /**
@@ -225,11 +240,21 @@ class YubiKeyPIV
      */
     bool has_key_with_name(std::string_view name);
 
+    /**
+     * @brief List the serial numbers of all currently available YubiKeys.
+     *
+     * Briefly connects to each smart card reader, reads the serial number, and disconnects.
+     * This is a discovery method — it does not leave any connections open.
+     *
+     * @return A vector of serial numbers for all reachable YubiKeys.
+     */
+    static std::vector<std::uint32_t> available_serials();
+
   private:
     ykpiv_state *state_{nullptr};
     std::uint32_t serial_{0};
 
-    bool connect();
+    bool connect(std::optional<std::uint32_t> target_serial = std::nullopt);
     void disconnect();
 };
 

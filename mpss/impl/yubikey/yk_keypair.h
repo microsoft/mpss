@@ -21,8 +21,9 @@ class YubiKeyKeyPair : public mpss::KeyPair
      * @param name The key name.
      * @param algorithm The signature algorithm.
      * @param slot The PIV slot number where the key is stored.
+     * @param serial The serial number of the YubiKey that holds this key.
      */
-    YubiKeyKeyPair(std::string_view name, Algorithm algorithm, std::uint8_t slot);
+    YubiKeyKeyPair(std::string_view name, Algorithm algorithm, std::uint8_t slot, std::uint32_t serial);
 
     ~YubiKeyKeyPair() override = default;
 
@@ -42,6 +43,7 @@ class YubiKeyKeyPair : public mpss::KeyPair
   private:
     std::string name_;
     std::uint8_t slot_{0};
+    std::uint32_t serial_{0};
 };
 
 } // namespace mpss::impl::yubikey

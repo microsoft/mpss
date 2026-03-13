@@ -32,12 +32,17 @@ YubiKeyPIV::YubiKeyPIV()
     connect();
 }
 
+YubiKeyPIV::YubiKeyPIV(std::uint32_t serial)
+{
+    connect(serial);
+}
+
 YubiKeyPIV::~YubiKeyPIV()
 {
     disconnect();
 }
 
-bool YubiKeyPIV::connect()
+bool YubiKeyPIV::connect(std::optional<std::uint32_t> target_serial)
 {
     ykpiv_rc rc = ykpiv_init(&state_, 0);
     if (YKPIV_OK != rc)
@@ -46,7 +51,11 @@ bool YubiKeyPIV::connect()
         return false;
     }
 
-    const std::optional<std::uint32_t> target_serial = utils::get_serial_from_env();
+    // Fall back to env var if no serial was explicitly provided.
+    if (!target_serial)
+    {
+        target_serial = utils::get_serial_from_env();
+    }
 
     // List available readers and try each one until we find a usable YubiKey.
     char reader_buf[2048] = {};
@@ -742,7 +751,7 @@ auto YubiKeyPIV::find_slot_by_name(std::string_view name) -> std::optional<SlotI
             return std::nullopt;
         }
 
-        return SlotInfo{.slot = slot, .algorithm = algorithm};
+        return SlotInfo{.slot = slot, .algorithm = algorithm, .serial = serial_};
     }
 
     return std::nullopt;
@@ -775,6 +784,48 @@ std::uint8_t YubiKeyPIV::find_free_slot()
 bool YubiKeyPIV::has_key_with_name(std::string_view name)
 {
     return find_slot_by_name(name).has_value();
+}
+
+std::vector<std::uint32_t> YubiKeyPIV::available_serials()
+{
+    std::vector<std::uint32_t> serials;
+
+    ykpiv_state *state = nullptr;
+    ykpiv_rc rc = ykpiv_init(&state, 0);
+    if (YKPIV_OK != rc)
+    {
+        mpss::utils::log_and_set_error("Failed to initialize ykpiv: {}", ykpiv_strerror(rc));
+        return serials;
+    }
+    SCOPE_GUARD(ykpiv_done(state));
+
+    char reader_buf[2048] = {};
+    std::size_t reader_len = sizeof(reader_buf);
+    rc = ykpiv_list_readers(state, reader_buf, &reader_len);
+    if (YKPIV_OK != rc)
+    {
+        mpss::utils::log_and_set_error("Failed to list smart card readers: {}", ykpiv_strerror(rc));
+        return serials;
+    }
+
+    const char *reader = reader_buf;
+    while ('\0' != *reader)
+    {
+        rc = ykpiv_connect(state, reader);
+        if (YKPIV_OK == rc)
+        {
+            std::uint32_t serial = 0;
+            rc = ykpiv_get_serial(state, &serial);
+            if (YKPIV_OK == rc && 0 != serial)
+            {
+                serials.push_back(serial);
+            }
+            ykpiv_disconnect(state);
+        }
+        reader += std::strlen(reader) + 1;
+    }
+
+    return serials;
 }
 
 bool authenticate_pin_interactive(YubiKeyPIV &piv, std::string_view context)

@@ -161,8 +161,10 @@ std::unique_ptr<KeyPair> YubiKeyBackend::create_key(std::string_view name, Algor
         return nullptr;
     }
 
-    mpss::utils::log_trace("Key '{}' created in YubiKey slot {}.", key_name, utils::get_slot_name(slot));
-    return std::make_unique<YubiKeyKeyPair>(name, algorithm, slot);
+    const std::uint32_t serial = piv.get_serial();
+    mpss::utils::log_trace("Key '{}' created in YubiKey slot {} (serial {}).", key_name, utils::get_slot_name(slot),
+                           serial);
+    return std::make_unique<YubiKeyKeyPair>(name, algorithm, slot, serial);
 }
 
 std::unique_ptr<KeyPair> YubiKeyBackend::open_key(std::string_view name) const
@@ -174,25 +176,29 @@ std::unique_ptr<KeyPair> YubiKeyBackend::open_key(std::string_view name) const
         return nullptr;
     }
 
-    // Connect to YubiKey.
     mpss::utils::log_trace("Attempting to open key '{}' on YubiKey.", key_name);
-    YubiKeyPIV piv;
-    if (!piv.is_connected())
+
+    // Search all available YubiKeys for the key.
+    for (const std::uint32_t serial : YubiKeyPIV::available_serials())
     {
-        return nullptr;
+        YubiKeyPIV piv{serial};
+        if (!piv.is_connected())
+        {
+            continue;
+        }
+
+        const std::optional<YubiKeyPIV::SlotInfo> slot_info = piv.find_slot_by_name(name);
+        if (slot_info)
+        {
+            mpss::utils::log_trace("Key '{}' found in YubiKey slot {} (serial {}) with algorithm '{}'.", key_name,
+                                   utils::get_slot_name(slot_info->slot), serial,
+                                   get_algorithm_info(slot_info->algorithm).type_str);
+            return std::make_unique<YubiKeyKeyPair>(name, slot_info->algorithm, slot_info->slot, serial);
+        }
     }
 
-    // Find the key by name on the device.
-    const std::optional<YubiKeyPIV::SlotInfo> slot_info = piv.find_slot_by_name(name);
-    if (!slot_info)
-    {
-        mpss::utils::log_debug("Key '{}' not found.", key_name);
-        return nullptr;
-    }
-
-    mpss::utils::log_trace("Key '{}' found in YubiKey slot {} with algorithm '{}'.", key_name,
-                           utils::get_slot_name(slot_info->slot), get_algorithm_info(slot_info->algorithm).type_str);
-    return std::make_unique<YubiKeyKeyPair>(name, slot_info->algorithm, slot_info->slot);
+    mpss::utils::log_debug("Key '{}' not found on any YubiKey.", key_name);
+    return nullptr;
 }
 
 bool YubiKeyBackend::verify(std::span<const std::byte> hash, std::span<const std::byte> public_key, Algorithm algorithm,

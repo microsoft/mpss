@@ -11,15 +11,15 @@
 namespace mpss::impl::yubikey
 {
 
-YubiKeyKeyPair::YubiKeyKeyPair(std::string_view name, Algorithm algorithm, std::uint8_t slot)
-    : KeyPair{algorithm, /* hardware_backed */ true, "YubiKey PIV"}, name_{name}, slot_{slot}
+YubiKeyKeyPair::YubiKeyKeyPair(std::string_view name, Algorithm algorithm, std::uint8_t slot, std::uint32_t serial)
+    : KeyPair{algorithm, /* hardware_backed */ true, "YubiKey PIV"}, name_{name}, slot_{slot}, serial_{serial}
 {
 }
 
 bool YubiKeyKeyPair::delete_key()
 {
     mpss::utils::log_trace("Deleting YubiKey key '{}' in slot {}.", name_, utils::get_slot_name(slot_));
-    YubiKeyPIV piv;
+    YubiKeyPIV piv{serial_};
     if (!piv.is_connected())
     {
         mpss::utils::log_trace("Cannot delete key '{}': YubiKey connection failed.", name_);
@@ -74,7 +74,7 @@ std::size_t YubiKeyKeyPair::sign_hash(std::span<const std::byte> hash, std::span
         return 0;
     }
 
-    YubiKeyPIV piv;
+    YubiKeyPIV piv{serial_};
     if (!piv.is_connected())
     {
         mpss::utils::log_trace("Cannot sign with key '{}': YubiKey connection failed.", name_);
@@ -187,7 +187,7 @@ std::size_t YubiKeyKeyPair::extract_key(std::span<std::byte> public_key) const
 
     // Connect and extract public key directly into the caller's buffer.
     mpss::utils::log_trace("Extracting public key from YubiKey slot {}.", utils::get_slot_name(slot_));
-    YubiKeyPIV piv;
+    YubiKeyPIV piv{serial_};
     if (!piv.is_connected())
     {
         mpss::utils::log_trace("Cannot extract public key for '{}': YubiKey connection failed.", name_);

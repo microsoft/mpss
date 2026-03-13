@@ -13,6 +13,10 @@
 #include <utility>
 #include <vector>
 
+#ifdef MPSS_BACKEND_YUBIKEY
+#include "mpss/impl/yubikey/yk_piv.h"
+#endif
+
 namespace mpss::tests
 {
 
@@ -859,5 +863,161 @@ TEST_F(CrossBackendTest, CreateKeyOnEachBackend)
     os_key->delete_key();
     yk_key->delete_key();
 }
+
+#ifdef MPSS_BACKEND_YUBIKEY
+
+// Multi-device YubiKey tests. These tests require at least two YubiKeys to be physically connected.
+// They are automatically skipped when fewer than two devices are available.
+
+class MultiYubiKeyTest : public ::testing::Test
+{
+  protected:
+    void SetUp() override
+    {
+        serials_ = mpss::impl::yubikey::YubiKeyPIV::available_serials();
+        if (serials_.size() < 2)
+        {
+            GTEST_SKIP() << "Multi-device tests require at least two YubiKeys.";
+        }
+
+        // Save any existing MPSS_YUBIKEY_SERIAL env var so we can restore it in TearDown.
+        const char *existing = std::getenv("MPSS_YUBIKEY_SERIAL"); // NOLINT(concurrency-mt-unsafe)
+        if (nullptr != existing)
+        {
+            saved_serial_env_ = existing;
+        }
+    }
+
+    void TearDown() override
+    {
+        // Restore original env var state.
+        if (saved_serial_env_.empty())
+        {
+            unsetenv("MPSS_YUBIKEY_SERIAL"); // NOLINT(concurrency-mt-unsafe)
+        }
+        else
+        {
+            setenv("MPSS_YUBIKEY_SERIAL", saved_serial_env_.c_str(), 1); // NOLINT(concurrency-mt-unsafe)
+        }
+    }
+
+    void TargetDevice(std::uint32_t serial)
+    {
+        const std::string serial_str = std::to_string(serial);
+        setenv("MPSS_YUBIKEY_SERIAL", serial_str.c_str(), 1); // NOLINT(concurrency-mt-unsafe)
+    }
+
+    void ClearDeviceTarget()
+    {
+        unsetenv("MPSS_YUBIKEY_SERIAL"); // NOLINT(concurrency-mt-unsafe)
+    }
+
+    std::vector<std::uint32_t> serials_;
+    std::string saved_serial_env_;
+};
+
+TEST_F(MultiYubiKeyTest, OpenKeyFindsKeyOnNonFirstDevice)
+{
+    // Create a key on the second YubiKey (the one that would NOT be found by the old first-available logic).
+    TargetDevice(serials_[1]);
+
+    const std::string key_name = "test_multi_yk_open";
+
+    // Clean up any leftover from a previous run.
+    auto leftover = mpss::KeyPair::Open(key_name, "yubikey");
+    if (nullptr != leftover)
+    {
+        leftover->delete_key();
+        leftover.reset();
+    }
+
+    auto key = mpss::KeyPair::Create(key_name, ecdsa_secp256r1_sha256, "yubikey");
+    ASSERT_NE(nullptr, key);
+    key.reset();
+
+    // Now clear the env var so open_key must search all devices.
+    ClearDeviceTarget();
+
+    // Open should find the key on the second YubiKey by iterating all available devices.
+    auto opened = mpss::KeyPair::Open(key_name, "yubikey");
+    ASSERT_NE(nullptr, opened);
+
+    // Sign and verify to confirm the correct device is being used for operations.
+    const std::vector<std::byte> hash(32, static_cast<std::byte>('m'));
+    const std::size_t sig_size = opened->sign_hash(hash, {});
+    std::vector<std::byte> signature(sig_size);
+    const std::size_t written = opened->sign_hash(hash, signature);
+    ASSERT_GT(written, std::size_t{0});
+    signature.resize(written);
+
+    EXPECT_TRUE(opened->verify(hash, signature));
+
+    // Clean up. The opened handle has the correct serial stored, so delete_key targets the right device.
+    opened->delete_key();
+}
+
+TEST_F(MultiYubiKeyTest, KeysOnDifferentDevicesAreIndependent)
+{
+    const std::string key_name_a = "test_multi_yk_a";
+    const std::string key_name_b = "test_multi_yk_b";
+
+    // Clean up any leftovers, targeting each device in turn.
+    for (const std::uint32_t serial : serials_)
+    {
+        TargetDevice(serial);
+        auto leftover_a = mpss::KeyPair::Open(key_name_a, "yubikey");
+        if (nullptr != leftover_a)
+        {
+            leftover_a->delete_key();
+        }
+        auto leftover_b = mpss::KeyPair::Open(key_name_b, "yubikey");
+        if (nullptr != leftover_b)
+        {
+            leftover_b->delete_key();
+        }
+    }
+
+    // Create key A on device 0.
+    TargetDevice(serials_[0]);
+    auto key_a = mpss::KeyPair::Create(key_name_a, ecdsa_secp256r1_sha256, "yubikey");
+    ASSERT_NE(nullptr, key_a);
+
+    // Create key B on device 1.
+    TargetDevice(serials_[1]);
+    auto key_b = mpss::KeyPair::Create(key_name_b, ecdsa_secp256r1_sha256, "yubikey");
+    ASSERT_NE(nullptr, key_b);
+
+    // Clear the env var — all operations should use the stored serial.
+    ClearDeviceTarget();
+
+    // Sign with both keys.
+    const std::vector<std::byte> hash(32, static_cast<std::byte>('q'));
+
+    const std::size_t sig_size_a = key_a->sign_hash(hash, {});
+    std::vector<std::byte> sig_a(sig_size_a);
+    const std::size_t written_a = key_a->sign_hash(hash, sig_a);
+    ASSERT_GT(written_a, std::size_t{0});
+    sig_a.resize(written_a);
+
+    const std::size_t sig_size_b = key_b->sign_hash(hash, {});
+    std::vector<std::byte> sig_b(sig_size_b);
+    const std::size_t written_b = key_b->sign_hash(hash, sig_b);
+    ASSERT_GT(written_b, std::size_t{0});
+    sig_b.resize(written_b);
+
+    // Each key verifies its own signature.
+    EXPECT_TRUE(key_a->verify(hash, sig_a));
+    EXPECT_TRUE(key_b->verify(hash, sig_b));
+
+    // Cross-verification fails (different keys on different devices).
+    EXPECT_FALSE(key_a->verify(hash, sig_b));
+    EXPECT_FALSE(key_b->verify(hash, sig_a));
+
+    // Clean up.
+    key_a->delete_key();
+    key_b->delete_key();
+}
+
+#endif // MPSS_BACKEND_YUBIKEY
 
 } // namespace mpss::tests
