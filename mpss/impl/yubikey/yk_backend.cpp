@@ -98,23 +98,30 @@ std::unique_ptr<KeyPair> YubiKeyBackend::create_key(std::string_view name, Algor
         return nullptr;
     }
 
+    // Determine which YubiKey to target.
+    const std::optional<std::uint32_t> target_serial = utils::get_serial_from_env();
+    const std::vector<std::uint32_t> serials =
+        target_serial ? std::vector<std::uint32_t>{*target_serial} : YubiKeyPIV::available_serials();
+
     // Refuse to create a key when multiple YubiKeys are present and no serial is specified,
     // since the caller cannot control which device receives the key.
-    if (!utils::get_serial_from_env())
+    if (!target_serial && serials.size() > 1)
     {
-        const std::vector<std::uint32_t> serials = YubiKeyPIV::available_serials();
-        if (serials.size() > 1)
-        {
-            mpss::utils::log_and_set_error(
-                "Multiple YubiKeys detected. Set MPSS_YUBIKEY_SERIAL to select the target device.");
-            return nullptr;
-        }
+        mpss::utils::log_and_set_error(
+            "Multiple YubiKeys detected. Set MPSS_YUBIKEY_SERIAL to select the target device.");
+        return nullptr;
+    }
+
+    if (serials.empty())
+    {
+        mpss::utils::log_and_set_error("No YubiKey found.");
+        return nullptr;
     }
 
     // Connect to YubiKey.
     mpss::utils::log_trace("Creating key '{}' with algorithm '{}' on YubiKey.", key_name,
                            get_algorithm_info(algorithm).type_str);
-    YubiKeyPIV piv;
+    YubiKeyPIV piv{serials.front()};
     if (!piv.is_connected())
     {
         return nullptr;

@@ -43,25 +43,9 @@ class YubiKeyPIV
 {
   public:
     /**
-     * @brief Constructs a YubiKeyPIV object and connects to a YubiKey.
-     *
-     * If the MPSS_YUBIKEY_SERIAL environment variable is set, iterates through
-     * available smart card readers and connects to the YubiKey whose serial number
-     * matches. Otherwise, connects to the first available YubiKey.
-     *
-     * If connection fails, the object is left in a disconnected state. All subsequent
-     * operations will fail gracefully and return error values.
-     */
-    YubiKeyPIV()
-    {
-        connect();
-    }
-
-    /**
      * @brief Constructs a YubiKeyPIV object and connects to the YubiKey with the specified serial number.
      *
      * Iterates through available smart card readers and connects to the YubiKey whose serial number matches.
-     * The MPSS_YUBIKEY_SERIAL environment variable is ignored when an explicit serial is provided.
      *
      * If connection fails, the object is left in a disconnected state. All subsequent
      * operations will fail gracefully and return error values.
@@ -255,7 +239,7 @@ class YubiKeyPIV
     ykpiv_state *state_{nullptr};
     std::uint32_t serial_{0};
 
-    bool connect(std::optional<std::uint32_t> target_serial = std::nullopt);
+    bool connect(std::uint32_t target_serial);
     void disconnect();
 };
 

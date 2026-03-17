@@ -428,6 +428,8 @@ export MPSS_YUBIKEY_MGM_KEY=<32, 48, or 64-character hexadecimal string>
 
 **Note**: Without PIN-protected mode or a custom management key, MPSS will attempt to use the factory default management key.
 
+**Note**: MPSS does **not** support the legacy PIN-derived management key mode. If your YubiKey is configured with a PIN-derived management key, MPSS will fail with an error.
+
 ### Runtime Configuration
 
 You can provide the PIN to MPSS via an environment variable, as follows:

@@ -37,19 +37,13 @@ YubiKeyPIV::~YubiKeyPIV()
     disconnect();
 }
 
-bool YubiKeyPIV::connect(std::optional<std::uint32_t> target_serial)
+bool YubiKeyPIV::connect(std::uint32_t target_serial)
 {
     ykpiv_rc rc = ykpiv_init(&state_, 0);
     if (YKPIV_OK != rc)
     {
         mpss::utils::log_and_set_error("Failed to initialize ykpiv: {}", ykpiv_strerror(rc));
         return false;
-    }
-
-    // Fall back to env var if no serial was explicitly provided.
-    if (!target_serial)
-    {
-        target_serial = utils::get_serial_from_env();
     }
 
     // List available readers and try each one until we find a usable YubiKey.
@@ -89,10 +83,10 @@ bool YubiKeyPIV::connect(std::optional<std::uint32_t> target_serial)
             continue;
         }
 
-        if (target_serial && serial_ != *target_serial)
+        if (serial_ != target_serial)
         {
             mpss::utils::log_debug("Reader '{}': YubiKey serial {} does not match target {}.", reader, serial_,
-                                   *target_serial);
+                                   target_serial);
             ykpiv_disconnect(state_);
             reader += std::strlen(reader) + 1;
             continue;
@@ -100,17 +94,9 @@ bool YubiKeyPIV::connect(std::optional<std::uint32_t> target_serial)
 
         mpss::utils::log_trace("Connected to YubiKey with serial {} on reader '{}'.", serial_, reader);
         return true;
-        reader += std::strlen(reader) + 1;
     }
 
-    if (target_serial)
-    {
-        mpss::utils::log_and_set_error("No YubiKey found with serial number {}.", *target_serial);
-    }
-    else
-    {
-        mpss::utils::log_and_set_error("No YubiKey found on any reader.");
-    }
+    mpss::utils::log_and_set_error("No YubiKey found with serial number {}.", target_serial);
     ykpiv_done(state_);
     state_ = nullptr;
     return false;
@@ -200,6 +186,15 @@ bool YubiKeyPIV::authenticate_mgm_key()
             "Authenticated with default management key. Consider setting MPSS_YUBIKEY_MGM_KEY or enabling "
             "PIN-protected management key mode.");
         return true;
+    }
+
+    // All probe-based methods failed. Check if the device uses PIN-derived mode, which we don't support.
+    ykpiv_config config = {};
+    if (YKPIV_OK == ykpiv_util_get_config(state_, &config) && YKPIV_CONFIG_MGM_DERIVED == config.mgm_type)
+    {
+        mpss::utils::log_and_set_error(
+            "This YubiKey uses a PIN-derived management key, which is not supported by MPSS.");
+        return false;
     }
 
     mpss::utils::log_warning("Management key authentication failed. PIN-protected management key requires prior PIN "
