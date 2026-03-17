@@ -13,6 +13,80 @@
 #include <openssl/x509.h>
 #include <ykpiv/ykpiv.h>
 
+namespace
+{
+
+/**
+ * @brief Enumerate all reachable YubiKeys and call a visitor for each one.
+ *
+ * Initializes a temporary ykpiv session, lists smart card readers, and for each reader that has a YubiKey,
+ * calls visitor(state, serial, reader_name). If the visitor returns true, iteration stops and the caller
+ * takes ownership of the ykpiv state (the caller must call ykpiv_disconnect + ykpiv_done). If the visitor
+ * returns false, the reader is disconnected and iteration continues.
+ *
+ * @return true if a visitor returned true (state ownership transferred), false otherwise (state cleaned up).
+ */
+template <typename Visitor> bool for_each_yubikey(ykpiv_state *&state_out, Visitor &&visitor)
+{
+    state_out = nullptr;
+
+    ykpiv_state *state = nullptr;
+    ykpiv_rc rc = ykpiv_init(&state, 0);
+    if (YKPIV_OK != rc)
+    {
+        mpss::utils::log_and_set_error("Failed to initialize ykpiv: {}", ykpiv_strerror(rc));
+        return false;
+    }
+
+    char reader_buf[2048] = {};
+    std::size_t reader_len = sizeof(reader_buf);
+    rc = ykpiv_list_readers(state, reader_buf, &reader_len);
+    if (YKPIV_OK != rc)
+    {
+        mpss::utils::log_and_set_error("Failed to list smart card readers: {}", ykpiv_strerror(rc));
+        ykpiv_done(state);
+        return false;
+    }
+
+    const char *reader = reader_buf;
+    while ('\0' != *reader)
+    {
+        const std::string exact_reader = std::string("@") + reader;
+        rc = ykpiv_connect(state, exact_reader.c_str());
+        if (YKPIV_OK != rc)
+        {
+            mpss::utils::log_trace("Reader '{}': connection failed ({}).", reader, ykpiv_strerror(rc));
+            reader += std::strlen(reader) + 1;
+            continue;
+        }
+
+        std::uint32_t serial = 0;
+        rc = ykpiv_get_serial(state, &serial);
+        if (YKPIV_OK != rc || 0 == serial)
+        {
+            mpss::utils::log_trace("Reader '{}': connected but failed to get serial ({}).", reader, ykpiv_strerror(rc));
+            ykpiv_disconnect(state);
+            reader += std::strlen(reader) + 1;
+            continue;
+        }
+
+        if (visitor(state, serial, reader))
+        {
+            // Visitor accepted this device. Transfer state ownership to caller.
+            state_out = state;
+            return true;
+        }
+
+        ykpiv_disconnect(state);
+        reader += std::strlen(reader) + 1;
+    }
+
+    ykpiv_done(state);
+    return false;
+}
+
+} // namespace
+
 namespace mpss::impl::yubikey
 {
 
@@ -39,67 +113,23 @@ YubiKeyPIV::~YubiKeyPIV()
 
 bool YubiKeyPIV::connect(std::uint32_t target_serial)
 {
-    ykpiv_rc rc = ykpiv_init(&state_, 0);
-    if (YKPIV_OK != rc)
-    {
-        mpss::utils::log_and_set_error("Failed to initialize ykpiv: {}", ykpiv_strerror(rc));
-        return false;
-    }
-
-    // List available readers and try each one until we find a usable YubiKey.
-    char reader_buf[2048] = {};
-    std::size_t reader_len = sizeof(reader_buf);
-    rc = ykpiv_list_readers(state_, reader_buf, &reader_len);
-    if (YKPIV_OK != rc)
-    {
-        mpss::utils::log_and_set_error("Failed to list smart card readers: {}", ykpiv_strerror(rc));
-        ykpiv_done(state_);
-        state_ = nullptr;
-        return false;
-    }
-
-    // Iterate through readers (multi-string: null-separated, double-null-terminated).
-    const char *reader = reader_buf;
-    while ('\0' != *reader)
-    {
-        // Prefix with '@' to force exact reader name matching in ykpiv_connect,
-        // which otherwise uses a substring match that can connect to the wrong device.
-        const std::string exact_reader = std::string("@") + reader;
-        rc = ykpiv_connect(state_, exact_reader.c_str());
-        if (YKPIV_OK != rc)
+    const bool found = for_each_yubikey(state_, [&](ykpiv_state *, std::uint32_t serial, const char *reader) {
+        if (serial != target_serial)
         {
-            mpss::utils::log_warning("Reader '{}': connection failed ({}).", reader, ykpiv_strerror(rc));
-            reader += std::strlen(reader) + 1;
-            continue;
-        }
-
-        rc = ykpiv_get_serial(state_, &serial_);
-        if (YKPIV_OK != rc)
-        {
-            mpss::utils::log_warning("Reader '{}': connected but failed to get serial ({}).", reader,
-                                     ykpiv_strerror(rc));
-            ykpiv_disconnect(state_);
-            reader += std::strlen(reader) + 1;
-            continue;
-        }
-
-        if (serial_ != target_serial)
-        {
-            mpss::utils::log_debug("Reader '{}': YubiKey serial {} does not match target {}.", reader, serial_,
+            mpss::utils::log_debug("Reader '{}': YubiKey serial {} does not match target {}.", reader, serial,
                                    target_serial);
-            ykpiv_disconnect(state_);
-            reader += std::strlen(reader) + 1;
-            continue;
+            return false;
         }
-
-        mpss::utils::log_trace("Connected to YubiKey with serial {} on reader '{}'.", serial_, reader);
+        mpss::utils::log_trace("Connected to YubiKey with serial {} on reader '{}'.", serial, reader);
+        serial_ = serial;
         return true;
-    }
+    });
 
-    mpss::utils::log_and_set_error("No YubiKey found with serial number {}.", target_serial);
-    ykpiv_done(state_);
-    state_ = nullptr;
-    return false;
+    if (!found)
+    {
+        mpss::utils::log_and_set_error("No YubiKey found with serial number {}.", target_serial);
+    }
+    return found;
 }
 
 void YubiKeyPIV::disconnect()
@@ -754,59 +784,20 @@ std::uint8_t YubiKeyPIV::find_free_slot()
 std::vector<std::uint32_t> YubiKeyPIV::available_serials()
 {
     std::vector<std::uint32_t> serials;
-
     ykpiv_state *state = nullptr;
-    ykpiv_rc rc = ykpiv_init(&state, 0);
-    if (YKPIV_OK != rc)
-    {
-        mpss::utils::log_and_set_error("Failed to initialize ykpiv: {}", ykpiv_strerror(rc));
-        return serials;
-    }
-    SCOPE_GUARD(ykpiv_done(state));
 
-    char reader_buf[2048] = {};
-    std::size_t reader_len = sizeof(reader_buf);
-    rc = ykpiv_list_readers(state, reader_buf, &reader_len);
-    if (YKPIV_OK != rc)
-    {
-        mpss::utils::log_and_set_error("Failed to list smart card readers: {}", ykpiv_strerror(rc));
-        return serials;
-    }
-
-    const char *reader = reader_buf;
-    while ('\0' != *reader)
-    {
-        mpss::utils::log_trace("Trying reader '{}'.", reader);
-        const std::string exact_reader = std::string("@") + reader;
-        rc = ykpiv_connect(state, exact_reader.c_str());
-        if (YKPIV_OK == rc)
+    for_each_yubikey(state, [&](ykpiv_state *, std::uint32_t serial, const char *reader) {
+        if (std::ranges::find(serials, serial) != serials.end())
         {
-            std::uint32_t serial = 0;
-            rc = ykpiv_get_serial(state, &serial);
-            if (YKPIV_OK == rc && 0 != serial)
-            {
-                if (std::ranges::find(serials, serial) != serials.end())
-                {
-                    mpss::utils::log_warning("Duplicate serial {} found on reader '{}'.", serial, reader);
-                }
-                else
-                {
-                    mpss::utils::log_trace("Found YubiKey with serial {} on reader '{}'.", serial, reader);
-                    serials.push_back(serial);
-                }
-            }
-            else
-            {
-                mpss::utils::log_trace("Connected to reader '{}' but failed to get serial.", reader);
-            }
-            ykpiv_disconnect(state);
+            mpss::utils::log_warning("Duplicate serial {} found on reader '{}'.", serial, reader);
         }
         else
         {
-            mpss::utils::log_trace("Failed to connect to reader '{}'.", reader);
+            mpss::utils::log_trace("Found YubiKey with serial {} on reader '{}'.", serial, reader);
+            serials.push_back(serial);
         }
-        reader += std::strlen(reader) + 1;
-    }
+        return false; // Continue to next reader.
+    });
 
     return serials;
 }
