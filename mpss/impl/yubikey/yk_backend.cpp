@@ -121,7 +121,7 @@ std::unique_ptr<KeyPair> YubiKeyBackend::create_key(std::string_view name, Algor
     }
 
     // Check if key already exists on the device.
-    if (piv.has_key_with_name(name))
+    if (piv.find_slot_by_name(name).has_value())
     {
         mpss::utils::log_warning("Key '{}' already exists.", name);
         return nullptr;

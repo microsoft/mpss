@@ -51,7 +51,10 @@ class YubiKeyPIV
      * If connection fails, the object is left in a disconnected state. All subsequent
      * operations will fail gracefully and return error values.
      */
-    YubiKeyPIV();
+    YubiKeyPIV()
+    {
+        connect();
+    }
 
     /**
      * @brief Constructs a YubiKeyPIV object and connects to the YubiKey with the specified serial number.
@@ -91,7 +94,10 @@ class YubiKeyPIV
      * @return The serial number.
      */
     [[nodiscard]]
-    std::uint32_t get_serial() const;
+    std::uint32_t get_serial() const noexcept
+    {
+        return serial_;
+    }
 
     /**
      * @brief Authenticate with the PIN.
@@ -232,13 +238,6 @@ class YubiKeyPIV
      * @return The slot number, or 0 if no free slots are available.
      */
     std::uint8_t find_free_slot();
-
-    /**
-     * @brief Check if any slot contains a key with the given name.
-     * @param name The key name to check.
-     * @return true if a key with this name exists on the device, false otherwise.
-     */
-    bool has_key_with_name(std::string_view name);
 
     /**
      * @brief List the serial numbers of all currently available YubiKeys.

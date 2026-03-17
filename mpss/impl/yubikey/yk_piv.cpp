@@ -25,12 +25,7 @@ constexpr std::array<std::uint8_t, 20> usable_slots = {
 
 // Label written to a slot's certificate after the private key has been overwritten
 // with a dummy key. Slots bearing this label are treated as free by find_free_slot.
-constexpr std::string_view available_slot_label = "(available)";
-
-YubiKeyPIV::YubiKeyPIV()
-{
-    connect();
-}
+constexpr const char *available_slot_label = "(available)";
 
 YubiKeyPIV::YubiKeyPIV(std::uint32_t serial)
 {
@@ -129,11 +124,6 @@ void YubiKeyPIV::disconnect()
         ykpiv_done(state_);
         state_ = nullptr;
     }
-}
-
-std::uint32_t YubiKeyPIV::get_serial() const
-{
-    return serial_;
 }
 
 PinResult YubiKeyPIV::authenticate_pin(std::string_view pin)
@@ -511,140 +501,124 @@ bool YubiKeyPIV::write_slot_label(std::uint8_t slot, std::string_view name)
         mpss::utils::log_and_set_error("Failed to generate ephemeral key for slot label.");
         return false;
     }
+    SCOPE_GUARD(EVP_PKEY_free(ephemeral_key));
 
     // Create a minimal self-signed X.509 certificate.
     X509 *cert = X509_new();
     if (nullptr == cert)
     {
-        EVP_PKEY_free(ephemeral_key);
         mpss::utils::log_and_set_error("Failed to create X509 certificate for slot label.");
         return false;
     }
+    SCOPE_GUARD(X509_free(cert));
 
-    bool success = false;
-    do
+    // Version 3 (value 2)
+    if (0 == X509_set_version(cert, 2))
     {
-        // Version 3 (value 2)
-        if (0 == X509_set_version(cert, 2))
-        {
-            mpss::utils::log_and_set_error("Failed to set X.509 version for slot {} certificate.",
-                                           utils::get_slot_name(slot));
-            break;
-        }
+        mpss::utils::log_and_set_error("Failed to set X.509 version for slot {} certificate.",
+                                       utils::get_slot_name(slot));
+        return false;
+    }
 
-        // Serial number = 1
-        if (0 == ASN1_INTEGER_set(X509_get_serialNumber(cert), 1))
-        {
-            mpss::utils::log_and_set_error("Failed to set serial number for slot {} certificate.",
-                                           utils::get_slot_name(slot));
-            break;
-        }
+    // Serial number = 1
+    if (0 == ASN1_INTEGER_set(X509_get_serialNumber(cert), 1))
+    {
+        mpss::utils::log_and_set_error("Failed to set serial number for slot {} certificate.",
+                                       utils::get_slot_name(slot));
+        return false;
+    }
 
-        // Validity: now to 100 years from now.
-        if (nullptr == X509_gmtime_adj(X509_get_notBefore(cert), 0))
-        {
-            mpss::utils::log_and_set_error("Failed to set notBefore for slot {} certificate.",
-                                           utils::get_slot_name(slot));
-            break;
-        }
-        if (nullptr == X509_gmtime_adj(X509_get_notAfter(cert), 100L * 365 * 24 * 3600))
-        {
-            mpss::utils::log_and_set_error("Failed to set notAfter for slot {} certificate.",
-                                           utils::get_slot_name(slot));
-            break;
-        }
+    // Validity: now to 100 years from now.
+    if (nullptr == X509_gmtime_adj(X509_get_notBefore(cert), 0))
+    {
+        mpss::utils::log_and_set_error("Failed to set notBefore for slot {} certificate.", utils::get_slot_name(slot));
+        return false;
+    }
+    if (nullptr == X509_gmtime_adj(X509_get_notAfter(cert), 100L * 365 * 24 * 3600))
+    {
+        mpss::utils::log_and_set_error("Failed to set notAfter for slot {} certificate.", utils::get_slot_name(slot));
+        return false;
+    }
 
-        // Subject: O=Microsoft, OU=mpss, CN=<key_name>
-        X509_NAME *subject = X509_get_subject_name(cert);
-        if (0 == X509_NAME_add_entry_by_txt(subject, "O", MBSTRING_UTF8,
-                                            reinterpret_cast<const unsigned char *>("Microsoft"), -1, -1, 0))
+    // Subject: O=Microsoft, OU=mpss, CN=<key_name>
+    X509_NAME *subject = X509_get_subject_name(cert);
+    if (0 == X509_NAME_add_entry_by_txt(subject, "O", MBSTRING_UTF8,
+                                        reinterpret_cast<const unsigned char *>("Microsoft"), -1, -1, 0))
+    {
+        mpss::utils::log_and_set_error("Failed to set O field for slot {} certificate.", utils::get_slot_name(slot));
+        return false;
+    }
+    if (0 == X509_NAME_add_entry_by_txt(subject, "OU", MBSTRING_UTF8, reinterpret_cast<const unsigned char *>("mpss"),
+                                        -1, -1, 0))
+    {
+        mpss::utils::log_and_set_error("Failed to set OU field for slot {} certificate.", utils::get_slot_name(slot));
+        return false;
+    }
+    const std::string cn{name};
+    if (0 == X509_NAME_add_entry_by_txt(subject, "CN", MBSTRING_UTF8,
+                                        reinterpret_cast<const unsigned char *>(cn.c_str()), -1, -1, 0))
+    {
+        mpss::utils::log_and_set_error("Failed to set CN field for slot {} certificate. "
+                                       "Name length: {} bytes.",
+                                       utils::get_slot_name(slot), cn.size());
+        return false;
+    }
+
+    // Self-signed: issuer = subject.
+    if (0 == X509_set_issuer_name(cert, subject))
+    {
+        mpss::utils::log_and_set_error("Failed to set issuer name for slot {} certificate.",
+                                       utils::get_slot_name(slot));
+        return false;
+    }
+
+    // Set the ephemeral public key.
+    if (0 == X509_set_pubkey(cert, ephemeral_key))
+    {
+        mpss::utils::log_and_set_error("Failed to set public key for slot {} certificate.", utils::get_slot_name(slot));
+        return false;
+    }
+
+    // Sign with the ephemeral key.
+    if (X509_sign(cert, ephemeral_key, EVP_sha256()) <= 0)
+    {
+        mpss::utils::log_and_set_error("Failed to sign slot {} certificate.", utils::get_slot_name(slot));
+        return false;
+    }
+
+    // Serialize to DER.
+    unsigned char *der = nullptr;
+    int der_len = i2d_X509(cert, &der);
+    if (der_len <= 0 || nullptr == der)
+    {
+        mpss::utils::log_and_set_error("Failed to serialize slot {} certificate to DER.", utils::get_slot_name(slot));
+        return false;
+    }
+    SCOPE_GUARD(OPENSSL_free(der));
+
+    // Write certificate to the slot.
+    // Try writing directly first (works if management key is already authenticated).
+    ykpiv_rc rc =
+        ykpiv_util_write_cert(state_, slot, der, static_cast<std::size_t>(der_len), YKPIV_CERTINFO_UNCOMPRESSED);
+
+    if (YKPIV_AUTHENTICATION_ERROR == rc)
+    {
+        // Failed. Authenticate with management key and retry.
+        if (!authenticate_mgm_key())
         {
-            mpss::utils::log_and_set_error("Failed to set O field for slot {} certificate.",
-                                           utils::get_slot_name(slot));
-            break;
+            return false;
         }
-        if (0 == X509_NAME_add_entry_by_txt(subject, "OU", MBSTRING_UTF8,
-                                            reinterpret_cast<const unsigned char *>("mpss"), -1, -1, 0))
-        {
-            mpss::utils::log_and_set_error("Failed to set OU field for slot {} certificate.",
-                                           utils::get_slot_name(slot));
-            break;
-        }
-        const std::string cn{name};
-        if (0 == X509_NAME_add_entry_by_txt(subject, "CN", MBSTRING_UTF8,
-                                            reinterpret_cast<const unsigned char *>(cn.c_str()), -1, -1, 0))
-        {
-            mpss::utils::log_and_set_error("Failed to set CN field for slot {} certificate. "
-                                           "Name length: {} bytes.",
-                                           utils::get_slot_name(slot), cn.size());
-            break;
-        }
+        rc = ykpiv_util_write_cert(state_, slot, der, static_cast<std::size_t>(der_len), YKPIV_CERTINFO_UNCOMPRESSED);
+    }
 
-        // Self-signed: issuer = subject.
-        if (0 == X509_set_issuer_name(cert, subject))
-        {
-            mpss::utils::log_and_set_error("Failed to set issuer name for slot {} certificate.",
-                                           utils::get_slot_name(slot));
-            break;
-        }
+    if (YKPIV_OK != rc)
+    {
+        mpss::utils::log_and_set_error("Failed to write certificate label to slot {}: {}", utils::get_slot_name(slot),
+                                       ykpiv_strerror(rc));
+        return false;
+    }
 
-        // Set the ephemeral public key.
-        if (0 == X509_set_pubkey(cert, ephemeral_key))
-        {
-            mpss::utils::log_and_set_error("Failed to set public key for slot {} certificate.",
-                                           utils::get_slot_name(slot));
-            break;
-        }
-
-        // Sign with the ephemeral key.
-        if (X509_sign(cert, ephemeral_key, EVP_sha256()) <= 0)
-        {
-            mpss::utils::log_and_set_error("Failed to sign slot {} certificate.", utils::get_slot_name(slot));
-            break;
-        }
-
-        // Serialize to DER.
-        unsigned char *der = nullptr;
-        int der_len = i2d_X509(cert, &der);
-        if (der_len <= 0 || nullptr == der)
-        {
-            mpss::utils::log_and_set_error("Failed to serialize slot {} certificate to DER.",
-                                           utils::get_slot_name(slot));
-            break;
-        }
-
-        // Write certificate to the slot.
-        // Try writing directly first (works if management key is already authenticated).
-        ykpiv_rc rc =
-            ykpiv_util_write_cert(state_, slot, der, static_cast<std::size_t>(der_len), YKPIV_CERTINFO_UNCOMPRESSED);
-
-        if (YKPIV_AUTHENTICATION_ERROR == rc)
-        {
-            // Failed. Authenticate with management key and retry.
-            if (!authenticate_mgm_key())
-            {
-                OPENSSL_free(der);
-                break;
-            }
-            rc = ykpiv_util_write_cert(state_, slot, der, static_cast<std::size_t>(der_len),
-                                       YKPIV_CERTINFO_UNCOMPRESSED);
-        }
-
-        OPENSSL_free(der);
-
-        if (YKPIV_OK != rc)
-        {
-            mpss::utils::log_and_set_error("Failed to write certificate label to slot {}: {}",
-                                           utils::get_slot_name(slot), ykpiv_strerror(rc));
-            break;
-        }
-
-        success = true;
-    } while (false);
-
-    X509_free(cert);
-    EVP_PKEY_free(ephemeral_key);
-    return success;
+    return true;
 }
 
 std::string YubiKeyPIV::read_slot_label(std::uint8_t slot)
@@ -662,22 +636,21 @@ std::string YubiKeyPIV::read_slot_label(std::uint8_t slot)
     {
         return {};
     }
+    SCOPE_GUARD(ykpiv_util_free(state_, cert_data));
 
     // Parse the DER-encoded certificate.
     const unsigned char *p = cert_data;
     X509 *cert = d2i_X509(nullptr, &p, static_cast<long>(cert_len));
-    ykpiv_util_free(state_, cert_data);
-
     if (nullptr == cert)
     {
         return {};
     }
+    SCOPE_GUARD(X509_free(cert));
 
     // Extract Subject fields.
     X509_NAME *subject = X509_get_subject_name(cert);
     if (nullptr == subject)
     {
-        X509_free(cert);
         return {};
     }
 
@@ -686,7 +659,6 @@ std::string YubiKeyPIV::read_slot_label(std::uint8_t slot)
     const int org_len = X509_NAME_get_text_by_NID(subject, NID_organizationName, org_buf, sizeof(org_buf));
     if (org_len <= 0 || std::string_view{org_buf, static_cast<std::size_t>(org_len)} != "Microsoft")
     {
-        X509_free(cert);
         return {};
     }
 
@@ -694,15 +666,12 @@ std::string YubiKeyPIV::read_slot_label(std::uint8_t slot)
     const int ou_len = X509_NAME_get_text_by_NID(subject, NID_organizationalUnitName, ou_buf, sizeof(ou_buf));
     if (ou_len <= 0 || std::string_view{ou_buf, static_cast<std::size_t>(ou_len)} != "mpss")
     {
-        X509_free(cert);
         return {};
     }
 
     // Extract CN = key name. Max 64 characters per X.520 ub-common-name, plus null terminator.
     char cn_buf[65] = {};
     const int cn_len = X509_NAME_get_text_by_NID(subject, NID_commonName, cn_buf, sizeof(cn_buf));
-    X509_free(cert);
-
     if (cn_len <= 0)
     {
         return {};
@@ -782,11 +751,6 @@ std::uint8_t YubiKeyPIV::find_free_slot()
 
     // No free slots found.
     return 0;
-}
-
-bool YubiKeyPIV::has_key_with_name(std::string_view name)
-{
-    return find_slot_by_name(name).has_value();
 }
 
 std::vector<std::uint32_t> YubiKeyPIV::available_serials()
