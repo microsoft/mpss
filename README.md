@@ -510,7 +510,7 @@ export MPSS_YUBIKEY_SERIAL=18268739
 ```
 You can find your YubiKey's serial number using `ykman list`.
 
-Key creation and deletion will fail with an error if multiple YubiKeys are detected and no serial is specified, since the caller cannot control which device receives the key. Opening an existing key, however, searches all connected YubiKeys and returns the first match regardless of whether `MPSS_YUBIKEY_SERIAL` is set.
+All operations (key creation, opening, and deletion) will fail with an error if multiple YubiKeys are detected and no serial is specified. When `MPSS_YUBIKEY_SERIAL` is set, MPSS only searches the specified device.
 
 ### Summary of Runtime Environment Variables
 
@@ -519,7 +519,7 @@ Key creation and deletion will fail with an error if multiple YubiKeys are detec
 | `MPSS_DEFAULT_BACKEND` | Override the default backend on platforms with an OS-native backend (Windows, macOS). | `os`, `yubikey` | `os` |
 | `MPSS_YUBIKEY_PIN` | YubiKey PIV PIN for signing and PIN-protected management operations. If unset, MPSS prompts interactively. | Any valid PIN string | *(interactive prompt)* |
 | `MPSS_YUBIKEY_MGM_KEY` | Custom YubiKey PIV management key (hex-encoded). Only needed if **not** using PIN-protected mode. | 32, 48, or 64 hex characters | Factory default key |
-| `MPSS_YUBIKEY_SERIAL` | Select a YubiKey by serial number. Required for key creation/deletion when multiple devices are connected. | Serial number (e.g., `18268739`) | First available device |
+| `MPSS_YUBIKEY_SERIAL` | Select a YubiKey by serial number. Required when multiple devices are connected. | Serial number (e.g., `18268739`) | First available device |
 | `MPSS_YUBIKEY_PINPOLICY` | PIN policy baked into newly created keys. See [PIN Policy](#yubikey-backend-limitations-and-considerations) for details. | `default`, `never`, `once`, `always` | `once` |
 | `MPSS_YUBIKEY_TOUCHPOLICY` | Touch policy baked into newly created keys. See [Touch Policy](#yubikey-backend-limitations-and-considerations) for details. | `default`, `never`, `always`, `cached`, `auto` | `cached` |
 

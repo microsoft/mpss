@@ -207,14 +207,17 @@ bool YubiKeyPIV::authenticate_mgm_key()
     return false;
 }
 
-bool YubiKeyPIV::generate_key(std::uint8_t slot, std::uint8_t algorithm, std::uint8_t pin_policy,
-                              std::uint8_t touch_policy)
+bool YubiKeyPIV::generate_key(std::uint8_t slot, std::uint8_t algorithm, KeyPolicy policy)
 {
     if (nullptr == state_)
     {
         mpss::utils::log_and_set_error("YubiKey not connected.");
         return false;
     }
+
+    // Resolve the PIN and touch policies from the KeyPolicy bitmask, falling back to env vars / defaults.
+    const std::uint8_t pin_policy = utils::resolve_pin_policy(policy);
+    const std::uint8_t touch_policy = utils::resolve_touch_policy(policy);
 
     // Output parameters required by ykpiv_util_generate_key.
     // We don't use these values (public key is retrieved separately via metadata),
@@ -396,8 +399,8 @@ bool YubiKeyPIV::delete_key(std::uint8_t slot)
     }
 
     // Overwrite the private key material by generating a dummy key in the slot.
-    // Policy is irrelevant for the dummy key - use device defaults.
-    if (!generate_key(slot, YKPIV_ALGO_ECCP256, YKPIV_PINPOLICY_DEFAULT, YKPIV_TOUCHPOLICY_DEFAULT))
+    // Policy is irrelevant for the dummy key - KeyPolicy::none resolves to device defaults.
+    if (!generate_key(slot, YKPIV_ALGO_ECCP256))
     {
         return false;
     }

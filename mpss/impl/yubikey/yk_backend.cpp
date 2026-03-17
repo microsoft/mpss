@@ -135,13 +135,9 @@ std::unique_ptr<KeyPair> YubiKeyBackend::create_key(std::string_view name, Algor
         return nullptr;
     }
 
-    // Resolve the PIN and touch policies from the KeyPolicy bitmask, falling back to env vars / defaults.
-    const std::uint8_t pin_policy = utils::resolve_pin_policy(policy);
-    const std::uint8_t touch_policy = utils::resolve_touch_policy(policy);
-
     // Try generating the key without PIN authentication first (succeeds when the management key is available
     // without PIN, e.g., via MPSS_YUBIKEY_MGM_KEY or the factory default).
-    bool key_generated = piv.generate_key(slot, yk_algorithm, pin_policy, touch_policy);
+    bool key_generated = piv.generate_key(slot, yk_algorithm, policy);
 
     if (!key_generated)
     {
@@ -153,7 +149,7 @@ std::unique_ptr<KeyPair> YubiKeyBackend::create_key(std::string_view name, Algor
         }
 
         // PIN is already verified on this connection.
-        key_generated = piv.generate_key(slot, yk_algorithm, pin_policy, touch_policy);
+        key_generated = piv.generate_key(slot, yk_algorithm, policy);
         if (!key_generated)
         {
             return nullptr;
@@ -191,8 +187,20 @@ std::unique_ptr<KeyPair> YubiKeyBackend::open_key(std::string_view name) const
 
     mpss::utils::log_trace("Attempting to open key '{}' on YubiKey.", key_name);
 
-    // Search all available YubiKeys for the key.
-    for (const std::uint32_t serial : YubiKeyPIV::available_serials())
+    // Determine which YubiKeys to search.
+    const std::optional<std::uint32_t> target_serial = utils::get_serial_from_env();
+    const std::vector<std::uint32_t> serials =
+        target_serial ? std::vector<std::uint32_t>{*target_serial} : YubiKeyPIV::available_serials();
+
+    // Refuse to open when multiple YubiKeys are present and no serial is specified.
+    if (!target_serial && serials.size() > 1)
+    {
+        mpss::utils::log_and_set_error(
+            "Multiple YubiKeys detected. Set MPSS_YUBIKEY_SERIAL to select the target device.");
+        return nullptr;
+    }
+
+    for (const std::uint32_t serial : serials)
     {
         YubiKeyPIV piv{serial};
         if (!piv.is_connected())

@@ -4,6 +4,7 @@
 #pragma once
 
 #include "mpss/algorithm.h"
+#include "mpss/key_policy.h"
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -117,14 +118,15 @@ class YubiKeyPIV
      * @brief Generate a new key pair in the specified slot.
      *
      * The caller must authenticate PIN and/or management key beforehand if required.
+     * PIN and touch policies are resolved from the @ref KeyPolicy bitmask, falling back
+     * to environment variables and then hardcoded defaults.
      *
      * @param slot The PIV slot number.
      * @param algorithm The YubiKey PIV algorithm constant (YKPIV_ALGO_ECCP256, etc.).
-     * @param pin_policy The ykpiv PIN policy constant (YKPIV_PINPOLICY_ONCE, etc.).
-     * @param touch_policy The ykpiv touch policy constant (YKPIV_TOUCHPOLICY_NEVER, etc.).
+     * @param policy Key policy bitmask. If KeyPolicy::none, uses env vars / defaults.
      * @return true if generation succeeded, false otherwise.
      */
-    bool generate_key(std::uint8_t slot, std::uint8_t algorithm, std::uint8_t pin_policy, std::uint8_t touch_policy);
+    bool generate_key(std::uint8_t slot, std::uint8_t algorithm, KeyPolicy policy = KeyPolicy::none);
 
     /**
      * @brief Sign a hash with the key in the specified slot.

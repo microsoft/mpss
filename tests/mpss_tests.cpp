@@ -941,10 +941,7 @@ TEST_F(MultiYubiKeyTest, OpenKeyFindsKeyOnNonFirstDevice)
     ASSERT_NE(nullptr, key);
     key.reset();
 
-    // Now clear the env var so open_key must search all devices.
-    ClearDeviceTarget();
-
-    // Open should find the key on the second YubiKey by iterating all available devices.
+    // Open should find the key on the second YubiKey when the serial is specified.
     auto opened = mpss::KeyPair::Open(key_name, "yubikey");
     ASSERT_NE(nullptr, opened);
 
