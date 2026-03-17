@@ -142,12 +142,14 @@ void YubiKeyPIV::disconnect()
     }
 }
 
-PinResult YubiKeyPIV::authenticate_pin(std::string_view pin)
+mpss::PinResult YubiKeyPIV::authenticate_pin(std::string_view pin, int &retries_out)
 {
+    retries_out = -1;
+
     if (nullptr == state_)
     {
         mpss::utils::log_and_set_error("YubiKey not connected.");
-        return PinResult::error;
+        return mpss::PinResult::error;
     }
 
     // ykpiv_verify requires a null-terminated C string.
@@ -157,18 +159,20 @@ PinResult YubiKeyPIV::authenticate_pin(std::string_view pin)
     if (YKPIV_OK == rc)
     {
         mpss::utils::log_trace("PIN authentication successful.");
-        return PinResult::ok;
+        return mpss::PinResult::ok;
     }
+
+    retries_out = tries;
 
     if (YKPIV_PIN_LOCKED == rc || 0 == tries)
     {
         mpss::utils::log_and_set_error(
             "YubiKey PIN is locked. Use the PUK to unlock it or reset the PIV module with 'ykman piv reset'.");
-        return PinResult::locked;
+        return mpss::PinResult::locked;
     }
 
     mpss::utils::log_warning("PIN verification failed: {} ({} tries remaining).", ykpiv_strerror(rc), tries);
-    return PinResult::wrong_pin;
+    return mpss::PinResult::wrong_pin;
 }
 
 bool YubiKeyPIV::authenticate_mgm_key()
@@ -804,16 +808,18 @@ std::vector<std::uint32_t> YubiKeyPIV::available_serials()
 
 bool authenticate_pin_interactive(YubiKeyPIV &piv, std::string_view context)
 {
-    auto handler = mpss::GetInteractionHandler();
-    constexpr int max_attempts = 3;
+    const auto handler = mpss::GetInteractionHandler();
     mpss::SecureString last_failed_pin;
+    mpss::PinStatus status = mpss::PinStatus::first_attempt;
+    int retries = -1;
 
-    for (int attempt = 0; attempt < max_attempts; ++attempt)
+    while (true)
     {
+        // Ask the handler for a PIN. The handler controls the retry policy.
         std::optional<mpss::SecureString> pin_opt;
         try
         {
-            pin_opt = handler->request_pin(context);
+            pin_opt = handler->request_pin({.operation = context, .last_status = status, .retries_remaining = retries});
         }
         catch (const std::exception &e)
         {
@@ -827,30 +833,30 @@ bool authenticate_pin_interactive(YubiKeyPIV &piv, std::string_view context)
             return false;
         }
 
-        // If the same PIN was already tried and failed, bail immediately to avoid burning additional retry attempts
-        // (especially important when PIN comes from the MPSS_YUBIKEY_PIN environment variable).
+        // Safety net: if the same PIN was already tried and failed, bail immediately to avoid burning
+        // additional retry attempts (especially important when the PIN comes from an environment variable).
         if (!last_failed_pin.empty() && *pin_opt == last_failed_pin)
         {
             mpss::utils::log_and_set_error("Same PIN provided again after failure. Aborting to prevent lockout.");
             return false;
         }
 
-        const PinResult result = piv.authenticate_pin(*pin_opt);
-        if (PinResult::ok == result)
+        const mpss::PinResult result = piv.authenticate_pin(*pin_opt, retries);
+        handler->notify_pin_result(result, retries);
+
+        if (mpss::PinResult::ok == result)
         {
             return true;
         }
-        if (PinResult::locked == result || PinResult::error == result)
+        if (mpss::PinResult::locked == result || mpss::PinResult::error == result)
         {
-            // PIN is locked or a non-PIN error occurred - retrying won't help.
             return false;
         }
 
+        // Wrong PIN. Let the handler decide whether to retry.
         last_failed_pin = std::move(*pin_opt);
+        status = mpss::PinStatus::wrong_pin;
     }
-
-    mpss::utils::log_and_set_error("PIN authentication failed after {} attempts.", max_attempts);
-    return false;
 }
 
 } // namespace mpss::impl::yubikey

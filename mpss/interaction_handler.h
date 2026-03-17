@@ -18,10 +18,43 @@ namespace mpss
 {
 
 /**
+ * @brief Result of a PIN authentication attempt.
+ */
+enum class PinResult
+{
+    ok,        /**< PIN verified successfully. */
+    wrong_pin, /**< PIN was incorrect (retries may remain). */
+    locked,    /**< PIN is locked (too many wrong attempts). Use PUK to unlock. */
+    error,     /**< Non-PIN error (e.g., device disconnected). */
+};
+
+/**
+ * @brief Status of the previous PIN attempt, passed to @ref InteractionHandler::request_pin.
+ */
+enum class PinStatus
+{
+    first_attempt, /**< First PIN request for this operation. */
+    wrong_pin,     /**< Previous PIN was incorrect. */
+};
+
+/**
+ * @brief Context passed to @ref InteractionHandler::request_pin.
+ */
+struct PinRequestContext
+{
+    std::string_view operation; /**< Human-readable reason (e.g., "sign with key 'my-key'"). */
+    PinStatus last_status;      /**< Status of the previous PIN attempt. */
+    int retries_remaining;      /**< PIN retries remaining on the device, or -1 if unknown. */
+};
+
+/**
  * @brief Abstract interface for user interaction during YubiKey operations.
  *
  * Applications can implement this interface to provide custom PIN entry (e.g., GUI dialog) and touch notification
  * behavior. A custom interaction handler is installed with @ref GetOrSetInteractionHandler.
+ *
+ * The handler controls the retry policy: MPSS calls @ref request_pin in a loop until it returns std::nullopt
+ * (cancel), or until the PIN is accepted or locked. Returning std::nullopt at any point stops the loop.
  *
  * @note Getting and setting the handler are both thread-safe.
  */
@@ -32,12 +65,34 @@ class InteractionHandler
 
     /**
      * @brief Request the YubiKey PIN from the user.
-     * @param context Human-readable reason (e.g., "sign data", "generate key").
-     * @return The PIN, or std::nullopt if the user cancelled.
+     *
+     * Called in a loop by MPSS until the PIN is accepted, the handler cancels (returns std::nullopt),
+     * or the PIN becomes locked. The handler controls the retry policy by deciding when to return
+     * std::nullopt.
+     *
+     * @param context Information about the request, including the operation description, previous
+     *                attempt status, and remaining retries on the device.
+     * @return The PIN, or std::nullopt to cancel.
      * @warning Implementations must never log or store the returned PIN beyond the immediate operation.
      */
     [[nodiscard]]
-    virtual std::optional<SecureString> request_pin(std::string_view context) = 0;
+    virtual std::optional<SecureString> request_pin(const PinRequestContext &context) = 0;
+
+    /**
+     * @brief Called after each PIN authentication attempt with the result.
+     *
+     * This is a notification callback — the return value is void. Implementations can use it to
+     * update UI (e.g., dismiss a dialog on success, show a "PIN locked" warning). The default
+     * implementation does nothing.
+     *
+     * @param result The outcome of the PIN attempt.
+     * @param retries_remaining PIN retries remaining on the device, or -1 if unknown.
+     */
+    virtual void notify_pin_result(PinResult result, int retries_remaining)
+    {
+        (void)result;
+        (void)retries_remaining;
+    }
 
     /** @brief Notify that a touch-requiring operation is starting. */
     virtual void notify_touch_needed() = 0;

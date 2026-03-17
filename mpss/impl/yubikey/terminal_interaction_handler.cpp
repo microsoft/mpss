@@ -100,17 +100,35 @@ class TerminalInteractionHandler : public mpss::InteractionHandler
 {
   public:
     [[nodiscard]]
-    std::optional<mpss::SecureString> request_pin(std::string_view context) override
+    std::optional<mpss::SecureString> request_pin(const mpss::PinRequestContext &context) override
     {
         // Check environment variable first.
-        const char *env_pin = std::getenv("MPSS_YUBIKEY_PIN");
+        const char *env_pin = std::getenv("MPSS_YUBIKEY_PIN"); // NOLINT(concurrency-mt-unsafe)
         if (nullptr != env_pin && '\0' != env_pin[0])
         {
+            // If this is a retry, the env var PIN already failed. Don't retry with the same value.
+            if (mpss::PinStatus::first_attempt != context.last_status)
+            {
+                return std::nullopt;
+            }
             return mpss::SecureString{env_pin};
         }
 
+        // Show retry information.
+        if (mpss::PinStatus::wrong_pin == context.last_status)
+        {
+            if (context.retries_remaining >= 0)
+            {
+                std::cerr << "Wrong PIN (" << context.retries_remaining << " retries remaining). ";
+            }
+            else
+            {
+                std::cerr << "Wrong PIN. ";
+            }
+        }
+
         // Prompt on terminal.
-        std::cerr << "Enter YubiKey PIN (" << context << "): " << std::flush;
+        std::cerr << "Enter YubiKey PIN (" << context.operation << "): " << std::flush;
         auto pin = read_secure_line();
 #ifndef _WIN32
         // On Unix, echo is disabled via termios and Enter does not produce visible output.

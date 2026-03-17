@@ -4,6 +4,7 @@
 #pragma once
 
 #include "mpss/algorithm.h"
+#include "mpss/interaction_handler.h"
 #include "mpss/key_policy.h"
 #include <cstddef>
 #include <cstdint>
@@ -18,17 +19,6 @@ struct ykpiv_state;
 
 namespace mpss::impl::yubikey
 {
-
-/**
- * @brief Result of a PIN authentication attempt.
- */
-enum class PinResult
-{
-    ok,        /**< PIN verified successfully. */
-    wrong_pin, /**< PIN was incorrect (retries may remain). */
-    locked,    /**< PIN is locked (too many wrong attempts). Use PUK to unlock. */
-    error,     /**< Non-PIN error (e.g., device disconnected). */
-};
 
 /**
  * @brief RAII wrapper around libykpiv for managing YubiKey PIV operations.
@@ -87,9 +77,10 @@ class YubiKeyPIV
     /**
      * @brief Authenticate with the PIN.
      * @param pin The PIN string.
+     * @param retries_out Set to the number of remaining PIN retries on failure, or -1 if unknown.
      * @return The result of the authentication attempt.
      */
-    PinResult authenticate_pin(std::string_view pin);
+    mpss::PinResult authenticate_pin(std::string_view pin, int &retries_out);
 
     /**
      * @brief Authenticate with the management key.
@@ -244,12 +235,12 @@ class YubiKeyPIV
 };
 
 /**
- * @brief Authenticate with PIN via interactive handler, with retry on failure.
+ * @brief Authenticate with PIN via the global interaction handler.
  *
- * Prompts the user for the PIN via the global @ref mpss::InteractionHandler. Retries up to 3 times on
- * authentication failure. To prevent lockout when the PIN comes from the MPSS_YUBIKEY_PIN environment variable
- * (which would provide the same wrong value on every attempt), the function immediately aborts if the handler
- * returns the same PIN that just failed.
+ * Calls @ref mpss::InteractionHandler::request_pin in a loop, passing the result of each attempt back to the
+ * handler via @ref mpss::InteractionHandler::notify_pin_result. The handler controls the retry policy by returning
+ * std::nullopt to cancel. As a safety net, the function aborts if the handler returns the same PIN that just
+ * failed (to prevent lockout from environment-variable-based handlers).
  *
  * @param piv An already-connected @ref YubiKeyPIV instance.
  * @param context Human-readable description of the operation (for the PIN prompt).
