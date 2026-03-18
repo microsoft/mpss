@@ -990,7 +990,7 @@ TEST_F(MultiYubiKeyTest, KeysOnDifferentDevicesAreIndependent)
     auto key_b = mpss::KeyPair::Create(key_name_b, ecdsa_secp256r1_sha256, "yubikey");
     ASSERT_NE(nullptr, key_b);
 
-    // Clear the env var — all operations should use the stored serial.
+    // Clear the env var - all operations should use the stored serial.
     ClearDeviceTarget();
 
     // Sign with both keys.

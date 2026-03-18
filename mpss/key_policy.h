@@ -17,9 +17,9 @@ namespace mpss
  * backend falls back to environment variables or its hardcoded default.
  *
  * Bit layout:
- * - Bits 0–3:  YubiKey PIN policy (4-bit field).
- * - Bits 4–7:  YubiKey touch policy (4-bit field).
- * - Bits 8–63: Reserved for other backends.
+ * - Bits 0-3:  YubiKey PIN policy (4-bit field).
+ * - Bits 4-7:  YubiKey touch policy (4-bit field).
+ * - Bits 8-63: Reserved for other backends.
  */
 enum class MPSS_DECOR KeyPolicy : std::uint64_t
 {
@@ -27,7 +27,7 @@ enum class MPSS_DECOR KeyPolicy : std::uint64_t
     none = 0,
 
 #ifdef MPSS_BACKEND_YUBIKEY
-    // -- YubiKey PIN policy (bits 0–3). Zero = use env var / MPSS default. --
+    // -- YubiKey PIN policy (bits 0-3). Zero = use env var / MPSS default. --
 
     /** @brief Never require PIN for signing. */
     yubikey_pin_never = 1U,
@@ -35,9 +35,9 @@ enum class MPSS_DECOR KeyPolicy : std::uint64_t
     yubikey_pin_once = 2U,
     /** @brief Require PIN for every signing operation. */
     yubikey_pin_always = 3U,
-    // Values 4–15 reserved (match_once, match_always pending biometric InteractionHandler support).
+    // Values 4-15 reserved (match_once, match_always pending biometric InteractionHandler support).
 
-    // -- YubiKey touch policy (bits 4–7). Zero = use env var / MPSS default. --
+    // -- YubiKey touch policy (bits 4-7). Zero = use env var / MPSS default. --
 
     /** @brief Never require physical touch for signing. */
     yubikey_touch_never = 1U << 4U,
@@ -45,23 +45,23 @@ enum class MPSS_DECOR KeyPolicy : std::uint64_t
     yubikey_touch_always = 2U << 4U,
     /** @brief Require physical touch once per 15-second window. */
     yubikey_touch_cached = 3U << 4U,
-    // Values 4–15 reserved (auto, future policies).
+    // Values 4-15 reserved (auto, future policies).
 #endif // MPSS_BACKEND_YUBIKEY
 };
 
 #ifdef MPSS_BACKEND_YUBIKEY
 
-/** @brief Group mask for YubiKey PIN policy (bits 0–3). */
+/** @brief Group mask for YubiKey PIN policy (bits 0-3). */
 inline constexpr KeyPolicy yubikey_pin_mask = KeyPolicy{0xFU};
 
-/** @brief Group mask for YubiKey touch policy (bits 4–7). */
+/** @brief Group mask for YubiKey touch policy (bits 4-7). */
 inline constexpr KeyPolicy yubikey_touch_mask = KeyPolicy{0xFU << 4U};
 
 #endif // MPSS_BACKEND_YUBIKEY
 
 // NOLINTBEGIN(readability-redundant-casting,misc-no-recursion)
 // readability-redundant-casting: outer static_cast from uint64_t to enum class is required.
-// misc-no-recursion: false positive — compound-assignment operators call binary operators, not themselves.
+// misc-no-recursion: false positive - compound-assignment operators call binary operators, not themselves.
 
 /** @brief Bitwise OR for combining policy fields. */
 constexpr KeyPolicy operator|(KeyPolicy a, KeyPolicy b) noexcept

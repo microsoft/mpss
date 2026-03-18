@@ -220,7 +220,7 @@ class YubiKeyPIV
      * @brief List the serial numbers of all currently available YubiKeys.
      *
      * Briefly connects to each smart card reader, reads the serial number, and disconnects.
-     * This is a discovery method — it does not leave any connections open.
+     * This is a discovery method - it does not leave any connections open.
      *
      * @return A vector of serial numbers for all reachable YubiKeys.
      */

@@ -1,4 +1,4 @@
-# MPSS – A Multi-Platform Secure Signing Library
+# MPSS - A Multi-Platform Secure Signing Library
 
 Modern operating systems provide various methods for safeguarding private cryptographic keys through hardware.
 MPSS is a multi-platform C++ library for generating and storing (secret) digital signature keys.
@@ -488,10 +488,19 @@ Applications that need custom PIN entry (e.g., a GUI dialog) or touch notificati
 
 class MyInteractionHandler : public mpss::InteractionHandler {
 public:
-    std::optional<mpss::SecureString> request_pin(std::string_view context) override
+    std::optional<mpss::SecureString> request_pin(const mpss::PinRequestContext &context) override
     {
+        if (mpss::PinStatus::wrong_pin == context.last_status) {
+            // Show "Wrong PIN" in UI. context.retries_remaining has the count.
+        }
         // Show a dialog, read from a secure store, etc.
+        // Return std::nullopt to cancel (stops the retry loop).
         return mpss::SecureString{"123456"};
+    }
+    void notify_pin_result(mpss::PinResult result, int retries_remaining) override
+    {
+        // Called after each PIN attempt. Update UI (e.g., dismiss dialog on success,
+        // show "PIN locked" warning on lockout).
     }
     void notify_touch_needed() override { /* show "touch your YubiKey" UI */ }
     void notify_touch_complete() override { /* dismiss UI */ }
@@ -501,7 +510,7 @@ public:
 mpss::GetOrSetInteractionHandler(std::make_shared<MyInteractionHandler>());
 ```
 
-When a custom handler is installed, the `MPSS_YUBIKEY_PIN` environment variable is ignored, and the handler has full control over PIN retrieval.
+When a custom handler is installed, the `MPSS_YUBIKEY_PIN` environment variable is ignored, and the handler has full control over PIN retrieval. The handler also controls the retry policy - MPSS calls `request_pin` in a loop until it returns `std::nullopt` (cancel), or until the PIN is accepted or locked.
 
 ### Device Selection
 

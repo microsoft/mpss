@@ -81,7 +81,7 @@ class InteractionHandler
     /**
      * @brief Called after each PIN authentication attempt with the result.
      *
-     * This is a notification callback — the return value is void. Implementations can use it to
+     * This is a notification callback - the return value is void. Implementations can use it to
      * update UI (e.g., dismiss a dialog on success, show a "PIN locked" warning). The default
      * implementation does nothing.
      *

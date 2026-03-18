@@ -195,7 +195,7 @@ extern "C" int mpss_signature_sign_init(void *ctx, void *provkey, [[maybe_unused
     return 1;
 }
 
-// NOLINTNEXTLINE(readability-non-const-parameter) — sig is an output buffer written via std::transform.
+// NOLINTNEXTLINE(readability-non-const-parameter) - sig is an output buffer written via std::transform.
 extern "C" int mpss_signature_sign(void *ctx, unsigned char *sig, ::size_t *siglen, ::size_t sigsize,
                                    const unsigned char *tbs, ::size_t tbslen,
                                    [[maybe_unused]] const OSSL_PARAM params[])
