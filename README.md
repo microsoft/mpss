@@ -149,7 +149,7 @@ cmake --build build-ios-simulator --config Release -j
 cmake --install build-ios-device --config Release --prefix install-ios-device
 cmake --install build-ios-simulator --config Release --prefix install-ios-simulator
 
-# We need some temporary directory structure to create xcframeworks.
+# We need some temporary directory structure to create XCFrameworks.
 mkdir -p xcf/include/mpss/{device,simulator}
 rsync -a install-ios-device/include/mpss-1.0/mpss xcf/include/mpss/device/mpss
 rsync -a install-ios-simulator/include/mpss-1.0/mpss xcf/include/mpss/simulator/mpss
