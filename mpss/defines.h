@@ -1,4 +1,4 @@
-// Copyright(c) Microsoft Corporation. All rights reserved.
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
 #pragma once
@@ -27,7 +27,6 @@
 #else // _MSC_VER
 
 #define MPSS_DECOR
-
 #define MPSS_CALL
 
 #endif // _MSC_VER

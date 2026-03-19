@@ -1,93 +1,154 @@
-﻿// Copyright(c) Microsoft Corporation. All rights reserved.
+﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
 #include "mpss/mpss.h"
-#include "mpss/utils/scope_guard.h"
+#include "mpss/impl/backend_registry.h"
 #include "mpss/utils/utilities.h"
-#include "mpss/implementations/mpss_impl.h"
-#include <stdexcept>
+#include <array>
+#include <mutex>
+#include <optional>
 
-namespace mpss {
-    std::unique_ptr<KeyPair> KeyPair::Create(std::string_view name, Algorithm algorithm)
+namespace mpss
+{
+
+std::unique_ptr<KeyPair> KeyPair::Create(std::string_view name, Algorithm algorithm, KeyPolicy policy)
+{
+    utils::log_trace("KeyPair::Create called for key '{}' with algorithm '{}'.", name,
+                     get_algorithm_info(algorithm).type_str);
+    return impl::create_key(name, algorithm, policy);
+}
+
+std::unique_ptr<KeyPair> KeyPair::Create(std::string_view name, Algorithm algorithm, std::string_view backend_name,
+                                         KeyPolicy policy)
+{
+    utils::log_trace("KeyPair::Create called for key '{}' with algorithm '{}' on backend '{}'.", name,
+                     get_algorithm_info(algorithm).type_str, backend_name);
+    return impl::create_key(backend_name, name, algorithm, policy);
+}
+
+std::unique_ptr<KeyPair> KeyPair::Open(std::string_view name)
+{
+    utils::log_trace("KeyPair::Open called for key '{}'.", name);
+    return impl::open_key(name);
+}
+
+std::unique_ptr<KeyPair> KeyPair::Open(std::string_view name, std::string_view backend_name)
+{
+    utils::log_trace("KeyPair::Open called for key '{}' on backend '{}'.", name, backend_name);
+    return impl::open_key(backend_name, name);
+}
+
+bool is_algorithm_available(Algorithm algorithm)
+{
+    const AlgorithmInfo info = get_algorithm_info(algorithm);
+    if (0 == info.key_bits)
     {
-        return impl::create_key(name, algorithm);
+        return false;
     }
 
-    std::unique_ptr<KeyPair> KeyPair::Open(std::string_view name)
+    // Cache results per algorithm to avoid repeated expensive probes.
+    static std::mutex cache_mutex;
+    static std::array<std::optional<bool>, algorithm_info.size()> cache{};
+
+    const int idx = static_cast<int>(algorithm);
     {
-        return impl::open_key(name);
-    }
-
-    bool is_algorithm_supported(Algorithm algorithm)
-    {
-        AlgorithmInfo info = get_algorithm_info(algorithm);
-        if (0 == info.key_bits) {
-            return false;
-        }
-
-        // Sample a random name for a key and try creating it.
-        std::string random_key = "MPSS_TEST_KEY_" + mpss::utils::random_string(16) + "_CAN_DELETE";
-        std::unique_ptr<KeyPair> key = KeyPair::Create(random_key, algorithm);
-
-        // Could we even create a key?
-        bool key_created = (nullptr != key);
-        if (!key_created) {
-            return false;
-        }
-        SCOPE_GUARD({
-            // Delete the key if it was created.
-            bool key_deleted = key->delete_key();
-            if (!key_deleted) {
-                throw std::runtime_error("Test key deletion failed");
-            }
-        });
-
-        // Create some data and sign.
-        std::vector<std::byte> hash(info.hash_bits / 8, static_cast<std::byte>('a'));
-        std::size_t sig_size = key->sign_hash(hash, {});
-        if (0 == sig_size) {
-            return false;
-        }
-
-        std::vector<std::byte> sig(sig_size);
-        std::size_t written = key->sign_hash(hash, sig);
-        if (written == 0) {
-            return false;
-        }
-
-        // Did everything work out?
-        return true;
-    }
-
-    bool verify(
-        gsl::span<const std::byte> hash,
-        gsl::span<const std::byte> public_key,
-        Algorithm algorithm,
-        gsl::span<const std::byte> sig)
-    {
-        return impl::verify(hash, public_key, algorithm, sig);
-    }
-
-    std::string get_error() noexcept
-    {
-        return utils::get_error();
-    }
-
-    std::size_t KeyPair::sign_hash_size() const
-    {
-        return utils::get_max_signature_size(algorithm());
-    }
-
-    std::size_t KeyPair::extract_key_size() const
-    {
-        return utils::get_public_key_size(algorithm());
-    }
-
-    KeyPair::KeyPair(Algorithm algorithm, bool hardware_backed, const char *storage_description)
-        : algorithm_(algorithm), info_(get_algorithm_info(algorithm)), key_info_(hardware_backed, storage_description)
-    {
-        if (0 == info_.key_bits) {
-            throw std::invalid_argument("Unsupported algorithm");
+        std::scoped_lock lock{cache_mutex};
+        if (cache[idx])
+        {
+            // NOLINTBEGIN(bugprone-unchecked-optional-access) - guarded by the if above.
+            utils::log_trace("Algorithm availability for '{}' returned from cache: {}.", info.type_str,
+                             *cache[idx] ? "available" : "unavailable");
+            return *cache[idx];
+            // NOLINTEND(bugprone-unchecked-optional-access)
         }
     }
+
+    // Delegate to the default backend.
+    utils::log_trace("Probing algorithm availability for '{}'.", info.type_str);
+    const bool available = impl::is_algorithm_available(algorithm);
+
+    std::scoped_lock lock{cache_mutex};
+    cache[idx] = available;
+    utils::log_trace("Algorithm '{}' is {}.", info.type_str, available ? "available" : "unavailable");
+    return available;
+}
+
+bool is_algorithm_available(Algorithm algorithm, std::string_view backend_name)
+{
+    const AlgorithmInfo info = get_algorithm_info(algorithm);
+    if (0 == info.key_bits)
+    {
+        return false;
+    }
+    utils::log_trace("Checking algorithm availability for '{}' on backend '{}'.", info.type_str, backend_name);
+    return impl::is_algorithm_available(backend_name, algorithm);
+}
+
+std::vector<Algorithm> get_available_algorithms()
+{
+    std::vector<Algorithm> result;
+    for (const auto &[alg, info] : algorithm_info)
+    {
+        if (Algorithm::unsupported == alg)
+        {
+            continue;
+        }
+        if (is_algorithm_available(alg))
+        {
+            result.push_back(alg);
+        }
+    }
+    return result;
+}
+
+bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_key, Algorithm algorithm,
+            std::span<const std::byte> sig)
+{
+    utils::log_trace("Standalone verify called with algorithm '{}', hash size {}, signature size {}.",
+                     get_algorithm_info(algorithm).type_str, hash.size(), sig.size());
+    return impl::verify(hash, public_key, algorithm, sig);
+}
+
+bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_key, Algorithm algorithm,
+            std::span<const std::byte> sig, std::string_view backend_name)
+{
+    utils::log_trace("Standalone verify called with algorithm '{}' on backend '{}', hash size {}, signature size {}.",
+                     get_algorithm_info(algorithm).type_str, backend_name, hash.size(), sig.size());
+    return impl::verify(backend_name, hash, public_key, algorithm, sig);
+}
+
+std::vector<const char *> get_available_backends()
+{
+    return impl::get_available_backends();
+}
+
+const char *get_default_backend_name()
+{
+    return impl::get_default_backend_name();
+}
+
+std::string get_error()
+{
+    return utils::get_error();
+}
+
+std::size_t KeyPair::sign_hash_size() const
+{
+    return utils::get_max_signature_size(algorithm());
+}
+
+std::size_t KeyPair::extract_key_size() const
+{
+    return utils::get_public_key_size(algorithm());
+}
+
+KeyPair::KeyPair(Algorithm algorithm, bool hardware_backed, const char *storage_description)
+    : algorithm_{algorithm}, info_{get_algorithm_info(algorithm)}, key_info_{hardware_backed, storage_description}
+{
+    if (0 == info_.key_bits)
+    {
+        utils::log_and_set_error("Unsupported algorithm '{}'.", info_.type_str);
+    }
+}
+
 } // namespace mpss

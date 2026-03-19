@@ -1,0 +1,11 @@
+InheritParentConfig: true
+Checks: >
+  -cppcoreguidelines-avoid-c-arrays,
+  -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+  -cppcoreguidelines-pro-type-vararg,
+  -hicpp-avoid-c-arrays,
+  -hicpp-no-array-decay,
+  -hicpp-signed-bitwise,
+  -hicpp-vararg,
+  -modernize-avoid-c-arrays,
+  -concurrency-mt-unsafe

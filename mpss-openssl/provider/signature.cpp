@@ -1,303 +1,350 @@
-// Copyright(c) Microsoft Corporation. All rights reserved.
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+#include "mpss-openssl/provider/signature.h"
 #include "mpss-openssl/provider/digest.h"
 #include "mpss-openssl/provider/keymgmt.h"
 #include "mpss-openssl/provider/provider.h"
-#include "mpss-openssl/provider/signature.h"
+#include "mpss-openssl/utils/names.h"
 #include "mpss-openssl/utils/utils.h"
+#include <algorithm>
+#include <cstddef>
 #include <openssl/core_names.h>
 #include <openssl/evp.h>
 #include <openssl/objects.h>
 #include <openssl/params.h>
 #include <openssl/x509v3.h>
-#include <gsl/narrow>
-#include <algorithm>
-#include <cstddef>
 #include <string>
 #include <string_view>
 #include <utility>
 
-namespace {
-    using namespace mpss_openssl::provider;
-    using namespace mpss_openssl::utils;
+namespace
+{
 
-    struct mpss_signature_ctx {
-        mpss_key *pkey = nullptr;
-        mpss_digest_ctx *dctx = nullptr;
-        mpss_provider_ctx *provctx = nullptr;
+using namespace mpss_openssl::provider;
+using namespace mpss_openssl::utils;
+using enum digest_state;
 
-        ~mpss_signature_ctx();
-    };
+struct mpss_signature_ctx
+{
+    mpss_key *pkey = nullptr;
+    mpss_digest_ctx *dctx = nullptr;
+    mpss_provider_ctx *provctx = nullptr;
 
-    mpss_signature_ctx::~mpss_signature_ctx()
+    ~mpss_signature_ctx();
+};
+
+mpss_signature_ctx::~mpss_signature_ctx()
+{
+    // Releasing dctx.
+    mpss_delete(dctx);
+
+    // NOTE: We are *not* supposed to release the memory for any of these. They are
+    // managed elsewhere.
+    pkey = nullptr;
+    provctx = nullptr;
+}
+
+extern "C" void *mpss_signature_newctx(void *provctx, [[maybe_unused]] const char *propq)
+{
+    mpss_provider_ctx *ctx = static_cast<mpss_provider_ctx *>(provctx);
+    if (nullptr == ctx)
     {
-        // Releasing dctx.
-        mpss_delete(dctx);
-
-        // NOTE: We are *not* supposed to release the memory for any of these. They are
-        // managed elsewhere.
-        pkey = nullptr;
-        provctx = nullptr;
+        return nullptr;
     }
 
-    extern "C" void *mpss_signature_newctx(void *provctx, [[maybe_unused]] const char *propq)
+    // Create the new signature context.
+    mpss_signature_ctx *sctx = mpss_new<mpss_signature_ctx>();
+    sctx->provctx = ctx;
+
+    return sctx;
+}
+
+extern "C" void mpss_signature_freectx(void *ctx)
+{
+    mpss_delete(static_cast<mpss_signature_ctx *>(ctx));
+}
+
+extern "C" void *mpss_signature_dupctx(void *ctx)
+{
+    mpss_signature_ctx *sctx = static_cast<mpss_signature_ctx *>(ctx);
+    if (nullptr == sctx)
     {
-        mpss_provider_ctx *ctx = static_cast<mpss_provider_ctx *>(provctx);
-        if (!ctx) {
-            return nullptr;
-        }
-
-        // Create the new signature context.
-        mpss_signature_ctx *sctx = mpss_new<mpss_signature_ctx>();
-        sctx->provctx = ctx;
-
-        return sctx;
+        return nullptr;
     }
 
-    extern "C" void mpss_signature_freectx(void *ctx)
+    // Create a new signature context.
+    mpss_signature_ctx *new_sctx = mpss_new<mpss_signature_ctx>();
+    if (nullptr == new_sctx)
     {
-        mpss_delete(static_cast<mpss_signature_ctx *>(ctx));
+        return nullptr;
     }
 
-    extern "C" void *mpss_signature_dupctx(void *ctx)
+    // Make a clone of the digest context.
+    new_sctx->dctx = static_cast<mpss_digest_ctx *>(mpss_digest_dupctx(sctx->dctx));
+
+    // Copy over the key and provider contexts.
+    new_sctx->provctx = sctx->provctx;
+    new_sctx->pkey = sctx->pkey;
+
+    return new_sctx;
+}
+
+extern "C" const OSSL_PARAM *mpss_signature_gettable_ctx_params(void *ctx, [[maybe_unused]] void *provctx)
+{
+    mpss_signature_ctx *sctx = static_cast<mpss_signature_ctx *>(ctx);
+
+    static OSSL_PARAM ret_key_available[] = {OSSL_PARAM_octet_string(OSSL_SIGNATURE_PARAM_ALGORITHM_ID, nullptr, 0),
+                                             OSSL_PARAM_END};
+
+    static OSSL_PARAM ret_key_unavailable[] = {OSSL_PARAM_END};
+
+    if (sctx && sctx->pkey && sctx->pkey->has_valid_key())
     {
-        mpss_signature_ctx *sctx = static_cast<mpss_signature_ctx *>(ctx);
-        if (!sctx) {
-            return nullptr;
-        }
+        return ret_key_available;
+    }
+    return ret_key_unavailable;
+}
 
-        // Create a new signature context.
-        mpss_signature_ctx *new_sctx = mpss_new<mpss_signature_ctx>();
-        if (!new_sctx) {
-            return nullptr;
-        }
-
-        // Make a clone of the digest context.
-        new_sctx->dctx = static_cast<mpss_digest_ctx *>(mpss_digest_dupctx(sctx->dctx));
-
-        // Copy over the key and provider contexts.
-        new_sctx->provctx = sctx->provctx;
-        new_sctx->pkey = sctx->pkey;
-
-        return new_sctx;
+extern "C" int mpss_signature_get_ctx_params(void *ctx, OSSL_PARAM params[])
+{
+    mpss_signature_ctx *sctx = static_cast<mpss_signature_ctx *>(ctx);
+    if (nullptr == sctx)
+    {
+        return 0;
     }
 
-    extern "C" const OSSL_PARAM *mpss_signature_gettable_ctx_params(void *ctx, [[maybe_unused]] void *provctx)
+    if (nullptr == sctx->pkey || !sctx->pkey->has_valid_key())
     {
-        mpss_signature_ctx *sctx = static_cast<mpss_signature_ctx *>(ctx);
-
-        static OSSL_PARAM ret_key_available[] = {
-            OSSL_PARAM_octet_string(OSSL_SIGNATURE_PARAM_ALGORITHM_ID, nullptr, 0), OSSL_PARAM_END};
-
-        static OSSL_PARAM ret_key_unavailable[] = {OSSL_PARAM_END};
-
-        if (sctx && sctx->pkey && sctx->pkey->has_valid_key()) {
-            return ret_key_available;
-        }
-        return ret_key_unavailable;
+        // Nothing to return.
+        return 1;
     }
 
-    extern "C" int mpss_signature_get_ctx_params(void *ctx, OSSL_PARAM params[])
+    OSSL_PARAM *p = OSSL_PARAM_locate(params, OSSL_SIGNATURE_PARAM_ALGORITHM_ID);
+    if (nullptr == p)
     {
-        mpss_signature_ctx *sctx = static_cast<mpss_signature_ctx *>(ctx);
-        if (!sctx) {
-            return 0;
+        return 0;
+    }
+
+    // Get the algorithm ID from the name string we constructed above.
+    // NOLINTNEXTLINE(bugprone-unchecked-optional-access) - guaranteed by has_valid_key() check above.
+    ASN1_OBJECT *obj = OBJ_txt2obj(sctx->pkey->alg_name->c_str(), 0);
+    X509_ALGOR *alg = nullptr;
+    unsigned char *alg_der = nullptr;
+    int result = 0;
+
+    do
+    {
+        if (nullptr == obj)
+        {
+            break;
         }
 
-        if (!sctx->pkey || !sctx->pkey->has_valid_key()) {
-            // Nothing to return.
-            return 1;
+        alg = X509_ALGOR_new();
+        if (nullptr == alg)
+        {
+            break;
         }
 
-        OSSL_PARAM *p = OSSL_PARAM_locate(params, OSSL_SIGNATURE_PARAM_ALGORITHM_ID);
-        if (!p) {
-            return 0;
+        if (1 != X509_ALGOR_set0(alg, obj, V_ASN1_NULL, nullptr))
+        {
+            break;
         }
-
-        // Get the algorithm ID from the name string we constructed above.
-        ASN1_OBJECT *obj = OBJ_txt2obj(sctx->pkey->alg_name->c_str(), 0);
-        if (!obj) {
-            return 0;
-        }
-
-        X509_ALGOR *alg = X509_ALGOR_new();
-        if (!alg) {
-            return 0;
-        }
-        if (1 != X509_ALGOR_set0(alg, obj, V_ASN1_NULL, nullptr)) {
-            X509_ALGOR_free(alg);
-            return 0;
-        }
+        obj = nullptr; // Ownership transferred to alg.
 
         // Get and set the algorithm ID to output parameters.
-        unsigned char *alg_der = nullptr;
         int aid_size = i2d_X509_ALGOR(alg, &alg_der);
-        if (aid_size < 0) {
-            return 0;
+        if (aid_size < 0)
+        {
+            break;
         }
+
         std::size_t aid_size_sz = static_cast<std::size_t>(aid_size);
-        if (1 != OSSL_PARAM_set_octet_string(p, alg_der, aid_size_sz)) {
-            OPENSSL_free(alg_der);
-            X509_ALGOR_free(alg);
-            return 0;
+        if (1 != OSSL_PARAM_set_octet_string(p, alg_der, aid_size_sz))
+        {
+            break;
         }
-        OPENSSL_free(alg_der);
-        X509_ALGOR_free(alg);
 
+        result = 1;
+    } while (false);
+
+    OPENSSL_free(alg_der);
+    X509_ALGOR_free(alg);
+    ASN1_OBJECT_free(obj); // No-op if ownership was transferred (obj == nullptr).
+
+    return result;
+}
+
+extern "C" int mpss_signature_sign_init(void *ctx, void *provkey, [[maybe_unused]] const OSSL_PARAM params[])
+{
+    // Check that the signature context ctx is not null.
+    mpss_signature_ctx *sctx = static_cast<mpss_signature_ctx *>(ctx);
+    if (nullptr == sctx)
+    {
+        return 0;
+    }
+
+    // Set the key object and check that it is usable.
+    mpss_key *pkey = static_cast<mpss_key *>(provkey);
+    if (nullptr == pkey || !pkey->has_valid_key())
+    {
+        return 0;
+    }
+    sctx->pkey = pkey;
+
+    return 1;
+}
+
+// NOLINTNEXTLINE(readability-non-const-parameter) - sig is an output buffer written via std::transform.
+extern "C" int mpss_signature_sign(void *ctx, unsigned char *sig, ::size_t *siglen, ::size_t sigsize,
+                                   const unsigned char *tbs, ::size_t tbslen,
+                                   [[maybe_unused]] const OSSL_PARAM params[])
+{
+    mpss_signature_ctx *sctx = static_cast<mpss_signature_ctx *>(ctx);
+    if (nullptr == sctx)
+    {
+        return 0;
+    }
+
+    // Check that the key is valid.
+    if (nullptr == sctx->pkey || !sctx->pkey->has_valid_key())
+    {
+        return 0;
+    }
+
+    // Check that tbs and tbslen are valid.
+    const std::size_t tbs_expected_bytes = sctx->pkey->key_pair->algorithm_info().hash_bits / 8;
+    if (nullptr == tbs || tbslen != tbs_expected_bytes)
+    {
+        return 0;
+    }
+
+    // If sig is nullptr, then we need to write to *siglen an upper bound
+    // on the required buffer size and return success.
+    const std::size_t max_sig_size = mpss_sign_as_der(sctx->pkey->key_pair, {}, {});
+    if (nullptr == sig)
+    {
+        *siglen = max_sig_size;
         return 1;
     }
 
-    extern "C" int mpss_signature_sign_init(void *ctx, void *provkey, [[maybe_unused]] const OSSL_PARAM params[])
+    // Sign the data. An empty byte_vector indicates failure to sign.
+    byte_vector tbs_bytes(tbslen);
+    std::transform(tbs, tbs + tbslen, tbs_bytes.begin(), [](unsigned char c) { return static_cast<std::byte>(c); });
+
+    byte_vector der_sig(max_sig_size);
+    const std::size_t bytes_written = mpss_sign_as_der(sctx->pkey->key_pair, tbs_bytes, der_sig);
+    if (0 == bytes_written)
     {
-        // Check that the signature context ctx is not null.
-        mpss_signature_ctx *sctx = static_cast<mpss_signature_ctx *>(ctx);
-        if (!sctx) {
-            return 0;
-        }
-
-        // Set the key object and check that it is usable.
-        mpss_key *pkey = static_cast<mpss_key *>(provkey);
-        if (!pkey || !pkey->has_valid_key()) {
-            return 0;
-        }
-        sctx->pkey = pkey;
-
-        return 1;
+        return 0;
     }
 
-    extern "C" int mpss_signature_sign(
-        void *ctx,
-        unsigned char *sig,
-        ::size_t *siglen,
-        ::size_t sigsize,
-        const unsigned char *tbs,
-        ::size_t tbslen,
-        [[maybe_unused]] const OSSL_PARAM params[])
+    if (sigsize < bytes_written)
     {
-        mpss_signature_ctx *sctx = static_cast<mpss_signature_ctx *>(ctx);
-        if (!sctx) {
-            return 0;
-        }
-
-        // Check that the key is valid.
-        if (!sctx->pkey || !sctx->pkey->has_valid_key()) {
-            return 0;
-        }
-
-        // Check that tbs and tbslen are valid.
-        std::size_t tbs_expected_bytes = sctx->pkey->key_pair->algorithm_info().hash_bits / 8;
-        if (!tbs || tbslen != tbs_expected_bytes) {
-            return 0;
-        }
-
-        // If sig is nullptr, then we need to write to *siglen an upper bound
-        // on the required buffer size and return success.
-        std::size_t max_sig_size = mpss_sign_as_der(sctx->pkey->key_pair, {}, {});
-        if (!sig) {
-            *siglen = max_sig_size;
-            return 1;
-        }
-
-        // Sign the data. An empty byte_vector indicates failure to sign.
-        byte_vector tbs_bytes(tbslen);
-        std::transform(tbs, tbs + tbslen, tbs_bytes.begin(), [](unsigned char c) { return static_cast<std::byte>(c); });
-
-        byte_vector der_sig(max_sig_size);
-        std::size_t bytes_written = mpss_sign_as_der(sctx->pkey->key_pair, tbs_bytes, der_sig);
-        if (0 == bytes_written) {
-            return 0;
-        }
-
-        if (sigsize < bytes_written) {
-            // The length of the signature must not exceed sigsize.
-            return 0;
-        }
-
-        // Copy in the DER-encoded signature.
-        auto der_sig_written_end = der_sig.begin();
-        std::advance(der_sig_written_end, bytes_written);
-        std::transform(
-            der_sig.begin(), der_sig_written_end, sig, [](std::byte b) { return static_cast<unsigned char>(b); });
-
-        // siglen must be set to the actual number of bytes written.
-        *siglen = bytes_written;
-
-        return 1;
+        // The length of the signature must not exceed sigsize.
+        return 0;
     }
 
-    extern "C" int mpss_signature_verify_init(void *ctx, void *provkey, [[maybe_unused]] const OSSL_PARAM params[])
+    // Copy in the DER-encoded signature.
+    auto der_sig_written_end = der_sig.begin();
+    std::advance(der_sig_written_end, bytes_written);
+    std::transform(der_sig.begin(), der_sig_written_end, sig,
+                   [](std::byte b) { return static_cast<unsigned char>(b); });
+
+    // siglen must be set to the actual number of bytes written.
+    *siglen = bytes_written;
+
+    return 1;
+}
+
+extern "C" int mpss_signature_verify_init(void *ctx, void *provkey, [[maybe_unused]] const OSSL_PARAM params[])
+{
+    mpss_signature_ctx *sctx = static_cast<mpss_signature_ctx *>(ctx);
+    if (nullptr == sctx)
     {
-        mpss_signature_ctx *sctx = static_cast<mpss_signature_ctx *>(ctx);
-        if (!sctx) {
-            return 0;
-        }
-
-        // Set the key object.
-        mpss_key *pkey = static_cast<mpss_key *>(provkey);
-        if (!pkey || !pkey->has_valid_key()) {
-            return 0;
-        }
-        sctx->pkey = pkey;
-
-        return 1;
+        return 0;
     }
 
-    extern "C" int mpss_signature_verify(
-        void *ctx, const unsigned char *sig, ::size_t siglen, const unsigned char *tbs, ::size_t tbslen)
+    // Set the key object.
+    mpss_key *pkey = static_cast<mpss_key *>(provkey);
+    if (nullptr == pkey || !pkey->has_valid_key())
     {
-        mpss_signature_ctx *sctx = static_cast<mpss_signature_ctx *>(ctx);
-        if (!sctx || !sctx->pkey || !sctx->pkey->has_valid_key()) {
-            return 0;
-        }
+        return 0;
+    }
+    sctx->pkey = pkey;
 
-        byte_vector tbs_bytes(tbslen);
-        std::transform(tbs, tbs + tbslen, tbs_bytes.begin(), [](unsigned char c) { return static_cast<std::byte>(c); });
+    return 1;
+}
 
-        byte_vector sig_bytes(siglen);
-        std::transform(sig, sig + siglen, sig_bytes.begin(), [](unsigned char c) { return static_cast<std::byte>(c); });
-
-        return verify_der(sctx->pkey->key_pair, tbs_bytes, sig_bytes);
+extern "C" int mpss_signature_verify(void *ctx, const unsigned char *sig, ::size_t siglen, const unsigned char *tbs,
+                                     ::size_t tbslen)
+{
+    mpss_signature_ctx *sctx = static_cast<mpss_signature_ctx *>(ctx);
+    if (nullptr == sctx || nullptr == sctx->pkey || !sctx->pkey->has_valid_key())
+    {
+        return 0;
     }
 
-    extern "C" int mpss_signature_digest_sign_init(
-        void *ctx, const char *mdname, void *provkey, [[maybe_unused]] const OSSL_PARAM params[])
+    byte_vector tbs_bytes(tbslen);
+    std::transform(tbs, tbs + tbslen, tbs_bytes.begin(), [](unsigned char c) { return static_cast<std::byte>(c); });
+
+    byte_vector sig_bytes(siglen);
+    std::transform(sig, sig + siglen, sig_bytes.begin(), [](unsigned char c) { return static_cast<std::byte>(c); });
+
+    return verify_der(sctx->pkey->key_pair, tbs_bytes, sig_bytes);
+}
+
+extern "C" int mpss_signature_digest_sign_init(void *ctx, const char *mdname, void *provkey,
+                                               [[maybe_unused]] const OSSL_PARAM params[])
+{
+    mpss_signature_ctx *sctx = static_cast<mpss_signature_ctx *>(ctx);
+    if (nullptr == sctx)
     {
-        mpss_signature_ctx *sctx = static_cast<mpss_signature_ctx *>(ctx);
-        if (!sctx) {
-            return 0;
+        return 0;
+    }
+
+    mpss_key *pkey = static_cast<mpss_key *>(provkey);
+    if (nullptr == pkey || !pkey->has_valid_key())
+    {
+        return 0;
+    }
+
+    // Let's make a local copy of the hash name in pkey.
+    if (!pkey->hash_name)
+    {
+        return 0;
+    }
+    const std::string hash_name = pkey->hash_name.value();
+
+    if (nullptr == mdname)
+    {
+        return 0;
+    }
+
+    // Check that mdname matches the key type.
+    if (!are_same_hash(std::string_view{mdname}, hash_name))
+    {
+        return 0;
+    }
+
+    // Create the provider digest context.
+    mpss_digest_ctx *dctx = static_cast<mpss_digest_ctx *>(mpss_digest_newctx(sctx->provctx, hash_name.c_str()));
+    if (nullptr == dctx)
+    {
+        return 0;
+    }
+
+    do
+    {
+        if (1 != mpss_digest_init(dctx, nullptr))
+        {
+            break;
         }
 
-        mpss_key *pkey = static_cast<mpss_key *>(provkey);
-        if (!pkey || !pkey->has_valid_key()) {
-            return 0;
-        }
-
-        // Let's make a local copy of the hash name in pkey.
-        std::string hash_name = pkey->hash_name.value();
-
-        if (!mdname) {
-            return 0;
-        }
-
-        // Check that mdname matches the key type.
-        if (!are_same_hash(std::string_view(mdname), hash_name)) {
-            return 0;
-        }
-
-        // Create the provider digest context.
-        mpss_digest_ctx *dctx = static_cast<mpss_digest_ctx *>(mpss_digest_newctx(sctx->provctx, hash_name.c_str()));
-
-        if (1 != mpss_digest_init(dctx, nullptr)) {
-            mpss_delete(dctx);
-            return 0;
-        }
-
-        // We are mostly ready to go. Still need to check if we have
-        // an existing provider digest context. If so, we'll delete it.
-        if (sctx->dctx) {
+        // Replace any existing digest context.
+        if (nullptr != sctx->dctx)
+        {
             mpss_delete(sctx->dctx);
-            sctx->dctx = nullptr;
         }
 
         // Everything went well, so set the pkey and dctx.
@@ -305,169 +352,185 @@ namespace {
         sctx->dctx = dctx;
 
         return 1;
-    }
+    } while (false);
 
-    extern "C" int mpss_signature_digest_sign_update(void *ctx, const unsigned char *data, ::size_t datalen)
+    mpss_delete(dctx);
+    return 0;
+}
+
+extern "C" int mpss_signature_digest_sign_update(void *ctx, const unsigned char *data, ::size_t datalen)
+{
+    mpss_signature_ctx *sctx = static_cast<mpss_signature_ctx *>(ctx);
+    if (nullptr == sctx || nullptr == sctx->dctx)
     {
-        mpss_signature_ctx *sctx = static_cast<mpss_signature_ctx *>(ctx);
-        if (!sctx) {
-            return 0;
-        }
-
-        if (1 != mpss_digest_update(sctx->dctx, data, datalen)) {
-            return 0;
-        }
-
-        return 1;
+        return 0;
     }
 
-    extern "C" int mpss_signature_digest_sign_final(void *ctx, unsigned char *sig, ::size_t *siglen, ::size_t sigsize)
+    if (1 != mpss_digest_update(sctx->dctx, data, datalen))
     {
-        mpss_signature_ctx *sctx = static_cast<mpss_signature_ctx *>(ctx);
-        if (!sctx) {
-            return 0;
-        }
-
-        byte_vector tbs(EVP_MAX_MD_SIZE);
-        std::size_t tbslen = 0;
-        unsigned char *digest_ptr = reinterpret_cast<unsigned char *>(tbs.data());
-        if (1 != mpss_digest_final(sctx->dctx, digest_ptr, &tbslen, EVP_MAX_MD_SIZE)) {
-            return 0;
-        }
-
-        const unsigned char *tbs_ptr = reinterpret_cast<const unsigned char *>(tbs.data());
-        return mpss_signature_sign(ctx, sig, siglen, sigsize, tbs_ptr, tbslen, nullptr);
+        return 0;
     }
 
-    extern "C" int mpss_signature_digest_sign(
-        void *ctx, unsigned char *sig, ::size_t *siglen, ::size_t sigsize, const unsigned char *tbs, ::size_t tbslen)
+    return 1;
+}
+
+extern "C" int mpss_signature_digest_sign_final(void *ctx, unsigned char *sig, ::size_t *siglen, ::size_t sigsize)
+{
+    mpss_signature_ctx *sctx = static_cast<mpss_signature_ctx *>(ctx);
+    if (nullptr == sctx || nullptr == sctx->dctx)
     {
-        mpss_signature_ctx *sctx = static_cast<mpss_signature_ctx *>(ctx);
-        if (!sctx) {
-            return 0;
-        }
-
-        if (1 != mpss_digest_init(sctx->dctx, nullptr)) {
-            return 0;
-        }
-        if (1 != mpss_signature_digest_sign_update(ctx, tbs, tbslen)) {
-            return 0;
-        }
-        if (1 != mpss_signature_digest_sign_final(ctx, sig, siglen, sigsize)) {
-            return 0;
-        }
-
-        return 1;
+        return 0;
     }
 
-    extern "C" int mpss_signature_digest_verify_init(
-        void *ctx, const char *mdname, void *provkey, const OSSL_PARAM params[])
+    byte_vector tbs(EVP_MAX_MD_SIZE);
+    std::size_t tbslen = 0;
+    unsigned char *digest_ptr = reinterpret_cast<unsigned char *>(tbs.data());
+    if (1 != mpss_digest_final(sctx->dctx, digest_ptr, &tbslen, EVP_MAX_MD_SIZE))
     {
-        // We simply call mpss_signature_digest_sign_init. There is no difference.
-        return mpss_signature_digest_sign_init(ctx, mdname, provkey, params);
+        return 0;
     }
 
-    extern "C" int mpss_signature_digest_verify_update(void *ctx, const unsigned char *data, ::size_t datalen)
+    const unsigned char *tbs_ptr = reinterpret_cast<const unsigned char *>(tbs.data());
+    return mpss_signature_sign(ctx, sig, siglen, sigsize, tbs_ptr, tbslen, nullptr);
+}
+
+extern "C" int mpss_signature_digest_sign(void *ctx, unsigned char *sig, ::size_t *siglen, ::size_t sigsize,
+                                          const unsigned char *tbs, ::size_t tbslen)
+{
+    mpss_signature_ctx *sctx = static_cast<mpss_signature_ctx *>(ctx);
+    if (nullptr == sctx || nullptr == sctx->dctx)
     {
-        // We simply call mpss_signature_digest_sign_update. There is no difference.
-        return mpss_signature_digest_sign_update(ctx, data, datalen);
+        return 0;
     }
 
-    extern "C" int mpss_signature_digest_verify_final(void *ctx, const unsigned char *sig, ::size_t siglen)
+    if (1 != mpss_digest_init(sctx->dctx, nullptr))
     {
-        mpss_signature_ctx *sctx = static_cast<mpss_signature_ctx *>(ctx);
-        if (!sctx) {
-            return 0;
-        }
-
-        if (!sctx->dctx) {
-            return 0;
-        }
-
-        // Check that the digest context is available and in the right state.
-        // This means that the EVP_MD_CTX and EVP_MD are already set up.
-        digest_state state = sctx->dctx->state;
-        if ((state != digest_state::digesting) && (state != digest_state::finalized)) {
-            return 0;
-        }
-
-        if (state != digest_state::finalized) {
-            byte_vector digest(EVP_MAX_MD_SIZE);
-
-            // First, we try to finalize the digest.
-            unsigned int bytes_written = 0;
-            unsigned char *digest_ptr = reinterpret_cast<unsigned char *>(digest.data());
-            if (1 != EVP_DigestFinal_ex(sctx->dctx->evp_dctx, digest_ptr, &bytes_written)) {
-                return 0;
-            }
-
-            // Any errors after this are critical and should brick the context.
-            sctx->dctx->state = digest_state::finalized;
-
-            std::size_t digest_bytes = 0;
-            try {
-                digest_bytes = gsl::narrow<std::size_t>(bytes_written);
-            } catch (const gsl::narrowing_error &e) {
-                // Failed narrow.
-                sctx->dctx->state = digest_state::error;
-                return 0;
-            }
-
-            // Sanity check: does digest_bytes match the expected size?
-            std::size_t expected_bytes = sctx->pkey->key_pair->algorithm_info().hash_bits / 8;
-            if (digest_bytes != expected_bytes) {
-                sctx->dctx->state = digest_state::error;
-                return 0;
-            }
-
-            // Resize the vector to the correct size and save in the context.
-            digest.resize(digest_bytes);
-            sctx->dctx->digest = std::move(digest);
-        }
-
-        // The digest was successfully finalized, so we can now verify it.
-        const unsigned char *tbs = reinterpret_cast<const unsigned char *>(sctx->dctx->digest.data());
-        std::size_t tbslen = sctx->dctx->digest.size();
-        return mpss_signature_verify(ctx, sig, siglen, tbs, tbslen);
+        return 0;
     }
-
-    extern "C" int mpss_signature_digest_verify(
-        void *ctx, const unsigned char *sig, ::size_t siglen, const unsigned char *tbs, ::size_t tbslen)
+    if (1 != mpss_signature_digest_sign_update(ctx, tbs, tbslen))
     {
-        if (1 != mpss_signature_digest_verify_update(ctx, tbs, tbslen)) {
-            return 0;
-        }
-        if (1 != mpss_signature_digest_verify_final(ctx, sig, siglen)) {
-            return 0;
-        }
-
-        return 1;
+        return 0;
+    }
+    if (1 != mpss_signature_digest_sign_final(ctx, sig, siglen, sigsize))
+    {
+        return 0;
     }
 
-    const OSSL_DISPATCH mpss_ecdsa_functions[] = {
-        {OSSL_FUNC_SIGNATURE_NEWCTX, reinterpret_cast<void (*)(void)>(mpss_signature_newctx)},
-        {OSSL_FUNC_SIGNATURE_FREECTX, reinterpret_cast<void (*)(void)>(mpss_signature_freectx)},
-        {OSSL_FUNC_SIGNATURE_DUPCTX, reinterpret_cast<void (*)(void)>(mpss_signature_dupctx)},
-        {OSSL_FUNC_SIGNATURE_GETTABLE_CTX_PARAMS, reinterpret_cast<void (*)(void)>(mpss_signature_gettable_ctx_params)},
-        {OSSL_FUNC_SIGNATURE_GET_CTX_PARAMS, reinterpret_cast<void (*)(void)>(mpss_signature_get_ctx_params)},
-        {OSSL_FUNC_SIGNATURE_SIGN_INIT, reinterpret_cast<void (*)(void)>(mpss_signature_sign_init)},
-        {OSSL_FUNC_SIGNATURE_SIGN, reinterpret_cast<void (*)(void)>(mpss_signature_sign)},
-        {OSSL_FUNC_SIGNATURE_VERIFY_INIT, reinterpret_cast<void (*)(void)>(mpss_signature_verify_init)},
-        {OSSL_FUNC_SIGNATURE_VERIFY, reinterpret_cast<void (*)(void)>(mpss_signature_verify)},
-        {OSSL_FUNC_SIGNATURE_DIGEST_SIGN_INIT, reinterpret_cast<void (*)(void)>(mpss_signature_digest_sign_init)},
-        {OSSL_FUNC_SIGNATURE_DIGEST_SIGN_UPDATE, reinterpret_cast<void (*)(void)>(mpss_signature_digest_sign_update)},
-        {OSSL_FUNC_SIGNATURE_DIGEST_SIGN_FINAL, reinterpret_cast<void (*)(void)>(mpss_signature_digest_sign_final)},
-        {OSSL_FUNC_SIGNATURE_DIGEST_SIGN, reinterpret_cast<void (*)(void)>(mpss_signature_digest_sign)},
-        {OSSL_FUNC_SIGNATURE_DIGEST_VERIFY_INIT, reinterpret_cast<void (*)(void)>(mpss_signature_digest_verify_init)},
-        {OSSL_FUNC_SIGNATURE_DIGEST_VERIFY_UPDATE,
-         reinterpret_cast<void (*)(void)>(mpss_signature_digest_verify_update)},
-        {OSSL_FUNC_SIGNATURE_DIGEST_VERIFY_FINAL, reinterpret_cast<void (*)(void)>(mpss_signature_digest_verify_final)},
-        {OSSL_FUNC_SIGNATURE_DIGEST_VERIFY, reinterpret_cast<void (*)(void)>(mpss_signature_digest_verify)},
-        OSSL_DISPATCH_END};
+    return 1;
+}
+
+extern "C" int mpss_signature_digest_verify_init(void *ctx, const char *mdname, void *provkey,
+                                                 const OSSL_PARAM params[])
+{
+    // We simply call mpss_signature_digest_sign_init. There is no difference.
+    return mpss_signature_digest_sign_init(ctx, mdname, provkey, params);
+}
+
+extern "C" int mpss_signature_digest_verify_update(void *ctx, const unsigned char *data, ::size_t datalen)
+{
+    // We simply call mpss_signature_digest_sign_update. There is no difference.
+    return mpss_signature_digest_sign_update(ctx, data, datalen);
+}
+
+extern "C" int mpss_signature_digest_verify_final(void *ctx, const unsigned char *sig, ::size_t siglen)
+{
+    mpss_signature_ctx *sctx = static_cast<mpss_signature_ctx *>(ctx);
+    if (nullptr == sctx)
+    {
+        return 0;
+    }
+
+    if (nullptr == sctx->dctx)
+    {
+        return 0;
+    }
+
+    // Check that the digest context is available and in the right state.
+    // This means that the EVP_MD_CTX and EVP_MD are already set up.
+    const digest_state state = sctx->dctx->state;
+    if ((state != digesting) && (state != finalized))
+    {
+        return 0;
+    }
+
+    if (state != finalized)
+    {
+        byte_vector digest(EVP_MAX_MD_SIZE);
+
+        // First, we try to finalize the digest.
+        unsigned int bytes_written = 0;
+        unsigned char *digest_ptr = reinterpret_cast<unsigned char *>(digest.data());
+        if (1 != EVP_DigestFinal_ex(sctx->dctx->evp_dctx, digest_ptr, &bytes_written))
+        {
+            return 0;
+        }
+
+        // Any errors after this are critical and should brick the context.
+        sctx->dctx->state = finalized;
+
+        const std::size_t digest_bytes = static_cast<std::size_t>(bytes_written);
+
+        // Sanity check: does digest_bytes match the expected size?
+        const std::size_t expected_bytes = sctx->pkey->key_pair->algorithm_info().hash_bits / 8;
+        if (digest_bytes != expected_bytes)
+        {
+            sctx->dctx->state = error;
+            return 0;
+        }
+
+        // Resize the vector to the correct size and save in the context.
+        digest.resize(digest_bytes);
+        sctx->dctx->digest = std::move(digest);
+    }
+
+    // The digest was successfully finalized, so we can now verify it.
+    const unsigned char *tbs = reinterpret_cast<const unsigned char *>(sctx->dctx->digest.data());
+    std::size_t tbslen = sctx->dctx->digest.size();
+    return mpss_signature_verify(ctx, sig, siglen, tbs, tbslen);
+}
+
+extern "C" int mpss_signature_digest_verify(void *ctx, const unsigned char *sig, ::size_t siglen,
+                                            const unsigned char *tbs, ::size_t tbslen)
+{
+    if (1 != mpss_signature_digest_verify_update(ctx, tbs, tbslen))
+    {
+        return 0;
+    }
+    if (1 != mpss_signature_digest_verify_final(ctx, sig, siglen))
+    {
+        return 0;
+    }
+
+    return 1;
+}
+
+const OSSL_DISPATCH mpss_ecdsa_functions[] = {
+    {OSSL_FUNC_SIGNATURE_NEWCTX, reinterpret_cast<void (*)(void)>(mpss_signature_newctx)},
+    {OSSL_FUNC_SIGNATURE_FREECTX, reinterpret_cast<void (*)(void)>(mpss_signature_freectx)},
+    {OSSL_FUNC_SIGNATURE_DUPCTX, reinterpret_cast<void (*)(void)>(mpss_signature_dupctx)},
+    {OSSL_FUNC_SIGNATURE_GETTABLE_CTX_PARAMS, reinterpret_cast<void (*)(void)>(mpss_signature_gettable_ctx_params)},
+    {OSSL_FUNC_SIGNATURE_GET_CTX_PARAMS, reinterpret_cast<void (*)(void)>(mpss_signature_get_ctx_params)},
+    {OSSL_FUNC_SIGNATURE_SIGN_INIT, reinterpret_cast<void (*)(void)>(mpss_signature_sign_init)},
+    {OSSL_FUNC_SIGNATURE_SIGN, reinterpret_cast<void (*)(void)>(mpss_signature_sign)},
+    {OSSL_FUNC_SIGNATURE_VERIFY_INIT, reinterpret_cast<void (*)(void)>(mpss_signature_verify_init)},
+    {OSSL_FUNC_SIGNATURE_VERIFY, reinterpret_cast<void (*)(void)>(mpss_signature_verify)},
+    {OSSL_FUNC_SIGNATURE_DIGEST_SIGN_INIT, reinterpret_cast<void (*)(void)>(mpss_signature_digest_sign_init)},
+    {OSSL_FUNC_SIGNATURE_DIGEST_SIGN_UPDATE, reinterpret_cast<void (*)(void)>(mpss_signature_digest_sign_update)},
+    {OSSL_FUNC_SIGNATURE_DIGEST_SIGN_FINAL, reinterpret_cast<void (*)(void)>(mpss_signature_digest_sign_final)},
+    {OSSL_FUNC_SIGNATURE_DIGEST_SIGN, reinterpret_cast<void (*)(void)>(mpss_signature_digest_sign)},
+    {OSSL_FUNC_SIGNATURE_DIGEST_VERIFY_INIT, reinterpret_cast<void (*)(void)>(mpss_signature_digest_verify_init)},
+    {OSSL_FUNC_SIGNATURE_DIGEST_VERIFY_UPDATE, reinterpret_cast<void (*)(void)>(mpss_signature_digest_verify_update)},
+    {OSSL_FUNC_SIGNATURE_DIGEST_VERIFY_FINAL, reinterpret_cast<void (*)(void)>(mpss_signature_digest_verify_final)},
+    {OSSL_FUNC_SIGNATURE_DIGEST_VERIFY, reinterpret_cast<void (*)(void)>(mpss_signature_digest_verify)},
+    OSSL_DISPATCH_END};
+
 } // namespace
 
-namespace mpss_openssl::provider {
-    const OSSL_ALGORITHM mpss_signature_algorithms[] = {
-        {mpss_sig_names[ECDSA_index], "provider=mpss", mpss_ecdsa_functions, "mpss ECDSA implementation"},
-        {nullptr, nullptr, nullptr, nullptr}};
+namespace mpss_openssl::provider
+{
+
+const OSSL_ALGORITHM mpss_signature_algorithms[] = {
+    {mpss_sig_names[ECDSA_index], "provider=mpss", mpss_ecdsa_functions, "mpss ECDSA implementation"},
+    {nullptr, nullptr, nullptr, nullptr}};
+
 }

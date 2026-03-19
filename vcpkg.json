@@ -1,11 +1,9 @@
 {
   "name": "mpss",
-  "version": "0.1.1",
+  "version": "1.0.0",
   "description": "A C++ library for multi-platform secret storage.",
   "license": "MIT",
-  "dependencies": [
-    "ms-gsl"
-  ],
+  "dependencies": [],
   "features": {
     "openssl": {
       "description": "Build the OpenSSL provider.",
@@ -18,7 +16,13 @@
       "dependencies": [
         "gtest"
       ]
+    },
+    "yubikey": {
+      "description": "Build with YubiKey PIV backend. Requires libykpiv to be installed separately via system package manager.",
+      "dependencies": [
+        "openssl"
+      ]
     }
   },
-  "builtin-baseline": "f2e1c41da38c71be74ef48684666991929b45418"
+  "builtin-baseline": "66c0373dc7fca549e5803087b9487edfe3aca0a1"
 }
