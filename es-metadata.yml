@@ -9,4 +9,4 @@ providers:
     routing:
       defaultAreaPath:
         org: msrcrypto
-        path: Auditable Data Structures\oZKS
+        path: Secret Storage

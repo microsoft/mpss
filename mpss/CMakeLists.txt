@@ -33,7 +33,6 @@ install(
 
 # Update variables in the parent scope.
 set(mpss_SOURCE_FILES ${mpss_SOURCE_FILES} PARENT_SCOPE)
-set(mpss_INCLUDE_DIRS ${mpss_INCLUDE_DIRS} PARENT_SCOPE)
 set(mpss_LINK_LIBRARIES ${mpss_LINK_LIBRARIES} PARENT_SCOPE)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" OR CMAKE_SYSTEM_NAME STREQUAL "iOS")

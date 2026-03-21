@@ -54,12 +54,13 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 # Enable yubikey feature in vcpkg if we are building with YubiKey backend.
 if(MPSS_BACKEND_YUBIKEY)
     list(APPEND VCPKG_MANIFEST_FEATURES "yubikey")
-
-    # Find libykpiv (not in vcpkg, must be system-installed).
-    find_package(YKPIV MODULE REQUIRED)
 endif()
 
-project(mpss VERSION 1.0.0 LANGUAGES C CXX)
+project(mpss VERSION 1.1.0 LANGUAGES C CXX)
+
+if(MPSS_BACKEND_YUBIKEY)
+    find_package(unofficial-libykpiv CONFIG REQUIRED)
+endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
     enable_language(OBJC)
@@ -231,13 +232,8 @@ if(TARGET ${mpss_TARGET})
     # Add backend-specific include directories and libraries. These are PUBLIC
     # so that consumers of a static mpss library can resolve the transitive
     # dependencies (e.g., libykpiv, OpenSSL) at their final link stage.
-    target_include_directories(${mpss_TARGET} PUBLIC ${mpss_INCLUDE_DIRS})
     target_link_libraries(${mpss_TARGET} PUBLIC ${mpss_LINK_LIBRARIES})
 
-    # Add YubiKey library directories if using YubiKey backend.
-    if(MPSS_BACKEND_YUBIKEY AND YKPIV_FOUND AND YKPIV_LIBRARY_DIRS)
-        target_link_directories(${mpss_TARGET} PUBLIC ${YKPIV_LIBRARY_DIRS})
-    endif()
 
     # For debug builds, append "_debug" to the library names.
     set_target_properties(${mpss_TARGET} PROPERTIES DEBUG_POSTFIX "_debug")
@@ -374,12 +370,6 @@ install(
     FILES "${mpss_CONFIG_FILENAME}" "${mpss_CONFIG_VERSION_FILENAME}"
     DESTINATION "${mpss_CONFIG_INSTALL_DIR}"
 )
-if(MPSS_BACKEND_YUBIKEY)
-    install(
-        FILES "${CMAKE_CURRENT_LIST_DIR}/cmake/FindYKPIV.cmake"
-        DESTINATION "${mpss_CONFIG_INSTALL_DIR}"
-    )
-endif()
 
 # Export mpssTargets from the build tree so it can be used without installing.
 export(
