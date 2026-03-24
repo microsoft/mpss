@@ -7,6 +7,8 @@
 #include <cstdlib>
 #include <string>
 
+#include "compat_env.h"
+
 #ifdef MPSS_BACKEND_YUBIKEY
 #include "mpss/impl/yubikey/yk_piv.h"
 #endif
