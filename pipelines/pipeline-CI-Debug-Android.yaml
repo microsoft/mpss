@@ -23,5 +23,5 @@ stages:
     jobs:
     - template: jobs.yaml
       parameters:
-        debug: true
+        debug: 'true'
         name: Android

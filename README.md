@@ -21,7 +21,7 @@ MPSS uses the following technologies on the different supported platforms:
 ## Compiling for different platforms
 
 MPSS core depends only on operating system APIs, except that it uses [GoogleTest](https://GitHub.com/Google/GoogleTest) for testing.
-When the YubiKey backend is enabled, it additionally requires [libykpiv](https://developers.yubico.com/yubico-piv-tool/) and [OpenSSL](https://GitHub.com/openssl/openssl).
+When the YubiKey backend is enabled, it additionally depends on [libykpiv](https://developers.yubico.com/yubico-piv-tool/) and [OpenSSL](https://GitHub.com/openssl/openssl), both provided automatically by vcpkg.
 The OpenSSL provider naturally requires [OpenSSL](https://GitHub.com/openssl/openssl) as well.
 
 ### Using CMake Presets (Windows, macOS, Linux)
@@ -36,7 +36,7 @@ cmake --install out/build/<build-preset-name> # optional; to install in custom d
 ```
 
 The list of available presets can be seen by running `cmake --list-presets=all`.
-Presets whose name includes `-with-yubikey` additionally enable the YubiKey PIV backend (requires `libykpiv`; [see below](#prerequisites)).
+Presets whose name includes `-with-yubikey` additionally enable the YubiKey PIV backend ([see prerequisites below](#prerequisites)).
 
 If you do not want to use presets, you can configure manually as shown in the platform-specific sections below.
 
@@ -62,60 +62,36 @@ The YubiKey PIV backend provides hardware-backed key storage using a YubiKey USB
 
 #### Prerequisites
 
-The YubiKey backend requires a YubiKey 4 or 5 series device and `libykpiv` (the C library from [yubico-piv-tool](https://github.com/Yubico/yubico-piv-tool)). This is **not available in vcpkg** and must be installed via your system package manager or built from source.
+The YubiKey backend requires a YubiKey 4 or 5 series device. The required `libykpiv` library (from [yubico-piv-tool](https://github.com/Yubico/yubico-piv-tool)) is provided automatically by vcpkg — no manual installation is needed.
 
-- **macOS**:
-  ```bash
-  brew install yubico-piv-tool
-  ```
+On **Linux**, the PC/SC smart card library must be installed separately, as it is a system dependency:
 
-- **Linux**:
-  ```bash
-  # Debian/Ubuntu
-  sudo apt-get install libykpiv-dev pkg-config
+```bash
+# Debian/Ubuntu
+sudo apt install libpcsclite-dev
 
-  # Fedora/RHEL
-  sudo dnf install yubico-piv-tool-devel pkgconfig
-  ```
-
-- **Windows**:
-
-  Install the Yubico PIV Tool, which includes the required `libykpiv` headers and library:
-  ```cmd
-  winget install Yubico.PIVTool
-  ```
-  This installs to `C:\Program Files\Yubico\Yubico PIV Tool` by default. Point CMake to this directory when configuring MPSS:
-  ```cmd
-  -DYKPIV_ROOT="C:\Program Files\Yubico\Yubico PIV Tool"
-  ```
-
-  **Runtime dependency**: The compiled binaries need `libykpiv.dll` and `zlib1.dll` at runtime. Either add `C:\Program Files\Yubico\Yubico PIV Tool\bin` to your `PATH`, or copy `libykpiv.dll` and `zlib1.dll` from that directory to the same directory as your executable.
-
-**Note on pkg-config**: The CMakeLists.txt uses pkg-config to find `libykpiv` on Unix-like systems (see [cmake/FindYKPIV.cmake](cmake/FindYKPIV.cmake)). On Windows, pkg-config is not typically available, so the build system will fall back to manual library detection using `find_path` and `find_library`. In either case, you can set `YKPIV_ROOT` to point to a custom `libykpiv` installation directory.
+# Fedora/RHEL
+sudo dnf install pcsc-lite-devel
+```
 
 #### Build Configuration
 
 - **macOS/Linux:**
   ```bash
-  # Configure release build with YubiKey backend enabled
   cmake -S . -B build \
       -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
       -DMPSS_BACKEND_YUBIKEY=ON \
       -DCMAKE_BUILD_TYPE=Release
-  
-  # Build
+
   cmake --build build
   ```
 
 - **Windows:**
   ```cmd
-  REM If you installed libykpiv as described above
   cmake -S . -B build ^
       -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" ^
-      -DMPSS_BACKEND_YUBIKEY=ON ^
-      -DYKPIV_ROOT="C:\Program Files\Yubico\Yubico PIV Tool"
+      -DMPSS_BACKEND_YUBIKEY=ON
 
-  REM Build
   cmake --build build --config Release
   ```
 
@@ -233,9 +209,8 @@ The following table outlines the common CMake configuration options recognized b
 | `MPSS_BUILD_MPSS_CORE_SHARED=ON` | Build the core library as a shared library. |
 | `MPSS_BUILD_MPSS_OPENSSL_STATIC=ON` | Build the OpenSSL provider as a static library. |
 | `MPSS_BUILD_MPSS_OPENSSL_SHARED=ON` | Build the OpenSSL provider as a shared library. |
-| `MPSS_BACKEND_YUBIKEY=ON` | Enable the YubiKey PIV backend (requires `libykpiv`). |
+| `MPSS_BACKEND_YUBIKEY=ON` | Enable the YubiKey PIV backend. |
 | `BUILD_SHARED_LIBS=ON` | Build all targets as shared libraries. |
-| `YKPIV_ROOT=<path>` | Path to a custom `libykpiv` installation directory.  |
 
 Static targets are named `mpss::mpss_static` and `mpss::mpss_openssl_static`, whereas shared targets are `mpss::mpss` and `mpss::mpss_openssl`.
 As usual, you can set `CMAKE_BUILD_TYPE` to set the build type (`Release`, `Debug`, etc.) when using a single-configuration generator.
