@@ -1,9 +1,6 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT license.
 
-# Input variables (optional, set before calling find_package):
-#   - YKPIV_ROOT : Path to a custom libykpiv installation directory. Only needed when MPSS
-#                  was built with YubiKey backend and libykpiv is not in a standard location.
 #
 # Created variables:
 #   - MPSS_CORE_SHARED_FOUND : YES if MPSS is found and target mpss::mpss is available.
@@ -62,7 +59,7 @@ if(MPSS_CORE_SHARED_FOUND OR MPSS_CORE_STATIC_FOUND)
     # on OpenSSL and libykpiv that consumers must resolve.
     if(MPSS_BACKEND_YUBIKEY)
         find_dependency(OpenSSL 3 REQUIRED)
-        find_dependency(YKPIV MODULE REQUIRED)
+        find_dependency(unofficial-libykpiv CONFIG REQUIRED)
     endif()
 endif()
 

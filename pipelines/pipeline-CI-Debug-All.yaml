@@ -1,4 +1,5 @@
-# This defines a pipeline to build on Windows, Linux, and macOS in Debug mode.
+# This defines a pipeline to build on Windows, macOS, Android, and iOS in Debug mode,
+# including YubiKey backend builds on Windows, macOS, and Linux.
 
 trigger:
   batch: true
@@ -18,17 +19,32 @@ stages:
     jobs:
     - template: jobs.yaml
       parameters:
-        debug: true
+        debug: 'true'
         name: Windows
     - template: jobs.yaml
       parameters:
-        debug: true
+        debug: 'true'
+        name: Windows
+        yubikey: 'true'
+    - template: jobs.yaml
+      parameters:
+        debug: 'true'
         name: macOS
     - template: jobs.yaml
       parameters:
-        debug: true
+        debug: 'true'
+        name: macOS
+        yubikey: 'true'
+    - template: jobs.yaml
+      parameters:
+        debug: 'true'
+        name: Linux
+        yubikey: 'true'
+    - template: jobs.yaml
+      parameters:
+        debug: 'true'
         name: Android
     - template: jobs.yaml
       parameters:
-        debug: true
+        debug: 'true'
         name: iOS

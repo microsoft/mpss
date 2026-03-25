@@ -4,6 +4,7 @@
 #include "mpss/key_policy.h"
 #include "mpss/log.h"
 #include "mpss/mpss.h"
+#include "tests/compat_env.h"
 #include <cstddef>
 #include <cstdint>
 #include <cstring>

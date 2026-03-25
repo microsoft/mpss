@@ -7,7 +7,6 @@ if("${CMAKE_SOURCE_DIR}" STREQUAL "${CMAKE_CURRENT_SOURCE_DIR}")
 endif()
 
 # Initialize variables.
-set(mpss_INCLUDE_DIRS "")
 set(mpss_LINK_LIBRARIES "")
 
 list(APPEND mpss_SOURCE_FILES
@@ -53,5 +52,4 @@ endif()
 
 # Update variables in parent scope.
 set(mpss_SOURCE_FILES ${mpss_SOURCE_FILES} PARENT_SCOPE)
-set(mpss_INCLUDE_DIRS ${mpss_INCLUDE_DIRS} PARENT_SCOPE)
 set(mpss_LINK_LIBRARIES ${mpss_LINK_LIBRARIES} PARENT_SCOPE)
