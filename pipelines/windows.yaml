@@ -1,4 +1,6 @@
 parameters:
+  configuration: 'Release'
+  path: 'Release'
   yubikey: 'false'
 
 steps:

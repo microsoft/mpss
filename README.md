@@ -127,29 +127,29 @@ cmake --install build-ios-simulator --config Release --prefix install-ios-simula
 
 # We need some temporary directory structure to create XCFrameworks.
 mkdir -p xcf/include/mpss/{device,simulator}
-rsync -a install-ios-device/include/mpss-1.0/mpss xcf/include/mpss/device/mpss
-rsync -a install-ios-simulator/include/mpss-1.0/mpss xcf/include/mpss/simulator/mpss
+rsync -a install-ios-device/include/mpss-1.1/mpss xcf/include/mpss/device/mpss
+rsync -a install-ios-simulator/include/mpss-1.1/mpss xcf/include/mpss/simulator/mpss
 
 # Only if building also mpss-openssl.
 mkdir -p xcf/include/mpss-openssl/{device,simulator}
-rsync -a install-ios-device/include/mpss-1.0/mpss-openssl xcf/include/mpss-openssl/device/mpss-openssl
-rsync -a install-ios-simulator/include/mpss-1.0/mpss-openssl xcf/include/mpss-openssl/simulator/mpss-openssl
+rsync -a install-ios-device/include/mpss-1.1/mpss-openssl xcf/include/mpss-openssl/device/mpss-openssl
+rsync -a install-ios-simulator/include/mpss-1.1/mpss-openssl xcf/include/mpss-openssl/simulator/mpss-openssl
 rsync -a build-ios-device/vcpkg_installed/arm64-ios/include/openssl xcf/include/mpss-openssl/device
 rsync -a build-ios-simulator/vcpkg_installed/arm64-ios/include/openssl xcf/include/mpss-openssl/simulator
 
 # Create an XCFramework for mpss.
 xcodebuild -create-xcframework                                      \
-    -library install-ios-device/lib/mpss-1.0/libmpss_static.a       \
+    -library install-ios-device/lib/mpss-1.1/libmpss_static.a       \
     -headers xcf/include/mpss/device                                \
-    -library install-ios-simulator/lib/mpss-1.0/libmpss_static.a    \
+    -library install-ios-simulator/lib/mpss-1.1/libmpss_static.a    \
     -headers xcf/include/mpss/simulator                             \
-    -output libmpss-1.0.xcframework
+    -output libmpss-1.1.xcframework
 
 # Only if building also mpss-openssl.
 xcodebuild -create-xcframework                                              \
-    -library install-ios-device/lib/mpss-1.0/libmpss_openssl_static.a       \
+    -library install-ios-device/lib/mpss-1.1/libmpss_openssl_static.a       \
     -headers xcf/include/mpss-openssl/device                                \
-    -library install-ios-simulator/lib/mpss-1.0/libmpss_openssl_static.a    \
+    -library install-ios-simulator/lib/mpss-1.1/libmpss_openssl_static.a    \
     -headers xcf/include/mpss-openssl/simulator                             \
     -output libmpss_openssl-1.0.xcframework
 ```

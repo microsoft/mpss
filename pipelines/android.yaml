@@ -1,3 +1,6 @@
+parameters:
+  configuration: 'Release'
+
 steps:
 - task: JavaToolInstaller@0
   displayName: 'Install JDK 21'

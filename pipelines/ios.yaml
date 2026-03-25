@@ -1,3 +1,6 @@
+parameters:
+  configuration: 'Release'
+
 steps:
 - task: CmdLine@2
   displayName: 'Bootstrap vcpkg'

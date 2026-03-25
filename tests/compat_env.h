@@ -6,16 +6,37 @@
 // Platform-compatible wrappers for setenv / unsetenv.
 // MSVC does not provide the POSIX versions; _putenv_s is the equivalent.
 
-#ifdef _WIN32
+#if defined(_WIN32) && defined(_MSC_VER)
+#include <cerrno>
 #include <cstdlib>
 
-inline int setenv(const char *name, const char *value, int /*overwrite*/) noexcept
+inline int setenv(const char *name, const char *value, int overwrite) noexcept
 {
-    return _putenv_s(name, value);
+    if (0 == overwrite)
+    {
+        size_t len = 0;
+        if (0 == getenv_s(&len, nullptr, 0, name) && len > 0)
+        {
+            return 0;
+        }
+    }
+    const errno_t err = _putenv_s(name, value);
+    if (0 != err)
+    {
+        errno = err;
+        return -1;
+    }
+    return 0;
 }
 
 inline int unsetenv(const char *name) noexcept
 {
-    return _putenv_s(name, "");
+    const errno_t err = _putenv_s(name, "");
+    if (0 != err)
+    {
+        errno = err;
+        return -1;
+    }
+    return 0;
 }
-#endif // _WIN32
+#endif // _WIN32 && _MSC_VER
