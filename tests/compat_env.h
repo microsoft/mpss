@@ -9,9 +9,15 @@
 #if defined(_WIN32) && defined(_MSC_VER)
 #include <cerrno>
 #include <cstdlib>
+#include <cstring>
 
 inline int setenv(const char *name, const char *value, int overwrite) noexcept
 {
+    if (nullptr == name || '\0' == name[0] || nullptr != std::strchr(name, '=') || nullptr == value)
+    {
+        errno = EINVAL;
+        return -1;
+    }
     if (0 == overwrite)
     {
         size_t len = 0;
@@ -31,6 +37,11 @@ inline int setenv(const char *name, const char *value, int overwrite) noexcept
 
 inline int unsetenv(const char *name) noexcept
 {
+    if (nullptr == name || '\0' == name[0] || nullptr != std::strchr(name, '='))
+    {
+        errno = EINVAL;
+        return -1;
+    }
     const errno_t err = _putenv_s(name, "");
     if (0 != err)
     {

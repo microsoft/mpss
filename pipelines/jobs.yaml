@@ -18,10 +18,10 @@ jobs:
         parameters:
           yubikey: ${{ parameters.yubikey }}
           ${{ if eq(parameters.debug, 'true') }}:
-            configuration: 'debug'
+            configuration: 'Debug'
             path: 'Debug'
           ${{ if eq(parameters.debug, 'false') }}:
-            configuration: 'release'
+            configuration: 'Release'
             path: 'Release'
   - ${{ if ne(parameters.yubikey, 'true') }}:
     - job: ${{ parameters.name }}
@@ -34,10 +34,10 @@ jobs:
         parameters:
           yubikey: ${{ parameters.yubikey }}
           ${{ if eq(parameters.debug, 'true') }}:
-            configuration: 'debug'
+            configuration: 'Debug'
             path: 'Debug'
           ${{ if eq(parameters.debug, 'false') }}:
-            configuration: 'release'
+            configuration: 'Release'
             path: 'Release'
 
 - ${{ if and(eq(parameters.name, 'Linux'), eq(parameters.yubikey, 'true')) }}:

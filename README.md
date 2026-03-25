@@ -151,7 +151,7 @@ xcodebuild -create-xcframework                                              \
     -headers xcf/include/mpss-openssl/device                                \
     -library install-ios-simulator/lib/mpss-1.1/libmpss_openssl_static.a    \
     -headers xcf/include/mpss-openssl/simulator                             \
-    -output libmpss_openssl-1.0.xcframework
+    -output libmpss_openssl-1.1.xcframework
 ```
 Once you have the XCFramework(s), you can simply include them in your Xcode project as Framework dependencies.
 You will naturally still need to build OpenSSL itself for iOS to be able to load and use the OpenSSL provider.
