@@ -7,7 +7,12 @@ steps:
     displayName: 'Install pcsclite (Linux)'
     condition: eq(variables['Agent.OS'], 'Linux')
     inputs:
-      script: sudo apt-get update && sudo apt-get install -y libpcsclite-dev
+      script: |
+        if command -v sudo > /dev/null; then
+          sudo apt-get update && sudo apt-get install -y libpcsclite-dev
+        else
+          apt-get update && apt-get install -y libpcsclite-dev
+        fi
 
 - task: CmdLine@2
   displayName: 'Bootstrap vcpkg'
@@ -25,20 +30,20 @@ steps:
   - task: CMake@1
     displayName: 'Configure MPSS'
     inputs:
-      cmakeArgs: -S . -B build -GNinja -DCMAKE_BUILD_TYPE='${{ parameters.configuration }}' -DMPSS_BUILD_TESTS=ON -DMPSS_BUILD_MPSS_OPENSSL_STATIC=ON -DCMAKE_TOOLCHAIN_FILE=$(Build.SourcesDirectory)/vcpkg/scripts/buildsystems/vcpkg.cmake
+      cmakeArgs: -S . -B build -GNinja -DCMAKE_BUILD_TYPE=${{ parameters.configuration }} -DMPSS_BUILD_TESTS=ON -DMPSS_BUILD_MPSS_OPENSSL_STATIC=ON -DCMAKE_TOOLCHAIN_FILE=$(Build.SourcesDirectory)/vcpkg/scripts/buildsystems/vcpkg.cmake
       workingDirectory: '$(Build.SourcesDirectory)'
 
 - ${{ if eq(parameters.yubikey, 'true') }}:
   - task: CMake@1
     displayName: 'Configure MPSS (YubiKey)'
     inputs:
-      cmakeArgs: -S . -B build -GNinja -DCMAKE_BUILD_TYPE='${{ parameters.configuration }}' -DMPSS_BUILD_TESTS=ON -DMPSS_BUILD_MPSS_OPENSSL_STATIC=ON -DMPSS_BACKEND_YUBIKEY=ON -DCMAKE_TOOLCHAIN_FILE=$(Build.SourcesDirectory)/vcpkg/scripts/buildsystems/vcpkg.cmake
+      cmakeArgs: -S . -B build -GNinja -DCMAKE_BUILD_TYPE=${{ parameters.configuration }} -DMPSS_BUILD_TESTS=ON -DMPSS_BUILD_MPSS_OPENSSL_STATIC=ON -DMPSS_BACKEND_YUBIKEY=ON -DCMAKE_TOOLCHAIN_FILE=$(Build.SourcesDirectory)/vcpkg/scripts/buildsystems/vcpkg.cmake
       workingDirectory: '$(Build.SourcesDirectory)'
 
 - task: CMake@1
   displayName: 'Build MPSS'
   inputs:
-    cmakeArgs: --build build --config '${{ parameters.configuration }}'
+    cmakeArgs: --build build --config ${{ parameters.configuration }}
     workingDirectory: '$(Build.SourcesDirectory)'
 
 - ${{ if ne(parameters.yubikey, 'true') }}:

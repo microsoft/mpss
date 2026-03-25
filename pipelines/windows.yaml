@@ -35,7 +35,7 @@ steps:
           -S .
           -B build
           -G "Visual Studio 17 2022"
-          -DCMAKE_BUILD_TYPE='${{ parameters.configuration }}'
+          -DCMAKE_BUILD_TYPE=${{ parameters.configuration }}
           -DMPSS_BUILD_TESTS=ON
           -DMPSS_BUILD_MPSS_OPENSSL_STATIC=ON
           -DCMAKE_TOOLCHAIN_FILE=$(Build.SourcesDirectory)\vcpkg\scripts\buildsystems\vcpkg.cmake
@@ -50,7 +50,7 @@ steps:
           -S .
           -B build
           -G "Visual Studio 17 2022"
-          -DCMAKE_BUILD_TYPE='${{ parameters.configuration }}'
+          -DCMAKE_BUILD_TYPE=${{ parameters.configuration }}
           -DMPSS_BUILD_TESTS=ON
           -DMPSS_BUILD_MPSS_OPENSSL_STATIC=ON
           -DMPSS_BACKEND_YUBIKEY=ON

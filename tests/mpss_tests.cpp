@@ -4,6 +4,7 @@
 #include "mpss/key_policy.h"
 #include "mpss/log.h"
 #include "mpss/mpss.h"
+#include "tests/compat_env.h"
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -12,8 +13,6 @@
 #include <string>
 #include <utility>
 #include <vector>
-
-#include "compat_env.h"
 
 #ifdef MPSS_BACKEND_YUBIKEY
 #include "mpss/impl/yubikey/yk_piv.h"

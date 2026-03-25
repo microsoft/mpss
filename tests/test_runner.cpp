@@ -1,13 +1,11 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#include <gtest/gtest.h>
-
 #include "mpss/log.h"
+#include "tests/compat_env.h"
 #include <cstdlib>
+#include <gtest/gtest.h>
 #include <string>
-
-#include "compat_env.h"
 
 #ifdef MPSS_BACKEND_YUBIKEY
 #include "mpss/impl/yubikey/yk_piv.h"

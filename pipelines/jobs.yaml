@@ -8,24 +8,37 @@ jobs:
 
 - ${{ if eq(parameters.name, 'Windows') }}:
   - ${{ if eq(parameters.yubikey, 'true') }}:
-      job: ${{ parameters.name }}_YubiKey
+    - job: ${{ parameters.name }}_YubiKey
       displayName: "${{ parameters.name }} (YubiKey)"
-    ${{ if ne(parameters.yubikey, 'true') }}:
-      job: ${{ parameters.name }}
+      timeoutInMinutes: 180
+      pool:
+        vmImage: 'windows-latest'
+      steps:
+      - template: windows.yaml
+        parameters:
+          yubikey: ${{ parameters.yubikey }}
+          ${{ if eq(parameters.debug, 'true') }}:
+            configuration: 'debug'
+            path: 'Debug'
+          ${{ if eq(parameters.debug, 'false') }}:
+            configuration: 'release'
+            path: 'Release'
+  - ${{ if ne(parameters.yubikey, 'true') }}:
+    - job: ${{ parameters.name }}
       displayName: ${{ parameters.name }}
-    timeoutInMinutes: 180
-    pool:
-      vmImage: 'windows-latest'
-    steps:
-    - template: windows.yaml
-      parameters:
-        yubikey: ${{ parameters.yubikey }}
-        ${{ if eq(parameters.debug, 'true') }}:
-          configuration: 'debug'
-          path: 'Debug'
-        ${{ if eq(parameters.debug, 'false') }}:
-          configuration: 'release'
-          path: 'Release'
+      timeoutInMinutes: 180
+      pool:
+        vmImage: 'windows-latest'
+      steps:
+      - template: windows.yaml
+        parameters:
+          yubikey: ${{ parameters.yubikey }}
+          ${{ if eq(parameters.debug, 'true') }}:
+            configuration: 'debug'
+            path: 'Debug'
+          ${{ if eq(parameters.debug, 'false') }}:
+            configuration: 'release'
+            path: 'Release'
 
 - ${{ if and(eq(parameters.name, 'Linux'), eq(parameters.yubikey, 'true')) }}:
   - job: ${{ parameters.name }}_YubiKey
@@ -44,22 +57,33 @@ jobs:
 
 - ${{ if eq(parameters.name, 'macOS') }}:
   - ${{ if eq(parameters.yubikey, 'true') }}:
-      job: ${{ parameters.name }}_YubiKey
+    - job: ${{ parameters.name }}_YubiKey
       displayName: "${{ parameters.name }} (YubiKey)"
-    ${{ if ne(parameters.yubikey, 'true') }}:
-      job: ${{ parameters.name }}
+      pool:
+        vmImage: 'macos-latest'
+      steps:
+      - template: nix.yaml
+        parameters:
+          artifactName: macos-drop
+          yubikey: ${{ parameters.yubikey }}
+          ${{ if eq(parameters.debug, 'true') }}:
+            configuration: 'Debug'
+          ${{ if eq(parameters.debug, 'false') }}:
+            configuration: 'Release'
+  - ${{ if ne(parameters.yubikey, 'true') }}:
+    - job: ${{ parameters.name }}
       displayName: ${{ parameters.name }}
-    pool:
-      vmImage: 'macos-latest'
-    steps:
-    - template: nix.yaml
-      parameters:
-        artifactName: macos-drop
-        yubikey: ${{ parameters.yubikey }}
-        ${{ if eq(parameters.debug, 'true') }}:
-          configuration: 'Debug'
-        ${{ if eq(parameters.debug, 'false') }}:
-          configuration: 'Release'
+      pool:
+        vmImage: 'macos-latest'
+      steps:
+      - template: nix.yaml
+        parameters:
+          artifactName: macos-drop
+          yubikey: ${{ parameters.yubikey }}
+          ${{ if eq(parameters.debug, 'true') }}:
+            configuration: 'Debug'
+          ${{ if eq(parameters.debug, 'false') }}:
+            configuration: 'Release'
 
 - ${{ if eq(parameters.name, 'Android') }}:
   - job: ${{ parameters.name }}
