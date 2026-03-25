@@ -23,10 +23,11 @@ list(APPEND mpss_SOURCE_FILES
 
 # The YubiKey backend uses OpenSSL directly (EVP, X509) for verification and
 # certificate handling. Ensure it is available even when mpss-openssl is not built.
-find_package(OpenSSL 3 CONFIG REQUIRED)
+find_package(OpenSSL 3 REQUIRED)
 
 # Add link libraries. The unofficial::libykpiv::ykpiv target carries its own
-# include directories and transitive dependencies (including OpenSSL::Crypto).
+# include directories and transitive dependencies. OpenSSL::Crypto is also
+# linked explicitly because the YubiKey backend uses OpenSSL directly (see above).
 list(APPEND mpss_LINK_LIBRARIES unofficial::libykpiv::ykpiv OpenSSL::Crypto)
 
 # Update parent scope

@@ -59,6 +59,8 @@ endif()
 project(mpss VERSION 1.1.0 LANGUAGES C CXX)
 
 if(MPSS_BACKEND_YUBIKEY)
+    # The vcpkg port is named "yubico-piv-tool" but exports the CMake config
+    # "unofficial-libykpiv" with target unofficial::libykpiv::ykpiv.
     find_package(unofficial-libykpiv CONFIG REQUIRED)
 endif()
 
@@ -290,7 +292,7 @@ if(TARGET ${mpss_openssl_TARGET})
     )
 
     # We also need to link against OpenSSL::Crypto. This is a public dependency.
-    find_package(OpenSSL 3 CONFIG REQUIRED)
+    find_package(OpenSSL 3 REQUIRED)
     target_link_libraries(${mpss_openssl_TARGET} PUBLIC OpenSSL::Crypto)
 
     # Naturally, we depend on mpss. This is a PUBLIC dependency because

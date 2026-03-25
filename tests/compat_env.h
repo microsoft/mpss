@@ -42,6 +42,10 @@ inline int unsetenv(const char *name) noexcept
         errno = EINVAL;
         return -1;
     }
+
+    // On MSVC, _putenv_s with an empty string removes the variable from the
+    // environment (returning nullptr from getenv), matching POSIX unsetenv
+    // semantics. This is documented Microsoft CRT behavior.
     const errno_t err = _putenv_s(name, "");
     if (0 != err)
     {

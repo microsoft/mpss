@@ -58,7 +58,7 @@ if(MPSS_CORE_SHARED_FOUND OR MPSS_CORE_STATIC_FOUND)
     # When MPSS was built with the YubiKey backend, it has PUBLIC dependencies
     # on OpenSSL and libykpiv that consumers must resolve.
     if(MPSS_BACKEND_YUBIKEY)
-        find_dependency(OpenSSL 3 CONFIG REQUIRED)
+        find_dependency(OpenSSL 3 REQUIRED)
         find_dependency(unofficial-libykpiv CONFIG REQUIRED)
     endif()
 endif()
