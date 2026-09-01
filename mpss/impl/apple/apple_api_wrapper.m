@@ -743,7 +743,8 @@ bool MPSS_DeleteKey(const char *keyName) {
     // Nothing this library creates matches here: SecKeyCreateRandomKey stores only the private key,
     // and the public half is derived on demand rather than persisted. The pass is kept for keys left
     // by the deprecated SecKeyGeneratePair, which stored both halves as separate items, so an older
-    // build or another tool can leave a public key behind. Matching nothing is a success.
+    // build or another tool can leave a public key behind. Matching nothing is a success. This is
+    // transitional: remove the pass once those legacy keys are no longer supported.
     query[(id)kSecAttrKeyClass] = (__bridge id)kSecAttrKeyClassPublic;
 
     status = DeleteAllMatchingItems(query, &deleted);

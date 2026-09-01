@@ -262,7 +262,7 @@ std::optional<std::string> try_get_signature_scheme(const std::unique_ptr<KeyPai
 [[nodiscard]]
 std::optional<std::string> try_get_algorithm_name(std::string_view str)
 {
-    // Note: The output of this function does *not* indicate curve information!
+    // Note: The output of this function does *not* indicate group information!
 
     // First we'll try to extract the signature scheme and hash function.
     const std::optional<std::string> sig_scheme = try_get_signature_scheme(str);
@@ -299,7 +299,7 @@ std::optional<std::string> try_get_algorithm_name(std::string_view str)
 [[nodiscard]]
 std::optional<std::string> try_get_algorithm_name(const std::unique_ptr<KeyPair> &key_pair)
 {
-    // Note: The output of this function does *not* indicate curve information!
+    // Note: The output of this function does *not* indicate group information!
 
     // Fail if no key is present.
     if (nullptr == key_pair)
@@ -316,7 +316,7 @@ std::optional<std::string> try_get_algorithm_name(const std::unique_ptr<KeyPair>
 mpss::Algorithm try_get_mpss_algorithm(std::string_view str)
 {
     // This function tries to retrieve the complete mpss algorithm description,
-    // which includes the signature scheme descriptor, curve, and hash function.
+    // which includes the signature scheme descriptor, group, and hash function.
 
     if (str.empty())
     {
@@ -330,7 +330,7 @@ mpss::Algorithm try_get_mpss_algorithm(std::string_view str)
         return mpss::Algorithm::unsupported;
     }
 
-    // Next, try to get the curve name.
+    // Next, try to get the group name.
     const std::optional<std::string> ec_group_name = try_get_ec_group(str);
     if (!ec_group_name)
     {
@@ -355,7 +355,7 @@ mpss::Algorithm try_get_mpss_algorithm(std::string_view str)
 std::optional<std::string> try_get_mpss_algorithm_name(std::string_view str)
 {
     // This function tries to retrieve the complete mpss algorithm description,
-    // which includes the signature scheme descriptor, curve, and hash function.
+    // which includes the signature scheme descriptor, group, and hash function.
 
     const mpss::Algorithm algorithm = try_get_mpss_algorithm(str);
     if (mpss::Algorithm::unsupported != algorithm)

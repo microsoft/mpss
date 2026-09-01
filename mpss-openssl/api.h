@@ -112,7 +112,8 @@ extern "C"
      * not consume the error; see @ref mpss_clear_error.
      *
      * @return A string describing the last error, or an empty string if there is none. The returned
-     * pointer is valid until the next call to @ref mpss_get_error on the same thread.
+     * pointer is valid until the next call to @ref mpss_get_error on the same thread, and the string
+     * it points to is destroyed when that thread exits; copy it if it must outlive either.
      */
     MPSS_OPENSSL_DECOR const char *mpss_get_error(void);
 

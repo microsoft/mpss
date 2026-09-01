@@ -225,7 +225,7 @@ class BackendRegistry
   private:
     BackendRegistry() = default;
 
-    void install_builtin(std::shared_ptr<Backend> backend)
+    void install_builtin(const std::shared_ptr<Backend> &backend)
     {
         // Sole entry point into the map, and the map is dereferenced unguarded when listing
         // backends, so nothing unusable may enter it.
@@ -236,7 +236,7 @@ class BackendRegistry
         }
 
         const std::string backend_name = backend->name();
-        const bool inserted = backends_.try_emplace(backend_name, std::move(backend)).second;
+        const bool inserted = backends_.try_emplace(backend_name, backend).second;
         if (!inserted)
         {
             utils::log_error("Built-in backend '{}' was registered twice.", backend_name);
