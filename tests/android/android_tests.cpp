@@ -216,7 +216,157 @@ std::optional<bool> java_key_operation(std::string_view operation, std::string_v
     return mpss::impl::os::utils::unbox_boolean(env, result.get());
 }
 
+std::optional<bool> java_create_key(std::string_view key_name, mpss::Algorithm algorithm)
+{
+    mpss::impl::os::JNIEnvGuard guard;
+    if (!guard.valid())
+    {
+        mpss::utils::set_error("Could not get JNI environment.");
+        return std::nullopt;
+    }
+    JNIEnv *const env = guard.env();
+
+    jclass key_management = mpss::impl::os::JNIHelper::key_management_class();
+    if (nullptr == key_management)
+    {
+        mpss::utils::set_error("Could not get KeyManagement Java class.");
+        return std::nullopt;
+    }
+
+    jmethodID method = env->GetStaticMethodID(
+        key_management, "CreateKey", "(Ljava/lang/String;Lcom/microsoft/research/mpss/Algorithm;)Ljava/lang/Boolean;");
+    if (mpss::impl::os::utils::check_and_clear_exception(env, "resolving KeyManagement.CreateKey"))
+    {
+        return std::nullopt;
+    }
+    if (nullptr == method)
+    {
+        mpss::utils::set_error("Could not get KeyManagement.CreateKey Java method.");
+        return std::nullopt;
+    }
+
+    jclass algorithm_class = mpss::impl::os::JNIHelper::algorithm_class();
+    if (nullptr == algorithm_class)
+    {
+        mpss::utils::set_error("Could not get Algorithm Java class.");
+        return std::nullopt;
+    }
+
+    const char *algorithm_field = nullptr;
+    switch (algorithm)
+    {
+    case mpss::Algorithm::ecdsa_secp256r1_sha256:
+        algorithm_field = "secp256r1";
+        break;
+    case mpss::Algorithm::ecdsa_secp384r1_sha384:
+        algorithm_field = "secp384r1";
+        break;
+    case mpss::Algorithm::ecdsa_secp521r1_sha512:
+        algorithm_field = "secp521r1";
+        break;
+    default:
+        mpss::utils::set_error("Unsupported algorithm.");
+        return std::nullopt;
+    }
+
+    jfieldID algorithm_field_id =
+        env->GetStaticFieldID(algorithm_class, algorithm_field, "Lcom/microsoft/research/mpss/Algorithm;");
+    if (mpss::impl::os::utils::check_and_clear_exception(env, "resolving an Algorithm enum value"))
+    {
+        return std::nullopt;
+    }
+    if (nullptr == algorithm_field_id)
+    {
+        mpss::utils::set_error("Could not find appropriate enum value for Algorithm.");
+        return std::nullopt;
+    }
+
+    jni_object algorithm_value(env, env->GetStaticObjectField(algorithm_class, algorithm_field_id));
+    if (mpss::impl::os::utils::check_and_clear_exception(env, "getting an Algorithm enum value"))
+    {
+        return std::nullopt;
+    }
+    if (algorithm_value.is_null())
+    {
+        mpss::utils::set_error("Could not get object for Algorithm value.");
+        return std::nullopt;
+    }
+
+    const std::string key_name_string{key_name};
+    jni_string java_key_name(env, env->NewStringUTF(key_name_string.c_str()));
+    if (mpss::impl::os::utils::check_and_clear_exception(env, "converting an Android key name to a Java string"))
+    {
+        return std::nullopt;
+    }
+    if (java_key_name.is_null())
+    {
+        mpss::utils::set_error("Could not convert key name to Java String.");
+        return std::nullopt;
+    }
+
+    jni_object result(env,
+                      env->CallStaticObjectMethod(key_management, method, java_key_name.get(), algorithm_value.get()));
+    if (mpss::impl::os::utils::check_and_clear_exception(env, "calling KeyManagement.CreateKey"))
+    {
+        return std::nullopt;
+    }
+    if (result.is_null())
+    {
+        mpss::impl::os::utils::report_java_error(env, "KeyManagement.CreateKey");
+        return std::nullopt;
+    }
+
+    const std::optional<bool> created = mpss::impl::os::utils::unbox_boolean(env, result.get());
+    if (created.has_value() && !created.value())
+    {
+        mpss::impl::os::utils::report_java_error(env, "KeyManagement.CreateKey");
+    }
+
+    return created;
+}
+
 } // namespace
+
+TEST(AndroidSecurityTest, JavaCreateKeyRefusesToReplaceExistingKey)
+{
+    using enum mpss::Algorithm;
+
+    if (!mpss::is_algorithm_available(ecdsa_secp256r1_sha256))
+    {
+        GTEST_SKIP() << "Algorithm not supported by current backend";
+    }
+
+    const std::string key_name = "test_android_java_duplicate_create";
+    if (std::unique_ptr<mpss::KeyPair> existing = mpss::KeyPair::Open(key_name); nullptr != existing)
+    {
+        ASSERT_TRUE(existing->delete_key());
+    }
+
+    std::unique_ptr<mpss::KeyPair> handle = mpss::KeyPair::Create(key_name, ecdsa_secp256r1_sha256);
+    ASSERT_NE(nullptr, handle) << mpss::get_error();
+
+    const std::size_t public_key_size = handle->extract_key({});
+    ASSERT_NE(0, public_key_size);
+    std::vector<std::byte> original_public_key(public_key_size);
+    ASSERT_EQ(public_key_size, handle->extract_key(original_public_key));
+
+    handle->release_key();
+    handle.reset();
+
+    // The Java layer is called directly because the backend rejects a duplicate name before the JNI crossing.
+    const std::optional<bool> created = java_create_key(key_name, ecdsa_secp256r1_sha256);
+    ASSERT_TRUE(created.has_value());
+    EXPECT_FALSE(created.value());
+    EXPECT_NE(std::string::npos, mpss::get_error().find("Key with same name already exists"));
+
+    std::unique_ptr<mpss::KeyPair> reopened = mpss::KeyPair::Open(key_name);
+    ASSERT_NE(nullptr, reopened) << mpss::get_error();
+    std::vector<std::byte> reopened_public_key(public_key_size);
+    ASSERT_EQ(public_key_size, reopened->extract_key(reopened_public_key));
+    EXPECT_EQ(original_public_key, reopened_public_key);
+
+    ASSERT_TRUE(reopened->delete_key());
+}
 
 TEST(AndroidSecurityTest, StandaloneVerifyRejectsMismatchedAlgorithm)
 {

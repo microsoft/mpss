@@ -229,10 +229,14 @@ public class KeyManagement {
                     kp = CreateKey(keyName, algorithm, /* useStrongBox */ false);
                 }
 
-                if (null != kp) {
-                    MemKeyStore.AddKey(keyName, kp);
+                if (null == kp) {
+                    String msg = "Failed to create key: " + keyName;
+                    Log.e("MPSS", msg);
+                    SetError(msg);
+                    return false;
                 }
 
+                MemKeyStore.AddKey(keyName, kp);
                 return true;
             } catch (InvalidAlgorithmParameterException | NoSuchAlgorithmException |
                      NoSuchProviderException | InvalidKeySpecException ex) {
