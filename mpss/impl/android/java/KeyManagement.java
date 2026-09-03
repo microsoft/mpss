@@ -444,18 +444,26 @@ public class KeyManagement {
             try {
                 if (null == keyName) throw new IllegalArgumentException("keyName is null.");
 
-                KeyPair kp = GetExistingKeyPair(keyName);
-                if (null == kp) {
-                    String msg = "Could not get existing KeyPair.";
-                    Log.w("MPSS", msg);
+                // Deleting needs the alias, not the key. Requiring the key pair to load first would
+                // leave an entry whose key or certificate cannot be read impossible to remove, which
+                // is the state a caller most needs to clear.
+                KeyStore ks = KeyStore.getInstance("AndroidKeyStore");
+                ks.load(/* param */ null);
+                if (!ks.containsAlias(keyName)) {
+                    // The alias holds nothing, which is the requested state.
+                    MemKeyStore.RemoveKey(keyName);
+                    return true;
+                }
+
+                ks.deleteEntry(keyName);
+                MemKeyStore.RemoveKey(keyName);
+
+                if (ks.containsAlias(keyName)) {
+                    String msg = "Key still present after deletion: " + keyName;
+                    Log.e("MPSS", msg);
                     SetError(msg);
                     return false;
                 }
-
-                KeyStore ks = KeyStore.getInstance("AndroidKeyStore");
-                ks.load(/* param */ null);
-                ks.deleteEntry(keyName);
-                MemKeyStore.RemoveKey(keyName);
                 return true;
             } catch (KeyStoreException | IOException | CertificateException |
                      NoSuchAlgorithmException ex) {

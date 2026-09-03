@@ -753,7 +753,8 @@ value. Allocation failure is the realistic cause.
 Such a failure leaves **no MPSS diagnostic**: the operation cleared the last error on entry (rule 1)
 and never reached the point where it would set one, so `mpss_has_error()` is normally `false`. Read
 through rules 2 and 3 alone, an internal error is therefore indistinguishable from a clean negative
-— "the key did not exist" rather than "the delete never ran".
+— "the storage could not be read" rather than "the delete never ran". (A name that simply held no
+key is not a negative at all: deleting it succeeds, because the name already holds nothing.)
 
 So these functions additionally raise on **OpenSSL's error queue**, as `ERR_LIB_PROV` with reason
 `ERR_R_INTERNAL_ERROR`, which prints as:
@@ -1229,7 +1230,8 @@ generation and opening). This is the natural choice for an application already u
 library context.
 
 ```cpp
-// Delete "my-old-key" through the MPSS provider. Returns 1 on success, 0 on failure / not found.
+// Clear "my-old-key" through the MPSS provider. Returns 1 once the name holds no key, which
+// includes a name that held none to begin with, and 0 when the storage could not be cleared.
 int deleted = OSSL_STORE_delete("mpss:my-old-key", libctx, "provider=mpss", nullptr, nullptr, nullptr);
 if (deleted == 1) {
     // Key was deleted from secure storage.

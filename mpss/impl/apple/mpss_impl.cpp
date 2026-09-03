@@ -20,6 +20,35 @@ namespace
 
 using OpenKeyResult = KeyProbeResult<std::unique_ptr<KeyPair>>;
 
+// The two tiers store their keys as different Keychain item classes, so one name can be held in
+// both at once. Resolving to whichever tier answers first would let a key planted in the tier the
+// name was not created in decide what the name means, so a name held twice is refused instead.
+bool keychain_tier_also_holds(const std::string &key_name, bool &indeterminate)
+{
+    using enum utils::AppleOperationResult;
+
+    indeterminate = false;
+    const std::int32_t raw_result = MPSS_KeychainKeyExists(key_name.c_str());
+    switch (utils::decode_apple_result(raw_result))
+    {
+    case success:
+        return true;
+    case expected_negative:
+        return false;
+    case operational_error:
+        utils::report_keychain_error("determine whether the Keychain holds the name");
+        indeterminate = true;
+        return false;
+    case invalid_result:
+        utils::report_invalid_apple_result("Keychain", "determine whether the Keychain holds the name", raw_result);
+        indeterminate = true;
+        return false;
+    }
+
+    indeterminate = true;
+    return false;
+}
+
 OpenKeyResult try_open_key(const std::string &key_name)
 {
     using enum utils::AppleOperationResult;
@@ -30,10 +59,29 @@ OpenKeyResult try_open_key(const std::string &key_name)
         const std::int32_t raw_result = MPSS_SE_OpenExistingKey(key_name.c_str());
         switch (utils::decode_apple_result(raw_result))
         {
-        case success:
+        case success: {
+            bool indeterminate = false;
+            const bool also_in_keychain = keychain_tier_also_holds(key_name, indeterminate);
+            if (indeterminate)
+            {
+                // The open failed, so no key pair will be constructed to evict the cache entry that
+                // the lookup above populated.
+                MPSS_SE_CloseKey(key_name.c_str());
+                return {.status = KeyProbeStatus::operational_error, .value = nullptr};
+            }
+            if (also_in_keychain)
+            {
+                MPSS_SE_CloseKey(key_name.c_str());
+                mpss::utils::log_and_set_error(
+                    "Refusing to open key '{}': the name is held in both the Secure Enclave and the Keychain.",
+                    key_name);
+                return {.status = KeyProbeStatus::operational_error, .value = nullptr};
+            }
+
             mpss::utils::log_trace("Key '{}' found in Secure Enclave.", key_name);
             return {.status = KeyProbeStatus::found,
                     .value = std::make_unique<AppleSEKeyPair>(key_name, ecdsa_secp256r1_sha256)};
+        }
         case expected_negative:
             break;
         case operational_error:
@@ -103,6 +151,19 @@ std::unique_ptr<KeyPair> open_key(std::string_view name)
     }
 
     return std::move(result.value);
+}
+
+bool delete_key(std::string_view name)
+{
+    mpss::utils::clear_error();
+    const std::string key_name{name};
+    if (key_name.empty())
+    {
+        mpss::utils::log_and_set_error("Key name cannot be empty.");
+        return false;
+    }
+
+    return utils::delete_key_from_all_tiers(key_name);
 }
 
 std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm, KeyPolicy policy)

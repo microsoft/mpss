@@ -31,6 +31,9 @@ namespace
  *
  * @return true if a visitor returned true (state ownership transferred), false otherwise (state cleaned up).
  */
+// Set when device enumeration reached a reader but could not identify the device on it.
+thread_local bool skipped_device = false;
+
 template <typename Visitor> bool for_each_yubikey(ykpiv_state *&state_out, Visitor &&visitor)
 {
     state_out = nullptr;
@@ -69,7 +72,9 @@ template <typename Visitor> bool for_each_yubikey(ykpiv_state *&state_out, Visit
         rc = ykpiv_get_serial(state, &serial);
         if (YKPIV_OK != rc || 0 == serial)
         {
-            mpss::utils::log_trace("Reader '{}': connected but failed to get serial ({}).", reader, ykpiv_strerror(rc));
+            mpss::utils::log_warning("Reader '{}': connected but failed to get serial ({}).", reader,
+                                     ykpiv_strerror(rc));
+            skipped_device = true;
             ykpiv_disconnect(state);
             reader += std::strlen(reader) + 1;
             continue;
@@ -530,30 +535,36 @@ Algorithm YubiKeyPIV::read_slot_algorithm(std::uint8_t slot)
     return utils::yk_to_mpss_algorithm(metadata.algorithm);
 }
 
-bool YubiKeyPIV::slot_key_matches_label(std::uint8_t slot, X509 *cert)
+auto YubiKeyPIV::slot_key_matches_label(std::uint8_t slot, X509 *cert) -> LabelBinding
 {
+    // Failing to read either side is not the same as the two sides disagreeing. A slot whose key
+    // could not be read may still carry the name, so the caller must be able to tell an answer from
+    // the absence of one.
     std::array<std::byte, max_public_key_bytes> slot_point{};
     const std::size_t slot_point_len = get_public_key(slot, slot_point, /* probe */ true);
     if (0 == slot_point_len)
     {
-        return false;
+        return LabelBinding::undetermined;
     }
 
     EVP_PKEY *cert_key = X509_get0_pubkey(cert);
     if (nullptr == cert_key)
     {
-        return false;
+        // The certificate carries no key, so it describes nothing the slot could hold.
+        return LabelBinding::mismatch;
     }
 
     unsigned char *cert_point = nullptr;
     const std::size_t cert_point_len = EVP_PKEY_get1_encoded_public_key(cert_key, &cert_point);
     if (0 == cert_point_len || nullptr == cert_point)
     {
-        return false;
+        return LabelBinding::undetermined;
     }
     SCOPE_GUARD(OPENSSL_free(cert_point));
 
-    return cert_point_len == slot_point_len && 0 == std::memcmp(cert_point, slot_point.data(), slot_point_len);
+    const bool matches =
+        cert_point_len == slot_point_len && 0 == std::memcmp(cert_point, slot_point.data(), slot_point_len);
+    return matches ? LabelBinding::match : LabelBinding::mismatch;
 }
 
 YubiKeyPIV::EraseResult YubiKeyPIV::erase_slot(std::uint8_t slot)
@@ -1020,7 +1031,14 @@ KeyProbeResult<std::string> YubiKeyPIV::read_slot_label(std::uint8_t slot)
     // The label names a key, so it counts only while it still describes the key that is there. A
     // certificate left behind by a key that has since been replaced names something the slot no
     // longer holds, and reporting that name would hand a caller a key it did not ask for.
-    if (!slot_key_matches_label(slot, cert))
+    const LabelBinding binding = slot_key_matches_label(slot, cert);
+    if (LabelBinding::undetermined == binding)
+    {
+        mpss::utils::log_warning("Could not tell whether the label in slot {} describes the key held there.",
+                                 utils::get_slot_name(slot));
+        return {.status = KeyProbeStatus::operational_error, .value = {}};
+    }
+    if (LabelBinding::mismatch == binding)
     {
         mpss::utils::log_warning("Ignoring the label in slot {}: it does not describe the key held there.",
                                  utils::get_slot_name(slot));
@@ -1028,6 +1046,46 @@ KeyProbeResult<std::string> YubiKeyPIV::read_slot_label(std::uint8_t slot)
     }
 
     return {.status = KeyProbeStatus::found, .value = std::string{cn_buf, static_cast<std::size_t>(cn_len)}};
+}
+
+auto YubiKeyPIV::delete_keys_by_name(std::string_view name) -> DeleteByNameResult
+{
+    DeleteByNameResult result{};
+    if (nullptr == state_)
+    {
+        mpss::utils::log_and_set_error("YubiKey not connected.");
+        result.unreadable_slot = true;
+        return result;
+    }
+
+    // Every slot carrying the name is cleared, not just the first. Leaving one behind would let a
+    // name that resolution refused as ambiguous start resolving again, to whichever slot survived.
+    for (std::uint8_t slot : usable_slots)
+    {
+        const KeyProbeResult<std::string> label = read_slot_label(slot);
+        if (KeyProbeStatus::operational_error == label.status)
+        {
+            // The slot may carry the name, so the name cannot be reported as cleared.
+            mpss::utils::log_warning("Slot {} could not be read while clearing key '{}'.", utils::get_slot_name(slot),
+                                     name);
+            result.unreadable_slot = true;
+            continue;
+        }
+        if (KeyProbeStatus::not_found == label.status || label.value != name)
+        {
+            continue;
+        }
+
+        if (delete_key(slot))
+        {
+            ++result.deleted;
+            continue;
+        }
+
+        result.delete_refused = true;
+    }
+
+    return result;
 }
 
 auto YubiKeyPIV::find_slot_by_name(std::string_view name) -> KeyProbeResult<SlotInfo>
@@ -1156,10 +1214,15 @@ std::uint8_t YubiKeyPIV::find_free_slot()
     return 0;
 }
 
-std::vector<std::uint32_t> YubiKeyPIV::available_serials()
+std::vector<std::uint32_t> YubiKeyPIV::available_serials(bool *device_skipped)
 {
+    if (nullptr != device_skipped)
+    {
+        *device_skipped = false;
+    }
     std::vector<std::uint32_t> serials;
     ykpiv_state *state = nullptr;
+    skipped_device = false;
 
     for_each_yubikey(state, [&](ykpiv_state *, std::uint32_t serial, const char *reader) {
         if (std::ranges::find(serials, serial) != serials.end())
@@ -1173,6 +1236,13 @@ std::vector<std::uint32_t> YubiKeyPIV::available_serials()
         }
         return false; // Continue to next reader.
     });
+
+    if (nullptr != device_skipped)
+    {
+        // A device that answered the reader but not its own serial was left out of the list, so a
+        // caller that has to speak for every attached device cannot rely on this being complete.
+        *device_skipped = skipped_device;
+    }
 
     return serials;
 }

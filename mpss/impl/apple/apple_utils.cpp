@@ -122,4 +122,29 @@ bool handle_keychain_verification_result(std::int32_t result, std::string_view o
     return false;
 }
 
+bool delete_key_from_all_tiers(const std::string &name)
+{
+    // Both tiers are always addressed. Stopping after the tier an open happened to resolve to would
+    // report a name as deleted while another tier still holds it, and a later open would find that
+    // one. Absence is success: each remover treats a name it does not hold as nothing to do.
+    bool deleted = true;
+
+    // The Secure Enclave remover clears an ordinary Keychain item and does not touch the enclave, so
+    // it is called whether or not this machine has one: the item can outlive the context that
+    // created it, and a name reported as deleted has to be free in every tier.
+    if (!MPSS_SE_RemoveExistingKey(name.c_str()))
+    {
+        report_secure_enclave_error("delete key");
+        deleted = false;
+    }
+
+    if (!MPSS_DeleteKey(name.c_str()))
+    {
+        report_keychain_error("delete key");
+        deleted = false;
+    }
+
+    return deleted;
+}
+
 } // namespace mpss::impl::os::utils

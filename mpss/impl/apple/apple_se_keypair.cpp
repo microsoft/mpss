@@ -27,9 +27,8 @@ AppleSEKeyPair::~AppleSEKeyPair()
 bool AppleSEKeyPair::do_delete_key()
 {
     mpss::utils::log_trace("Deleting Secure Enclave key '{}'.", name());
-    if (!MPSS_SE_RemoveExistingKey(name().c_str()))
+    if (!utils::delete_key_from_all_tiers(name()))
     {
-        utils::report_secure_enclave_error("delete key");
         return false;
     }
     mpss::utils::log_trace("Secure Enclave key '{}' deleted.", name());

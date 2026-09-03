@@ -13,14 +13,12 @@ using namespace mpss;
 
 bool delete_key(std::string_view name)
 {
-    const std::unique_ptr<KeyPair> key_pair = KeyPair::Open(name);
-    return nullptr != key_pair && key_pair->delete_key();
+    return KeyPair::Delete(name);
 }
 
 bool delete_key(std::string_view name, std::string_view backend_name)
 {
-    const std::unique_ptr<KeyPair> key_pair = KeyPair::Open(name, backend_name);
-    return nullptr != key_pair && key_pair->delete_key();
+    return KeyPair::Delete(name, backend_name);
 }
 
 } // namespace mpss_openssl::utils

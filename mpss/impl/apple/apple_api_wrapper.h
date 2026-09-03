@@ -19,6 +19,11 @@ extern "C"
                                                 const std::uint8_t *publicKey, std::size_t publicKeySize,
                                                 const std::uint8_t *signature, std::size_t signatureSize);
     bool MPSS_GetPublicKey(const char *keyName, std::uint8_t *pk, std::size_t *pkSize);
+
+    // Whether the Keychain tier holds this name, without loading the key or consulting the
+    // in-process cache. Lets the caller detect a name held in more than one tier.
+    std::int32_t MPSS_KeychainKeyExists(const char *keyName);
+
     bool MPSS_DeleteKey(const char *keyName);
     void MPSS_RemoveKey(const char *keyName);
     std::size_t MPSS_GetLastError(char *error, std::size_t errorSize);

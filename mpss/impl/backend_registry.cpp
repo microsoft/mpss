@@ -348,6 +348,26 @@ std::unique_ptr<KeyPair> open_key(std::string_view backend_name, std::string_vie
     return key;
 }
 
+bool delete_key(std::string_view backend_name, std::string_view name)
+{
+    if (!is_valid_key_name(name))
+    {
+        utils::log_and_set_error("Invalid key name (must be 1-{} printable ASCII characters).", max_key_name_length);
+        return false;
+    }
+
+    BackendRegistry &registry = BackendRegistry::Instance();
+    const std::shared_ptr<Backend> backend = registry.get_backend(backend_name);
+    if (nullptr == backend)
+    {
+        utils::log_and_set_error("Backend '{}' not found.", backend_name);
+        return false;
+    }
+
+    utils::log_trace("Deleting key '{}' using backend '{}'.", name, backend->name());
+    return backend->delete_key(name);
+}
+
 bool verify(std::string_view backend_name, std::span<const std::byte> hash, std::span<const std::byte> public_key,
             Algorithm algorithm, std::span<const std::byte> sig)
 {
@@ -383,6 +403,17 @@ std::unique_ptr<KeyPair> open_key(std::string_view name)
         return nullptr;
     }
     return open_key(backend->name(), name);
+}
+
+bool delete_key(std::string_view name)
+{
+    const std::shared_ptr<Backend> backend = BackendRegistry::Instance().get_default_backend();
+    if (nullptr == backend)
+    {
+        utils::log_and_set_error("No default backend available for deleting key '{}'.", name);
+        return false;
+    }
+    return delete_key(backend->name(), name);
 }
 
 bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_key, Algorithm algorithm,

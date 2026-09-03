@@ -257,6 +257,32 @@ static OSStatus CountItemsWithName(NSString *keyLabel, CFIndex *countOut) {
   return errSecSuccess;
 }
 
+int32_t MPSS_KeychainKeyExists(const char *keyName) {
+  ClearThreadLocalError();
+  if (keyName == NULL) {
+    SetThreadLocalError(@"Invalid parameter (keyName is NULL).");
+    return MPSS_APPLE_RESULT_OPERATIONAL_ERROR;
+  }
+
+  @autoreleasepool {
+    NSString *keyLabel = GetKeyLabel(keyName);
+    CFIndex count = 0;
+    const OSStatus status = CountItemsWithName(keyLabel, &count);
+    if (status != errSecSuccess) {
+      NSString *error =
+          [NSString stringWithFormat:
+                        @"Failed to determine whether the Keychain holds this "
+                        @"name; status: %d",
+                        (int)status];
+      SetThreadLocalError(error);
+      return MPSS_APPLE_RESULT_OPERATIONAL_ERROR;
+    }
+
+    return (count > 0) ? MPSS_APPLE_RESULT_SUCCESS
+                       : MPSS_APPLE_RESULT_EXPECTED_NEGATIVE;
+  }
+}
+
 bool MPSS_CreateKey(const char *keyName, int bitSize) {
   ClearThreadLocalError();
   if (keyName == NULL) {

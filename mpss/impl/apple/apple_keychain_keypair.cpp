@@ -27,12 +27,8 @@ AppleKeychainKeyPair::~AppleKeychainKeyPair()
 bool AppleKeychainKeyPair::do_delete_key()
 {
     mpss::utils::log_trace("Deleting Keychain key '{}'.", name());
-    const bool result = MPSS_DeleteKey(name().c_str());
-    if (!result)
-    {
-        utils::report_keychain_error("delete key");
-    }
-    else
+    const bool result = utils::delete_key_from_all_tiers(name());
+    if (result)
     {
         mpss::utils::log_trace("Keychain key '{}' deleted.", name());
     }

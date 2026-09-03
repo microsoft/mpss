@@ -769,8 +769,8 @@ TEST(MPSS_OpenSSL, DeleteKeyFromBackend)
         // Delete the key from this specific backend.
         ASSERT_TRUE(mpss_delete_key_from_backend(key_name.c_str(), backend));
 
-        // Attempting to delete again should fail (key no longer exists).
-        ASSERT_FALSE(mpss_delete_key_from_backend(key_name.c_str(), backend));
+        // Deleting again succeeds: the request is that the name hold no key, and it already does.
+        ASSERT_TRUE(mpss_delete_key_from_backend(key_name.c_str(), backend));
 
         ++backends_tested;
     }
@@ -1077,10 +1077,11 @@ TEST_F(MPSSStore, DeleteByName)
     EVP_PKEY_CTX_free(ctx);
     EVP_PKEY_free(pkey);
 
-    // Delete it through OSSL_STORE_delete, then confirm it is gone and a second delete fails.
+    // Delete it through OSSL_STORE_delete, then confirm it is gone. A second delete also succeeds:
+    // the name already holds nothing, which is what the call asks for.
     ASSERT_EQ(1, store_delete_key(key_name, nullptr));
     ASSERT_EQ(nullptr, store_open_key(key_name, nullptr));
-    ASSERT_EQ(0, store_delete_key(key_name, nullptr));
+    ASSERT_EQ(1, store_delete_key(key_name, nullptr));
 }
 
 TEST_F(MPSSStore, ExportTypesMatchSupportedSelections)

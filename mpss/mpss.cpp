@@ -64,6 +64,30 @@ std::unique_ptr<KeyPair> KeyPair::Open(std::string_view name, std::string_view b
     return clear_error_on_success(impl::open_key(backend_name, name));
 }
 
+bool KeyPair::Delete(std::string_view name)
+{
+    clear_error();
+    utils::log_trace("KeyPair::Delete called for key '{}'.", name);
+    const bool deleted = impl::delete_key(name);
+    if (deleted)
+    {
+        clear_error();
+    }
+    return deleted;
+}
+
+bool KeyPair::Delete(std::string_view name, std::string_view backend_name)
+{
+    clear_error();
+    utils::log_trace("KeyPair::Delete called for key '{}' on backend '{}'.", name, backend_name);
+    const bool deleted = impl::delete_key(backend_name, name);
+    if (deleted)
+    {
+        clear_error();
+    }
+    return deleted;
+}
+
 bool is_algorithm_available(Algorithm algorithm)
 {
     clear_error();

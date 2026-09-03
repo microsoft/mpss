@@ -240,6 +240,35 @@ class YubiKeyPIV
     KeyProbeResult<SlotInfo> find_slot_by_name(std::string_view name);
 
     /**
+     * @brief Outcome of clearing every slot that carries a name.
+     */
+    struct DeleteByNameResult
+    {
+        // How many slots were cleared.
+        std::size_t deleted;
+
+        // A slot refused the delete. Retrying after authenticating may succeed.
+        bool delete_refused;
+
+        // A slot could not be read, so it may still carry the name.
+        bool unreadable_slot;
+    };
+
+    /**
+     * @brief Delete every key whose slot carries this name.
+     *
+     * Unlike @ref find_slot_by_name, an ambiguous name is not refused: clearing a name is exactly
+     * how a name that resolution refuses is recovered. Every matching slot is cleared rather than
+     * the first, because leaving one behind would let the name start resolving again to whichever
+     * slot survived.
+     *
+     * @param name The key name to clear.
+     * @return How many slots were cleared, and whether any slot refused the delete or could not be
+     * read.
+     */
+    DeleteByNameResult delete_keys_by_name(std::string_view name);
+
+    /**
      * @brief Find the first free (unoccupied) PIV slot.
      * @return The slot number, or 0 if no free slots are available.
      */
@@ -253,7 +282,9 @@ class YubiKeyPIV
      *
      * @return A vector of serial numbers for all reachable YubiKeys.
      */
-    static MPSS_DECOR std::vector<std::uint32_t> available_serials();
+    // @param device_skipped Optional. Set when a reader answered but the device on it could not be
+    // identified, so the returned list is not a complete account of what is attached.
+    static MPSS_DECOR std::vector<std::uint32_t> available_serials(bool *device_skipped = nullptr);
 
   private:
     ykpiv_state *state_{nullptr};
@@ -280,7 +311,16 @@ class YubiKeyPIV
      * @param cert The certificate read from that slot.
      * @return true when the two keys are the same, false when they differ or the slot key is unreadable.
      */
-    bool slot_key_matches_label(std::uint8_t slot, X509 *cert);
+    // Whether a slot's certificate label describes the key the slot actually holds. Reading either
+    // side can fail, which is not the same as the two disagreeing.
+    enum class LabelBinding
+    {
+        match,
+        mismatch,
+        undetermined
+    };
+
+    LabelBinding slot_key_matches_label(std::uint8_t slot, X509 *cert);
 
     /**
      * @brief Outcome of an attempt to erase a slot outright.

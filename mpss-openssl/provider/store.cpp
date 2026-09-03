@@ -257,8 +257,8 @@ try
         backend = value_str;
     }
 
-    // Open the key (default backend when none is given) and delete it. A missing key or a failed
-    // deletion reports failure.
+    // Clear the name (default backend when none is given). A name that holds nothing already
+    // satisfies the request; only a storage failure reports failure.
     const bool deleted = backend.empty() ? delete_key(key_name) : delete_key(key_name, backend);
     return deleted ? 1 : 0;
 }

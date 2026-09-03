@@ -121,7 +121,7 @@ OpenKeyResult try_open_key(std::string_view name)
 {
     mpss::utils::log_trace("Attempting to open key '{}' on Android backend.", name);
 
-    JNIEnvGuard guard;
+    mpss::impl::os::JNIEnvGuard guard;
     if (!guard.valid())
     {
         mpss::utils::log_and_set_error("Android JNI environment is unavailable.");
@@ -293,6 +293,82 @@ std::unique_ptr<KeyPair> open_key(std::string_view name)
     return std::move(result.value);
 }
 
+bool delete_key(std::string_view name)
+{
+    if (name.empty())
+    {
+        mpss::utils::log_and_set_error("Key name cannot be empty.");
+        return false;
+    }
+
+    // The alias is addressed directly rather than through an opened key pair. A KeyStore alias is
+    // unique within the application, so there is no ambiguity to resolve, and an entry whose key or
+    // certificate cannot be read has to be clearable -- that is the state a caller most needs to
+    // recover from, and it is exactly the one an open cannot reach.
+    mpss::impl::os::JNIEnvGuard guard;
+    if (!guard.valid())
+    {
+        mpss::utils::log_and_set_error("Android JNI environment is unavailable.");
+        return false;
+    }
+    JNIEnv *const env = guard.env();
+
+    jclass key_management = JNIHelper::key_management_class();
+    if (nullptr == key_management)
+    {
+        mpss::utils::log_and_set_error("Could not get KeyManagement Java class.");
+        return false;
+    }
+
+    const std::string name_str{name};
+    jni_string key_name(env, env->NewStringUTF(name_str.c_str()));
+    if (utils::check_and_clear_exception(env, "converting an Android key name to a Java string"))
+    {
+        return false;
+    }
+    if (key_name.is_null())
+    {
+        mpss::utils::log_and_set_error("Could not create key name Java string.");
+        return false;
+    }
+
+    jmethodID method = env->GetStaticMethodID(key_management, "DeleteKey", "(Ljava/lang/String;)Ljava/lang/Boolean;");
+    if (utils::check_and_clear_exception(env, "resolving KeyManagement.DeleteKey"))
+    {
+        return false;
+    }
+    if (nullptr == method)
+    {
+        mpss::utils::log_and_set_error("Could not get KeyManagement.DeleteKey Java method.");
+        return false;
+    }
+
+    jni_object result(env, env->CallStaticObjectMethod(key_management, method, key_name.get()));
+    if (utils::check_and_clear_exception(env, "calling KeyManagement.DeleteKey"))
+    {
+        return false;
+    }
+    if (result.is_null())
+    {
+        utils::report_java_error(env, "KeyManagement.DeleteKey");
+        return false;
+    }
+
+    const std::optional<bool> deleted = utils::unbox_boolean(env, result.get());
+    if (!deleted.has_value())
+    {
+        mpss::utils::log_and_set_error("Could not read the result of KeyManagement.DeleteKey.");
+        return false;
+    }
+    if (!deleted.value())
+    {
+        utils::report_java_error(env, "KeyManagement.DeleteKey");
+        return false;
+    }
+
+    return true;
+}
+
 std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm, KeyPolicy policy)
 {
     if (name.empty())
@@ -329,7 +405,7 @@ std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm, 
     mpss::utils::log_trace("Creating key '{}' with algorithm '{}' on Android backend.", name,
                            get_algorithm_info(algorithm).type_str);
 
-    JNIEnvGuard guard;
+    mpss::impl::os::JNIEnvGuard guard;
     if (!guard.valid())
     {
         mpss::utils::log_and_set_error("Android JNI environment is unavailable.");
@@ -481,7 +557,7 @@ bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_k
         return false;
     }
 
-    JNIEnvGuard guard;
+    mpss::impl::os::JNIEnvGuard guard;
     if (!guard.valid())
     {
         mpss::utils::log_and_set_error("Android JNI environment is unavailable.");

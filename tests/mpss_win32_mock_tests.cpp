@@ -188,6 +188,16 @@ class WindowsKeyCreation : public ::testing::Test
             });
     }
 
+    // Finds the key in every provider, so the same name denotes a different key in each. Nothing
+    // stops this: the providers keep separate namespaces and any process running as the same user
+    // can write a key into either one.
+    static void KeyLivesInEveryProvider()
+    {
+        EXPECT_MODULE_FUNC_CALL(NCryptOpenKey, _, _, _, _, _)
+            .Times(AnyNumber())
+            .WillRepeatedly(DoAll(SetArgPointee<1>(fake_key_handle), Return(ERROR_SUCCESS)));
+    }
+
     // How NCRYPT_USE_VIRTUAL_ISOLATION_PROPERTY behaves for a key. All four cases occur on real
     // hardware, and they differ in the returned status, the DWORD value written, or both:
     //   isolated     -> ERROR_SUCCESS,     value 1  (software KSP key created with require_vbs)
@@ -214,9 +224,8 @@ class WindowsKeyCreation : public ::testing::Test
         EXPECT_MODULE_FUNC_CALL(NCryptGetProperty, _, _, _, _, _, _)
             .Times(AnyNumber())
             .WillRepeatedly([isolation, export_status, export_policy, algorithm_name = std::move(algorithm_name),
-                             group_name = std::move(group_name)](NCRYPT_HANDLE, LPCWSTR property, PBYTE out,
-                                                                 DWORD size, DWORD *written,
-                                                                 DWORD) -> SECURITY_STATUS {
+                             group_name = std::move(group_name)](NCRYPT_HANDLE, LPCWSTR property, PBYTE out, DWORD size,
+                                                                 DWORD *written, DWORD) -> SECURITY_STATUS {
                 if (nullptr == property || nullptr == written)
                 {
                     return status_failure;
@@ -844,6 +853,83 @@ TEST_F(WindowsKeyCreation, ANameTakenWithTheVbsFlagIsNotRetriedWithoutIt)
     EXPECT_EQ(nullptr, key);
     EXPECT_EQ(1, create_attempts) << "a name collision was retried in the same provider";
     EXPECT_THAT(mpss::get_error(), HasSubstr("already exists"));
+}
+
+// Scenario: the name is held by a key in the TPM provider and by a different key in the software
+// KSP at the same time. The providers keep separate namespaces, so nothing prevents this: MPSS
+// refuses to create a duplicate, but any process running as the same user can write one directly,
+// and creation itself lands in the software KSP whenever the TPM cannot hold the algorithm.
+// Expected behavior: refused. Using whichever provider answers would let the planted key decide
+// what the name means, and a plant in the TPM provider is reported as hardware-backed, so the
+// substitution raises the reported assurance rather than lowering it.
+TEST_F(WindowsKeyCreation, ANameHeldInBothProvidersIsRefusedOnOpen)
+{
+    KeyLivesInEveryProvider();
+
+    std::unique_ptr<mpss::KeyPair> key = OpenOsKey();
+
+    EXPECT_EQ(nullptr, key);
+    EXPECT_TRUE(mpss::has_error());
+    EXPECT_THAT(mpss::get_error(), HasSubstr("held in both"));
+}
+
+// Scenario: a name held in both providers, which open refuses, is cleared by name.
+// Expected behavior: both providers are cleared. Clearing only the provider an open would have
+// resolved to would leave the name held, and the refusal means it cannot be reached through a key
+// pair at all, so this is the only way back.
+TEST_F(WindowsKeyCreation, DeleteByNameClearsEveryProvider)
+{
+    KeyLivesInEveryProvider();
+
+    int deletes = 0;
+    EXPECT_MODULE_FUNC_CALL(NCryptDeleteKey, _, _)
+        .Times(AnyNumber())
+        .WillRepeatedly([&deletes](NCRYPT_KEY_HANDLE, DWORD) -> SECURITY_STATUS {
+            ++deletes;
+            return ERROR_SUCCESS;
+        });
+
+    EXPECT_TRUE(mpss::KeyPair::Delete("mock_win32_key", "os"));
+    EXPECT_EQ(2, deletes) << "the name was not cleared from both providers";
+}
+
+// Scenario: clearing a name that no provider holds.
+// Expected behavior: succeeds. The call asks that the name hold no key and it already does, so a
+// failure would describe the starting state rather than the outcome.
+TEST_F(WindowsKeyCreation, DeleteByNameSucceedsWhenNoProviderHoldsTheName)
+{
+    // The fixture's default is that no provider holds the name.
+    int deletes = 0;
+    EXPECT_MODULE_FUNC_CALL(NCryptDeleteKey, _, _)
+        .Times(AnyNumber())
+        .WillRepeatedly([&deletes](NCRYPT_KEY_HANDLE, DWORD) -> SECURITY_STATUS {
+            ++deletes;
+            return ERROR_SUCCESS;
+        });
+
+    EXPECT_TRUE(mpss::KeyPair::Delete("mock_win32_key", "os"));
+    EXPECT_EQ(0, deletes) << "nothing held the name, so nothing should have been deleted";
+}
+
+// Scenario: a provider cannot say whether it holds the name while the name is being cleared.
+// Expected behavior: refused. Reporting the name as cleared would be a claim about a provider that
+// was never read.
+TEST_F(WindowsKeyCreation, DeleteByNameFailsWhenAProviderCannotAnswer)
+{
+    EXPECT_MODULE_FUNC_CALL(NCryptOpenKey, _, _, _, _, _)
+        .Times(AnyNumber())
+        .WillRepeatedly(
+            [](NCRYPT_PROV_HANDLE provider, NCRYPT_KEY_HANDLE *out, LPCWSTR, DWORD, DWORD) -> SECURITY_STATUS {
+                if (tpm_provider_handle == provider)
+                {
+                    return status_failure;
+                }
+                *out = fake_key_handle;
+                return ERROR_SUCCESS;
+            });
+
+    EXPECT_FALSE(mpss::KeyPair::Delete("mock_win32_key", "os"));
+    EXPECT_TRUE(mpss::has_error());
 }
 
 } // namespace

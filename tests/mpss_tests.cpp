@@ -227,6 +227,36 @@ TEST_F(MPSS, DoubleCreation521)
     DoubleCreation(ecdsa_secp521r1_sha512, "521");
 }
 
+TEST_F(MPSS, DeleteByNameClearsAName)
+{
+    const std::string key_name = "delete_by_name_key";
+    DeleteKey(key_name);
+
+    std::unique_ptr<mpss::KeyPair> key = CreateKey(key_name, ecdsa_secp256r1_sha256);
+    if (nullptr == key)
+    {
+        GTEST_SKIP() << "Algorithm not supported by current backend";
+    }
+    key.reset();
+
+    ASSERT_TRUE(mpss::KeyPair::Delete(key_name));
+
+    // The open must fail because the name is free, not because it could not be read.
+    ASSERT_EQ(nullptr, mpss::KeyPair::Open(key_name));
+    EXPECT_TRUE(mpss::get_error().empty()) << mpss::get_error();
+}
+
+TEST_F(MPSS, DeleteByNameSucceedsWhenNothingIsStored)
+{
+    // The request is that the name hold no key. A name that already holds none satisfies it, so
+    // repeating the call is not an error.
+    const std::string key_name = "delete_by_name_absent_key";
+    DeleteKey(key_name);
+
+    EXPECT_TRUE(mpss::KeyPair::Delete(key_name));
+    EXPECT_TRUE(mpss::KeyPair::Delete(key_name));
+}
+
 TEST_F(MPSS, RejectInvalidKeyNames)
 {
     // Names must be 1-64 printable ASCII characters. Everything below is rejected by both Create

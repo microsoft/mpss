@@ -30,6 +30,9 @@ class YubiKeyBackend : public Backend
     std::unique_ptr<KeyPair> open_key(std::string_view name) const override;
 
     [[nodiscard]]
+    bool delete_key(std::string_view name) const override;
+
+    [[nodiscard]]
     bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_key, Algorithm algorithm,
                 std::span<const std::byte> sig) const override;
 };

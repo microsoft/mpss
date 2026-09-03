@@ -61,8 +61,8 @@ bool verify_der(const std::unique_ptr<mpss::KeyPair> &key_pair, std::span<const 
 [[nodiscard]]
 byte_vector mpss_vk_params_to_spki(OSSL_LIB_CTX *libctx, const OSSL_PARAM *params);
 
-// Open the named key from the default backend, or from backend_name, and delete it. Returns false
-// if the key cannot be opened or the deletion fails.
+// Clear every key stored under the name, in the default backend or in backend_name. Returns false
+// only when the storage could not be cleared; a name that holds nothing already succeeds.
 [[nodiscard]]
 bool delete_key(std::string_view name);
 

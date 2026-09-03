@@ -312,6 +312,87 @@ std::unique_ptr<KeyPair> YubiKeyBackend::open_key(std::string_view name) const
     return nullptr;
 }
 
+bool YubiKeyBackend::delete_key(std::string_view name) const
+{
+    const std::string key_name{name};
+    if (is_reserved_key_name(name))
+    {
+        // "(available)" labels a free slot. Clearing it by name would match every free retired slot
+        // on the device and drive a PIN prompt for each.
+        mpss::utils::log_and_set_error("Key name '{}' is reserved.", key_name);
+        return false;
+    }
+
+    // A destructive operation must be no less selective about which device it touches than opening
+    // is, so the same device-selection rule applies: clear the pinned device, or refuse when more
+    // than one is attached and none was pinned.
+    bool device_skipped = false;
+    const std::optional<std::uint32_t> target_serial = utils::get_serial_from_env();
+    const std::vector<std::uint32_t> serials =
+        target_serial ? std::vector<std::uint32_t>{*target_serial} : YubiKeyPIV::available_serials(&device_skipped);
+    if (serials.empty())
+    {
+        mpss::utils::log_and_set_error("No YubiKey devices found.");
+        return false;
+    }
+    if (device_skipped)
+    {
+        // An attached device could not be identified, so the name cannot be reported cleared
+        // everywhere it might be held.
+        mpss::utils::log_and_set_error("Refusing to clear key '{}': an attached YubiKey could not be identified.",
+                                       key_name);
+        return false;
+    }
+    if (!target_serial && serials.size() > 1)
+    {
+        mpss::utils::log_and_set_error(
+            "Multiple YubiKeys detected. Set MPSS_YUBIKEY_SERIAL to select the target device.");
+        return false;
+    }
+
+    // A device that could not be reached might hold the name, so the name cannot be reported as
+    // cleared until every attached device has answered.
+    bool undetermined = false;
+    std::size_t deleted = 0;
+
+    for (const std::uint32_t serial : serials)
+    {
+        YubiKeyPIV piv{serial};
+        if (!piv.is_connected())
+        {
+            undetermined = true;
+            continue;
+        }
+
+        YubiKeyPIV::DeleteByNameResult result = piv.delete_keys_by_name(key_name);
+        if (result.delete_refused)
+        {
+            // Deleting needs the management key, which may need the PIN on this device.
+            if (authenticate_pin_interactive(piv, "delete key '" + key_name + "'"))
+            {
+                // The retry rescans every slot, so its own verdict on what could be read supersedes
+                // the first pass's; only the count of slots already cleared carries over.
+                const YubiKeyPIV::DeleteByNameResult retry = piv.delete_keys_by_name(key_name);
+                result.deleted += retry.deleted;
+                result.delete_refused = retry.delete_refused;
+                result.unreadable_slot = retry.unreadable_slot;
+            }
+        }
+
+        deleted += result.deleted;
+        undetermined = undetermined || result.delete_refused || result.unreadable_slot;
+    }
+
+    if (undetermined)
+    {
+        mpss::utils::log_and_set_error("Could not clear key '{}' from every attached YubiKey.", key_name);
+        return false;
+    }
+
+    mpss::utils::log_trace("Cleared {} slot(s) carrying key '{}'.", deleted, key_name);
+    return true;
+}
+
 bool YubiKeyBackend::verify(std::span<const std::byte> hash, std::span<const std::byte> public_key, Algorithm algorithm,
                             std::span<const std::byte> sig) const
 {

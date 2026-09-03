@@ -46,6 +46,21 @@ class Backend
     virtual std::unique_ptr<KeyPair> open_key(std::string_view name) const = 0;
 
     /**
+     * @brief Delete every key stored under a name, without opening it.
+     *
+     * Resolution refuses a name held by more than one key, so a name in that state cannot be
+     * opened and therefore cannot be deleted through a key pair. This clears the name instead,
+     * removing every key under it: leaving one behind would let a refused name start resolving
+     * again, to whichever key survived.
+     *
+     * @param[in] name The name to clear.
+     * @return true if the name holds no key afterwards, including when it held none to begin
+     * with; false if a key could not be removed or the storage could not be read.
+     */
+    [[nodiscard]]
+    virtual bool delete_key(std::string_view name) const = 0;
+
+    /**
      * @brief Verify a signature (standalone, without a key pair object).
      * @param[in] hash The hash to verify.
      * @param[in] public_key The public key for verification.
@@ -80,6 +95,9 @@ std::unique_ptr<KeyPair> create_key(std::string_view backend_name, std::string_v
 std::unique_ptr<KeyPair> open_key(std::string_view backend_name, std::string_view name);
 
 [[nodiscard]]
+bool delete_key(std::string_view backend_name, std::string_view name);
+
+[[nodiscard]]
 bool verify(std::string_view backend_name, std::span<const std::byte> hash, std::span<const std::byte> public_key,
             Algorithm algorithm, std::span<const std::byte> sig);
 
@@ -95,6 +113,9 @@ std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm, 
 
 [[nodiscard]]
 std::unique_ptr<KeyPair> open_key(std::string_view name);
+
+[[nodiscard]]
+bool delete_key(std::string_view name);
 
 [[nodiscard]]
 bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_key, Algorithm algorithm,

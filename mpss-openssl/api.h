@@ -34,17 +34,27 @@ extern "C"
 #endif
 
     /**
-     * @brief Deletes the key with the given name from safe storage.
-     * @param[in] key_name The name of the key to delete.
-     * @return True if the key was successfully deleted, false otherwise.
+     * @brief Deletes every key stored under the given name from safe storage.
+     *
+     * Does not require the name to resolve to a single usable key, so it also clears a name that
+     * opening refuses as ambiguous. A name that holds nothing is already in the requested state.
+     *
+     * @param[in] key_name The name to clear.
+     * @return True if the name holds no key afterwards, false if a key could not be removed or the
+     * storage could not be read.
      */
     MPSS_OPENSSL_DECOR bool mpss_delete_key(const char *key_name);
 
     /**
-     * @brief Deletes the key with the given name from the specified backend.
-     * @param[in] key_name The name of the key to delete.
-     * @param[in] backend_name The backend to delete the key from.
-     * @return True if the key was successfully deleted, false otherwise.
+     * @brief Deletes every key stored under the given name from the specified backend.
+     *
+     * Does not require the name to resolve to a single usable key, so it also clears a name that
+     * opening refuses as ambiguous. A name that holds nothing is already in the requested state.
+     *
+     * @param[in] key_name The name to clear.
+     * @param[in] backend_name The backend to clear the name in.
+     * @return True if the name holds no key afterwards, false if a key could not be removed or the
+     * storage could not be read.
      */
     MPSS_OPENSSL_DECOR bool mpss_delete_key_from_backend(const char *key_name, const char *backend_name);
 

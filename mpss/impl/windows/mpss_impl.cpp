@@ -64,7 +64,7 @@ void report_provider_failure(bool speculative, std::format_string<Args...> fmt, 
     mpss::utils::set_error(std::move(message));
 }
 
-NCRYPT_PROV_HANDLE GetProvider(LPCWSTR provider_name, bool speculative)
+NCRYPT_PROV_HANDLE GetProvider(LPCWSTR provider_name, bool speculative, bool *contract_violation = nullptr)
 {
     NCRYPT_PROV_HANDLE provider_handle = 0;
 
@@ -83,6 +83,10 @@ NCRYPT_PROV_HANDLE GetProvider(LPCWSTR provider_name, bool speculative)
     {
         // Success without a handle is the provider breaking its own contract, whoever asked.
         mpss::utils::log_and_set_error("Provider handle is null.");
+        if (nullptr != contract_violation)
+        {
+            *contract_violation = true;
+        }
         return 0;
     }
 
@@ -98,12 +102,22 @@ OpenKeyResult OpenKeyInProvider(LPCWSTR provider_name, std::string_view name)
 {
     using enum mpss::impl::KeyProbeStatus;
 
-    NCRYPT_PROV_HANDLE provider_handle = GetProvider(provider_name, /* speculative */ true);
+    bool contract_violation = false;
+    NCRYPT_PROV_HANDLE provider_handle = GetProvider(provider_name, /* speculative */ true, &contract_violation);
     if (0 == provider_handle)
     {
+        if (contract_violation)
+        {
+            // The provider reported success and then handed back nothing. That says nothing about
+            // whether it holds the name, so the name is not free and not found either.
+            return {.status = operational_error, .value = 0};
+        }
+
         // A provider that cannot be opened holds no key that anything can reach, including this
         // backend's own creation path, so it does not make the name indeterminate. This is what a
-        // machine without a TPM looks like, and creation has to keep working there.
+        // machine without a TPM looks like, and creation has to keep working there. It is also an
+        // assumption rather than a proof: a key another tool put in a provider this process cannot
+        // open is invisible here, so clearing a name cannot speak for such a provider.
         return {.status = not_found, .value = 0};
     }
 
@@ -219,21 +233,36 @@ OpenKeyResult GetKey(std::string_view name, const char **storage_description, bo
     *storage_description = nullptr;
     *hardware_backed = false;
 
-    // Absence is only concluded when every provider positively confirmed it. A rung that could not
-    // answer makes the verdict for the whole ladder indeterminate, even if a later rung is sure the
-    // key is not there: the key may be sitting in the provider that could not be read.
-    bool any_indeterminate = false;
-
+    // Every provider is asked before any answer is used. The providers keep separate namespaces, so
+    // the same name can be held in both at once; returning the first that answered would let a key
+    // planted in the provider this backend did not create in decide what the name means.
     OpenKeyResult tpm_key = OpenKeyTpm(name);
+    OpenKeyResult ksp_key = OpenKeySoftwareKsp(name);
+
+    const bool any_indeterminate = operational_error == tpm_key.status || operational_error == ksp_key.status;
+
+    if (found == tpm_key.status && found == ksp_key.status)
+    {
+        ::NCryptFreeObject(tpm_key.value);
+        ::NCryptFreeObject(ksp_key.value);
+        mpss::utils::log_and_set_error(
+            "Refusing to open key '{}': the name is held in both the TPM provider and the software KSP.", name);
+        return {.status = operational_error, .value = 0};
+    }
+
+    // A rung that found nothing but could not say so in a code that positively confirms absence does
+    // not veto a key another rung did find. The status space outside NTE_BAD_KEYSET is not
+    // enumerable and differs between the two providers, so treating it as a veto would make a
+    // legitimate key permanently unopenable on any host whose platform provider answers an
+    // unfamiliar code -- the software-KSP keys this ladder exists to keep reachable. It only
+    // constrains the verdict when the ladder found nothing at all.
     if (found == tpm_key.status)
     {
         *storage_description = tpm_description;
         *hardware_backed = true;
         return tpm_key;
     }
-    any_indeterminate = operational_error == tpm_key.status;
 
-    OpenKeyResult ksp_key = OpenKeySoftwareKsp(name);
     if (found == ksp_key.status)
     {
         const VirtualIsolation isolation = GetVirtualIsolation(ksp_key.value);
@@ -255,7 +284,6 @@ OpenKeyResult GetKey(std::string_view name, const char **storage_description, bo
         }
         return ksp_key;
     }
-    any_indeterminate = any_indeterminate || operational_error == ksp_key.status;
 
     return {.status = any_indeterminate ? operational_error : not_found, .value = 0};
 }
@@ -557,6 +585,59 @@ std::unique_ptr<KeyPair> open_key(std::string_view name)
     }
 
     return std::move(result.value);
+}
+
+bool delete_key(std::string_view name)
+{
+    if (name.empty())
+    {
+        mpss::utils::log_and_set_error("Key name cannot be empty.");
+        return false;
+    }
+
+    // Both providers are cleared, not just the one an open would have resolved to. The providers
+    // keep separate namespaces, so a name can be held in both; leaving one behind would let a name
+    // that could not be opened start resolving again, to whichever key survived.
+    constexpr std::array providers = {tpm_provider_name, software_ksp_name};
+
+    bool undetermined = false;
+    std::size_t deleted = 0;
+
+    for (LPCWSTR provider_name : providers)
+    {
+        OpenKeyResult opened = OpenKeyInProvider(provider_name, name);
+        if (mpss::impl::KeyProbeStatus::not_found == opened.status)
+        {
+            continue;
+        }
+        if (mpss::impl::KeyProbeStatus::operational_error == opened.status)
+        {
+            // The provider may hold the name, so the name cannot be reported as cleared.
+            undetermined = true;
+            continue;
+        }
+
+        // NCryptDeleteKey frees the handle on success, so only free it explicitly if it fails.
+        const SECURITY_STATUS status = ::NCryptDeleteKey(opened.value, /* dwFlags */ 0);
+        if (ERROR_SUCCESS != status)
+        {
+            mpss::utils::log_and_set_error("NCryptDeleteKey failed with error code {}.", mpss::utils::to_hex(status));
+            ::NCryptFreeObject(opened.value);
+            undetermined = true;
+            continue;
+        }
+        ++deleted;
+    }
+
+    if (undetermined)
+    {
+        mpss::utils::log_and_set_error("Could not clear key '{}' from every provider.", name);
+        return false;
+    }
+
+    mpss::utils::clear_error();
+    mpss::utils::log_trace("Cleared {} key(s) named '{}'.", deleted, name);
+    return true;
 }
 
 std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm, KeyPolicy policy)

@@ -249,6 +249,35 @@ class MPSS_DECOR KeyPair
     static std::unique_ptr<KeyPair> Open(std::string_view name, std::string_view backend_name);
 
     /**
+     * @brief Deletes every key stored under the given name.
+     * @param[in] name The name to clear. Must be 1-64 printable ASCII characters (0x20-0x7E);
+     * control characters, embedded NUL, and non-ASCII bytes are rejected.
+     * @return true if the name holds no key afterwards, false if something could not be removed or
+     * the storage could not be read.
+     * @note Unlike @ref delete_key, this needs no open key pair and does not require the name to
+     * resolve to a single usable key, so it can clear a name that @ref Open refuses as ambiguous.
+     * Every key under the name is removed: leaving one behind would let a name that @ref Open
+     * refused start resolving again, to whichever key happened to survive. A name that holds
+     * nothing is already in the requested state and succeeds.
+     * @note Only the default backend is cleared; use the overload taking a backend name to clear a
+     * different one. A failure may be partial, because clearing continues past a source that could
+     * not be cleared, so treat the name as unsafe to reuse until a later call succeeds.
+     */
+    [[nodiscard]]
+    static bool Delete(std::string_view name);
+
+    /**
+     * @brief Deletes every key stored under the given name in a specific backend.
+     * @param[in] name The name to clear. Must be 1-64 printable ASCII characters (0x20-0x7E);
+     * control characters, embedded NUL, and non-ASCII bytes are rejected.
+     * @param[in] backend_name The backend to clear the name in (e.g., "os", "yubikey").
+     * @return true if the name holds no key afterwards, false if something could not be removed or
+     * the storage could not be read.
+     */
+    [[nodiscard]]
+    static bool Delete(std::string_view name, std::string_view backend_name);
+
+    /**
      * @brief Deletes the key pair with the given name from the safe storage.
      * @return true if the key pair was deleted successfully, false otherwise.
      * @note After this function returns successfully, the key pair is no longer valid.

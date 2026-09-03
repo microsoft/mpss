@@ -12,6 +12,9 @@ private func c_mpss_log_debug(_ message: UnsafePointer<CChar>)
 @_silgen_name("mpss_log_trace")
 private func c_mpss_log_trace(_ message: UnsafePointer<CChar>)
 
+@_silgen_name("mpss_log_warning")
+private func c_mpss_log_warning(_ message: UnsafePointer<CChar>)
+
 /// Log a trace message through the unified C++ logger.
 private func logTrace(_ message: String) {
     message.withCString { c_mpss_log_trace($0) }
@@ -22,11 +25,19 @@ private func logDebug(_ message: String) {
     message.withCString { c_mpss_log_debug($0) }
 }
 
+/// Log a warning through the unified C++ logger.
+private func logWarning(_ message: String) {
+    message.withCString { c_mpss_log_warning($0) }
+}
+
 // The dispatch queue is used to serialize access to the key store in order to make it thread-safe.
 private let _keyStoreQueue = DispatchQueue(label: "com.microsoft.mpss.KeyStore")
 
 // In-memory dictionary that will contain currently open keys.
 nonisolated(unsafe) private let _keyStore = NSMutableDictionary()
+
+// How many open handles depend on each cached key. See removeKeyFromDict.
+nonisolated(unsafe) private var _keyStoreRefs: [String: Int] = [:]
 
 let KeyChainAccountName = "P256Key"
 let ErrorKey = "com.microsoft.mpss.ErrorKey"
@@ -96,6 +107,15 @@ private func storeKeyInDict(keyName: String, key: SecureEnclave.P256.Signing.Pri
     }
 }
 
+/// Record that one more handle depends on this name's cached key.
+/// - Parameters:
+///     - keyName: Name of the key being handed to a caller.
+private func retainKeyInDict(_ keyName: String) {
+    _keyStoreQueue.sync {
+        _keyStoreRefs[keyName] = (_keyStoreRefs[keyName] ?? 0) + 1
+    }
+}
+
 /// Get a private key from the in-memory dictionary.
 /// - Parameters:
 ///      - keyName: Name of the key to retrieve.
@@ -111,11 +131,31 @@ private func getKeyFromDict(keyName: String) -> SecureEnclave.P256.Signing.Priva
     })
 }
 
-/// Remove private key from in-memory dictionary.
+/// Release one hold on a key in the in-memory dictionary, evicting it once none are left.
+/// Entries are reference-counted rather than name-keyed alone: two handles can be open on one
+/// name, and evicting on the first close would send the survivor back to the storage lookup,
+/// where a different key could answer to that name.
 /// - Parameters:
-///     - keyName: Name of the key to remove.
+///     - keyName: Name of the key to release.
 private func removeKeyFromDict(_ keyName: String) {
     _keyStoreQueue.sync {
+        let holds = _keyStoreRefs[keyName] ?? 0
+        if holds > 1 {
+            _keyStoreRefs[keyName] = holds - 1
+            return
+        }
+        _keyStoreRefs.removeValue(forKey: keyName)
+        _keyStore.removeObject(forKey: keyName)
+    }
+}
+
+/// Drop a key from the in-memory dictionary regardless of how many holds remain. Deleting a key
+/// invalidates every handle to it, so the entry must not survive on another handle's hold.
+/// - Parameters:
+///     - keyName: Name of the key to drop.
+private func purgeKeyFromDict(_ keyName: String) {
+    _keyStoreQueue.sync {
+        _keyStoreRefs.removeValue(forKey: keyName)
         _keyStore.removeObject(forKey: keyName)
     }
 }
@@ -167,22 +207,15 @@ private func storeDataInKeychain(data: Data, account: String, service: String) -
         kSecValueData as String: data,
     ]
 
-    // In case the item already exists, delete it before adding the new one. A genuine delete
-    // failure (anything other than success or "not found") means the stale item is still present;
-    // proceeding would let SecItemAdd mask it as errSecDuplicateItem, so abort and surface it.
-    let deleteStatus = removeDataFromKeyChain(account: account, service: service)
-    if deleteStatus != errSecSuccess && deleteStatus != errSecItemNotFound {
-        logDebug("Aborting Keychain store; could not clear existing item: \(deleteStatus)")
-        return deleteStatus
-    }
-
-    // Add new data to the Keychain.
+    // No pre-delete: SecItemAdd's errSecDuplicateItem is the reservation. Clearing the way first
+    // would overwrite whatever already holds the name, and creation has already refused a name that
+    // exists, so a duplicate here means another writer took it after that check.
     let status = SecItemAdd(query as CFDictionary, nil)
     if status == errSecSuccess {
         logTrace("Added item to Keychain.")
     } else if status == errSecDuplicateItem {
-        // Item already exists.
-        logTrace("Item already exists in Keychain.")
+        // The caller reports the status; this only records what it means.
+        logDebug("Item already exists in Keychain; refusing to replace it.")
     } else {
         // Some other error occurred.
         logDebug("Error adding item to Keychain: \(status)")
@@ -191,12 +224,55 @@ private func storeDataInKeychain(data: Data, account: String, service: String) -
     return status
 }
 
-/// Retrieve data from the keychain.
+/// Count the items stored under this account and service.
+/// The legacy Keychain rejects kSecMatchLimitAll combined with kSecReturnData (errSecParam), so
+/// ambiguity is detected with a separate attributes-only query before the data is fetched.
+/// - Returns: The number of matching items, or nil if the Keychain could not be read.
+private func countItemsInKeychain(account: String, service: String) -> Int? {
+    let query: [String: Any] = [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrAccount as String: account,
+        kSecAttrService as String: service,
+        kSecReturnAttributes as String: kCFBooleanTrue as Any,
+        kSecMatchLimit as String: kSecMatchLimitAll,
+    ]
+
+    var items: CFTypeRef?
+    let status = SecItemCopyMatching(query as CFDictionary, &items)
+    if status == errSecItemNotFound {
+        return 0
+    }
+    if status != errSecSuccess {
+        logDebug("Error counting items in Keychain: \(status)")
+        setError("Error counting items in Keychain: \(status)")
+        return nil
+    }
+
+    return (items as? [Any])?.count ?? 0
+}
+
+/// Retrieve the single item stored under this account and service.
 /// - Parameters:
 ///     - account: The account name under which the data can be found.
 ///     - service: The service name under which the data can be found.
-/// - Returns: The data retrieved from the keychain or nil if not found.
+/// - Returns: The data, .notFound when nothing is stored, or .failure when the Keychain could not
+/// be read or more than one item shares the name.
 private func retrieveDataFromKeychain(account: String, service: String) -> KeychainDataResult {
+    // A name held by more than one item is refused rather than resolved to whichever item the
+    // Keychain happens to return first.
+    guard let count = countItemsInKeychain(account: account, service: service) else {
+        return .failure
+    }
+    if count == 0 {
+        logTrace("Item not found in Keychain.")
+        return .notFound
+    }
+    if count > 1 {
+        setError("Refusing to open key: \(count) items share this name.")
+        logWarning("Multiple items share the same name; refusing to open an ambiguous key.")
+        return .failure
+    }
+
     let query: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
         kSecAttrAccount as String: account,
@@ -205,7 +281,7 @@ private func retrieveDataFromKeychain(account: String, service: String) -> Keych
         // We want the data itself returned.
         kSecReturnData as String: kCFBooleanTrue as Any,
 
-        // Match only one item.
+        // Exactly one item matched above, so this resolves that item.
         kSecMatchLimit as String: kSecMatchLimitOne,
     ]
 
@@ -224,7 +300,7 @@ private func retrieveDataFromKeychain(account: String, service: String) -> Keych
         return .failure
     }
 
-    guard status == errSecSuccess, let retrievedData = item as? Data else {
+    guard let retrievedData = item as? Data else {
         setError("Keychain returned invalid key data.")
         return .failure
     }
@@ -232,11 +308,16 @@ private func retrieveDataFromKeychain(account: String, service: String) -> Keych
     return .found(retrievedData)
 }
 
-/// Remove data from the keychain.
+/// Remove every item stored under this account and service.
+/// A single SecItemDelete removes only one matching item per call, so deleting a name that matches
+/// several items one call at a time would report success while leaving the rest in place. A
+/// survivor would then resolve unambiguously on the next open, which is exactly the substitution
+/// that refusing an ambiguous name exists to prevent. Items are removed until none are left.
 /// - Parameters:
 ///     - account: The account name under which the data can be found.
 ///     - service: The service name under which the data can be found.
-/// - Returns: errSecSuccess if deleted, errSecItemNotFound if absent, otherwise the failing status.
+/// - Returns: errSecSuccess if anything was deleted, errSecItemNotFound if there was nothing to
+/// delete, otherwise the failing status.
 private func removeDataFromKeyChain(account: String, service: String) -> OSStatus {
     let query: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
@@ -244,20 +325,41 @@ private func removeDataFromKeyChain(account: String, service: String) -> OSStatu
         kSecAttrService as String: service,
     ]
 
-    let status = SecItemDelete(query as CFDictionary)
+    // A name matches one item per keychain in the search list, so it should never come anywhere
+    // near this many. The bound only stops a Keychain that reports success without removing
+    // anything from spinning here; reaching it means the loop is not making progress.
+    let maxItemsPerName = 1024
+    var deleted = 0
 
-    if status == errSecSuccess {
-        logTrace("Deleted item from Keychain.")
-    } else if status == errSecItemNotFound {
-        // Item not found, nothing to delete.
-        logTrace("Item not found in Keychain, nothing to delete.")
-    } else {
-        // Some other error occurred.
-        logDebug("Error deleting item from Keychain: \(status)")
-        setError("Error deleting item from Keychain: \(status)")
+    while deleted < maxItemsPerName {
+        if SecItemDelete(query as CFDictionary) != errSecSuccess {
+            break
+        }
+        deleted += 1
     }
 
-    return status
+    // The terminal status is not a reliable signal: measured on macOS, deleting the last item of a
+    // multi-keychain match leaves the next call answering errSecInvalidItemRef rather than
+    // errSecItemNotFound. What the caller needs to know is whether the name still holds anything,
+    // so that is read back rather than inferred.
+    guard let remaining = countItemsInKeychain(account: account, service: service) else {
+        return errSecInternalError
+    }
+
+    if remaining > 0 {
+        logDebug("Keychain still holds \(remaining) item(s) named '\(service)' after deleting.")
+        setError("Could not delete every item named '\(service)': \(remaining) remain.")
+        return errSecInternalError
+    }
+
+    if deleted > 0 {
+        logTrace("Deleted \(deleted) item(s) from Keychain.")
+        return errSecSuccess
+    }
+
+    // Item not found, nothing to delete.
+    logTrace("Item not found in Keychain, nothing to delete.")
+    return errSecItemNotFound
 }
 
 /// Get a full key name from a user key name.
@@ -347,6 +449,7 @@ private func openExistingKey(_ keyName: String) -> AppleOperationResult {
     let fullKeyName = getKeyName(keyName)
     switch getKey(fullKeyName) {
     case .found:
+        retainKeyInDict(fullKeyName)
         return .success
     case .notFound:
         return .expectedNegative
@@ -374,7 +477,7 @@ func removeExistingKey(_ keyName: UnsafePointer<CChar>) -> Bool {
 /// - Returns: True if the key was removed successfully, false otherwise.
 private func removeExistingKey(_ keyName: String) -> Bool {
     let fullKeyName = getKeyName(keyName)
-    removeKeyFromDict(fullKeyName)
+    purgeKeyFromDict(fullKeyName)
     let status = removeDataFromKeyChain(account: KeyChainAccountName, service: fullKeyName)
     return status == errSecSuccess || status == errSecItemNotFound
 }
@@ -408,7 +511,11 @@ func createKey(_ keyName: UnsafePointer<CChar>, _ requireUserPresence: Bool) -> 
 private func createKey(_ keyName: String, requireUserPresence: Bool) -> Bool {
     let fullKeyName = getKeyName(keyName)
     let privateKey = createKeyPriv(fullKeyName, requireUserPresence: requireUserPresence)
-    return (privateKey != nil)
+    if nil == privateKey {
+        return false
+    }
+    retainKeyInDict(fullKeyName)
+    return true
 }
 
 /// Sign a hash with the given private key.

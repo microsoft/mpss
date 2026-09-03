@@ -16,6 +16,8 @@ std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm, 
 [[nodiscard]]
 std::unique_ptr<KeyPair> open_key(std::string_view name);
 [[nodiscard]]
+bool delete_key(std::string_view name);
+[[nodiscard]]
 bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_key, Algorithm algorithm,
             std::span<const std::byte> sig);
 
@@ -29,6 +31,11 @@ std::unique_ptr<KeyPair> OSBackend::create_key(std::string_view name, Algorithm 
 std::unique_ptr<KeyPair> OSBackend::open_key(std::string_view name) const
 {
     return os::open_key(name);
+}
+
+bool OSBackend::delete_key(std::string_view name) const
+{
+    return os::delete_key(name);
 }
 
 bool OSBackend::verify(std::span<const std::byte> hash, std::span<const std::byte> public_key, Algorithm algorithm,
