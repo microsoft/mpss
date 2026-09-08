@@ -330,17 +330,19 @@ bool YubiKeyBackend::delete_key(std::string_view name) const
     const std::optional<std::uint32_t> target_serial = utils::get_serial_from_env();
     const std::vector<std::uint32_t> serials =
         target_serial ? std::vector<std::uint32_t>{*target_serial} : YubiKeyPIV::available_serials(&device_skipped);
-    if (serials.empty())
-    {
-        mpss::utils::log_and_set_error("No YubiKey devices found.");
-        return false;
-    }
     if (device_skipped)
     {
         // An attached device could not be identified, so the name cannot be reported cleared
-        // everywhere it might be held.
+        // everywhere it might be held. Asked before emptiness: a device that answered its reader but
+        // not its own serial is left out of the list, so the sole attached device going unidentified
+        // also leaves the list empty, and "no devices found" would then describe the wrong state.
         mpss::utils::log_and_set_error("Refusing to clear key '{}': an attached YubiKey could not be identified.",
                                        key_name);
+        return false;
+    }
+    if (serials.empty())
+    {
+        mpss::utils::log_and_set_error("No YubiKey devices found.");
         return false;
     }
     if (!target_serial && serials.size() > 1)

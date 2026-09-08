@@ -303,23 +303,28 @@ class YubiKeyPIV
     Algorithm read_slot_algorithm(std::uint8_t slot);
 
     /**
+     * @brief Whether a slot's certificate label describes the key the slot actually holds.
+     *
+     * Reading either side can fail, which is not the same as the two disagreeing.
+     */
+    enum class LabelBinding
+    {
+        match,       ///< The certificate describes the key the slot holds.
+        mismatch,    ///< The two differ, or the certificate carries no key at all.
+        undetermined ///< Either side could not be read, so the slot may still carry the name.
+    };
+
+    /**
      * @brief Whether a label certificate describes the key the slot currently holds.
      *
      * Compares the certificate's subject public key against the slot's own public key.
      *
      * @param slot The PIV slot number.
      * @param cert The certificate read from that slot.
-     * @return true when the two keys are the same, false when they differ or the slot key is unreadable.
+     * @return LabelBinding::match when the two keys are the same, LabelBinding::mismatch when they
+     * differ or the certificate carries no key, and LabelBinding::undetermined when either key
+     * could not be read.
      */
-    // Whether a slot's certificate label describes the key the slot actually holds. Reading either
-    // side can fail, which is not the same as the two disagreeing.
-    enum class LabelBinding
-    {
-        match,
-        mismatch,
-        undetermined
-    };
-
     LabelBinding slot_key_matches_label(std::uint8_t slot, X509 *cert);
 
     /**

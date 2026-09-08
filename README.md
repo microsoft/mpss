@@ -594,6 +594,26 @@ After `delete_key()` succeeds, all `KeyPair` objects referring to that key must 
 and must not be used. Their subsequent behavior is backend-dependent and is not part of the MPSS API
 contract.
 
+`delete_key()` needs an open key pair, so it can only remove a key that `Open` was able to resolve.
+When a name is held by more than one key — which `Open` refuses rather than guessing between — there
+is no key pair to call it on. `KeyPair::Delete` clears the name instead, without opening anything:
+
+```cpp
+// Clear a name outright, including one that Open refuses as ambiguous.
+bool cleared = KeyPair::Delete("my-key");
+
+// Or clear it in a specific backend.
+bool cleared_on_yubikey = KeyPair::Delete("my-key", "yubikey");
+```
+
+Every key stored under the name is removed, not just the one an open would have resolved to: leaving
+one behind would let the name start resolving again, to whichever copy happened to survive. Clearing
+a name that holds nothing **succeeds** — the call asks that the name hold no key, and it already
+does, so reporting failure would describe the starting state rather than the outcome. A `false`
+return means a key could not be removed or the storage could not be read. Because clearing continues
+past a source it could not clear, such a failure may be partial, so treat the name as unsafe to
+reuse until a later call succeeds.
+
 ### Key Policies
 
 `KeyPair::Create` takes an optional [`KeyPolicy`](mpss/key_policy.h) that constrains how the key may

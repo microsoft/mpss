@@ -21,6 +21,9 @@
 namespace
 {
 
+// Set when device enumeration reached a reader but could not identify the device on it.
+thread_local bool skipped_device = false;
+
 /**
  * @brief Enumerate all reachable YubiKeys and call a visitor for each one.
  *
@@ -31,9 +34,6 @@ namespace
  *
  * @return true if a visitor returned true (state ownership transferred), false otherwise (state cleaned up).
  */
-// Set when device enumeration reached a reader but could not identify the device on it.
-thread_local bool skipped_device = false;
-
 template <typename Visitor> bool for_each_yubikey(ykpiv_state *&state_out, Visitor &&visitor)
 {
     state_out = nullptr;
