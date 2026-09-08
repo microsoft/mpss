@@ -1664,7 +1664,8 @@ TEST_F(YubiKeySlotBinding, LabelDoesNotResolveAfterSlotKeyIsReplaced)
         slot = located.value.slot;
 
         // Replace the key material while leaving the label in place.
-        ASSERT_TRUE(piv.generate_key(slot, mpss::impl::yubikey::utils::mpss_to_yk_algorithm(ecdsa_secp256r1_sha256)));
+        ASSERT_EQ(mpss::impl::yubikey::YubiKeyPIV::GenerateResult::generated,
+                  piv.generate_key(slot, mpss::impl::yubikey::utils::mpss_to_yk_algorithm(ecdsa_secp256r1_sha256)));
     }
 
     const bool opened = (nullptr != mpss::KeyPair::Open(key_name, "yubikey"));

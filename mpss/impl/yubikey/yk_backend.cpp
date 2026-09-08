@@ -184,23 +184,26 @@ std::unique_ptr<KeyPair> YubiKeyBackend::create_key(std::string_view name, Algor
 
     // Try generating the key without PIN authentication first (succeeds when the management key is available
     // without PIN, e.g., via MPSS_YUBIKEY_MGM_KEY or the explicitly enabled factory default).
-    bool key_generated = piv.generate_key(slot, yk_algorithm, policy);
+    YubiKeyPIV::GenerateResult generated = piv.generate_key(slot, yk_algorithm, policy);
 
-    if (!key_generated)
+    if (YubiKeyPIV::GenerateResult::unauthenticated == generated)
     {
-        // Generation failed. Most likely it needs PIN for management key access.
-        // Prompt for PIN and retry.
+        // Wanting credentials is the one refusal a PIN can settle, because the management key may be
+        // PIN-protected. Every other refusal stands on grounds no PIN satisfies -- a YubiKey FIPS
+        // device outside FIPS-approved mode is the known case -- so prompting there would spend an
+        // attempt, and the caller's attention, on a retry that can only fail the same way.
         if (!authenticate_pin_interactive(piv, "generate key '" + key_name + "'"))
         {
             return nullptr;
         }
 
         // PIN is already verified on this connection.
-        key_generated = piv.generate_key(slot, yk_algorithm, policy);
-        if (!key_generated)
-        {
-            return nullptr;
-        }
+        generated = piv.generate_key(slot, yk_algorithm, policy);
+    }
+
+    if (YubiKeyPIV::GenerateResult::generated != generated)
+    {
+        return nullptr;
     }
 
     // Write the key name label to the slot's certificate object.

@@ -309,6 +309,7 @@ bool YubiKeyPIV::authenticate_mgm_key()
     rc = ykpiv_authenticate(state_, default_mgm_key);
     if (YKPIV_OK == rc)
     {
+        used_default_mgm_key_ = true;
         mpss::utils::log_warning("Authenticated with the publicly known factory-default management key because "
                                  "MPSS_YUBIKEY_ALLOW_DEFAULT_MGM_KEY is enabled. Configure MPSS_YUBIKEY_MGM_KEY or "
                                  "PIN-protected management key mode for normal use.");
@@ -329,12 +330,12 @@ bool YubiKeyPIV::authenticate_mgm_key()
     return false;
 }
 
-bool YubiKeyPIV::generate_key(std::uint8_t slot, std::uint8_t algorithm, KeyPolicy policy)
+auto YubiKeyPIV::generate_key(std::uint8_t slot, std::uint8_t algorithm, KeyPolicy policy) -> GenerateResult
 {
     if (nullptr == state_)
     {
         mpss::utils::log_and_set_error("YubiKey not connected.");
-        return false;
+        return GenerateResult::refused;
     }
 
     // Resolve the PIN and touch policies from the KeyPolicy bitmask, falling back to env vars / defaults.
@@ -382,7 +383,9 @@ bool YubiKeyPIV::generate_key(std::uint8_t slot, std::uint8_t algorithm, KeyPoli
 
         if (!authenticate_mgm_key())
         {
-            return false;
+            // The device wants credentials this connection does not have. Verifying the PIN may
+            // unlock a PIN-protected management key, so the caller is told a retry is worth trying.
+            return GenerateResult::unauthenticated;
         }
 
         rc = ykpiv_util_generate_key(state_, slot, algorithm, pin_policy, touch_policy, &modulus, &modulus_len, &exp,
@@ -391,14 +394,63 @@ bool YubiKeyPIV::generate_key(std::uint8_t slot, std::uint8_t algorithm, KeyPoli
 
     // SCOPE_GUARD frees any remaining buffers on return.
 
-    if (YKPIV_OK != rc)
+    if (YKPIV_OK == rc)
     {
-        mpss::utils::log_and_set_error("Key generation failed in slot {}: {}", utils::get_slot_name(slot),
-                                       ykpiv_strerror(rc));
-        return false;
+        return GenerateResult::generated;
     }
 
-    return true;
+    if (YKPIV_CONDITION_ERROR == rc)
+    {
+        // Not an authentication failure -- that is YKPIV_AUTHENTICATION_ERROR, handled above -- so no
+        // credential the caller can supply changes the answer, and retrying only repeats it. The one
+        // condition MPSS is known to meet this way is a YubiKey FIPS device whose PIV application is
+        // not in FIPS-approved mode: it refuses key generation until the PIN, PUK and management key
+        // have all been changed from their factory defaults. ykpiv cannot confirm that reading, since
+        // the FIPS flags live in the management applet rather than in PIV, so this states the rule and
+        // whatever defaults remain visible instead of claiming to have identified the device.
+        mpss::utils::log_and_set_error(
+            "Key generation refused in slot {}: {}. A YubiKey FIPS device reports this when its PIV "
+            "application is not in FIPS-approved mode, which requires the PIN, PUK and management key to all "
+            "differ from their factory defaults.{}",
+            utils::get_slot_name(slot), ykpiv_strerror(rc), describe_default_credentials());
+        return GenerateResult::refused;
+    }
+
+    mpss::utils::log_and_set_error("Key generation failed in slot {}: {}", utils::get_slot_name(slot),
+                                   ykpiv_strerror(rc));
+
+    // A wrong PIN is worth another prompt; a locked one is not, and neither is anything else.
+    return (YKPIV_AUTHENTICATION_ERROR == rc || YKPIV_WRONG_PIN == rc) ? GenerateResult::unauthenticated
+                                                                      : GenerateResult::refused;
+}
+
+std::string YubiKeyPIV::describe_default_credentials()
+{
+    ykpiv_config config = {};
+    if (nullptr == state_ || YKPIV_OK != ykpiv_util_get_config(state_, &config))
+    {
+        return {};
+    }
+
+    // Only what the device actually reports. A PIN that has never been changed is recorded in the
+    // admin data; the PUK has no equivalent record, so it is never named here even though FIPS-approved
+    // mode depends on it too.
+    std::string observed;
+    if (0 == config.pin_last_changed)
+    {
+        observed = "the PIN has never been changed from its factory default";
+    }
+    if (used_default_mgm_key_)
+    {
+        observed += observed.empty() ? "the factory-default management key authenticated"
+                                     : ", and the factory-default management key authenticated";
+    }
+
+    if (observed.empty())
+    {
+        return {};
+    }
+    return std::format(" On this device {}.", observed);
 }
 
 std::size_t YubiKeyPIV::sign(std::uint8_t slot, std::span<const std::byte> hash, Algorithm algorithm,
@@ -626,7 +678,7 @@ bool YubiKeyPIV::delete_key(std::uint8_t slot)
 
     // The device cannot erase a slot, so render the key unusable by overwriting it instead.
     // Policy is irrelevant for the dummy key - KeyPolicy::none resolves to device defaults.
-    if (!generate_key(slot, YKPIV_ALGO_ECCP256))
+    if (GenerateResult::generated != generate_key(slot, YKPIV_ALGO_ECCP256))
     {
         return false;
     }

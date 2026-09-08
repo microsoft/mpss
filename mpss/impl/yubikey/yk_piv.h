@@ -93,6 +93,16 @@ class YubiKeyPIV
     bool authenticate_mgm_key();
 
     /**
+     * @brief Outcome of a key generation attempt.
+     */
+    enum class GenerateResult
+    {
+        generated,       ///< The key was created in the slot.
+        unauthenticated, ///< Refused for want of credentials; verifying the PIN may let a retry through.
+        refused          ///< Refused on grounds no credential satisfies; a retry only repeats it.
+    };
+
+    /**
      * @brief Generate a new key pair in the specified slot.
      *
      * The caller must authenticate PIN and/or management key beforehand if required.
@@ -102,9 +112,11 @@ class YubiKeyPIV
      * @param slot The PIV slot number.
      * @param algorithm The YubiKey PIV algorithm constant (YKPIV_ALGO_ECCP256, etc.).
      * @param policy Key policy bitmask. If KeyPolicy::none, uses env vars / defaults.
-     * @return true if generation succeeded, false otherwise.
+     * @return GenerateResult::generated on success; GenerateResult::unauthenticated when the device
+     * refused for want of credentials, which is the only refusal that verifying a PIN and retrying
+     * can change; GenerateResult::refused for every other failure.
      */
-    bool generate_key(std::uint8_t slot, std::uint8_t algorithm, KeyPolicy policy = KeyPolicy::none);
+    GenerateResult generate_key(std::uint8_t slot, std::uint8_t algorithm, KeyPolicy policy = KeyPolicy::none);
 
     /**
      * @brief Sign a hash with the key in the specified slot.
@@ -280,15 +292,31 @@ class YubiKeyPIV
      * Briefly connects to each smart card reader, reads the serial number, and disconnects.
      * This is a discovery method - it does not leave any connections open.
      *
+     * @param[out] device_skipped Optional. Set when a reader answered but the device on it could not
+     * be identified, so the returned list is not a complete account of what is attached.
      * @return A vector of serial numbers for all reachable YubiKeys.
      */
-    // @param device_skipped Optional. Set when a reader answered but the device on it could not be
-    // identified, so the returned list is not a complete account of what is attached.
     static MPSS_DECOR std::vector<std::uint32_t> available_serials(bool *device_skipped = nullptr);
 
   private:
     ykpiv_state *state_{nullptr};
     std::uint32_t serial_{0};
+
+    // Set when authentication fell back to the publicly known factory-default management key, which
+    // is evidence the device still carries factory credentials.
+    bool used_default_mgm_key_{false};
+
+    /**
+     * @brief Which factory-default credentials the device still appears to carry.
+     *
+     * Reads the PIV admin data, which records whether the PIN has ever been changed. Only credentials
+     * that can be established are named; the management key counts only when authentication actually
+     * fell back to the factory default on this connection.
+     *
+     * @return A sentence to append to a diagnostic, or an empty string when nothing could be
+     * established. Absence of evidence is not evidence that the credentials differ from the defaults.
+     */
+    std::string describe_default_credentials();
 
     bool connect(std::uint32_t target_serial);
     void disconnect();
