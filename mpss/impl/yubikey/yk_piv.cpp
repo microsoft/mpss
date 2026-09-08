@@ -330,7 +330,7 @@ bool YubiKeyPIV::authenticate_mgm_key()
     return false;
 }
 
-auto YubiKeyPIV::generate_key(std::uint8_t slot, std::uint8_t algorithm, KeyPolicy policy) -> GenerateResult
+YubiKeyPIV::GenerateResult YubiKeyPIV::generate_key(std::uint8_t slot, std::uint8_t algorithm, KeyPolicy policy)
 {
     if (nullptr == state_)
     {
@@ -587,7 +587,7 @@ Algorithm YubiKeyPIV::read_slot_algorithm(std::uint8_t slot)
     return utils::yk_to_mpss_algorithm(metadata.algorithm);
 }
 
-auto YubiKeyPIV::slot_key_matches_label(std::uint8_t slot, X509 *cert) -> LabelBinding
+YubiKeyPIV::LabelBinding YubiKeyPIV::slot_key_matches_label(std::uint8_t slot, X509 *cert)
 {
     // Failing to read either side is not the same as the two sides disagreeing. A slot whose key
     // could not be read may still carry the name, so the caller must be able to tell an answer from
@@ -1100,7 +1100,7 @@ KeyProbeResult<std::string> YubiKeyPIV::read_slot_label(std::uint8_t slot)
     return {.status = KeyProbeStatus::found, .value = std::string{cn_buf, static_cast<std::size_t>(cn_len)}};
 }
 
-auto YubiKeyPIV::delete_keys_by_name(std::string_view name) -> DeleteByNameResult
+YubiKeyPIV::DeleteByNameResult YubiKeyPIV::delete_keys_by_name(std::string_view name)
 {
     DeleteByNameResult result{};
     if (nullptr == state_)
@@ -1140,7 +1140,7 @@ auto YubiKeyPIV::delete_keys_by_name(std::string_view name) -> DeleteByNameResul
     return result;
 }
 
-auto YubiKeyPIV::find_slot_by_name(std::string_view name) -> KeyProbeResult<SlotInfo>
+KeyProbeResult<YubiKeyPIV::SlotInfo> YubiKeyPIV::find_slot_by_name(std::string_view name)
 {
     if (nullptr == state_)
     {
