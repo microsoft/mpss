@@ -28,11 +28,13 @@ bool YubiKeyKeyPair::do_delete_key()
 
     // Try deleting without PIN authentication first (succeeds when the management key is available without PIN,
     // e.g., via MPSS_YUBIKEY_MGM_KEY or the explicitly enabled factory default).
-    bool deleted = piv.delete_key(slot_);
+    YubiKeyPIV::DeleteResult deleted = piv.delete_key(slot_);
 
-    if (!deleted)
+    if (YubiKeyPIV::DeleteResult::unauthenticated == deleted)
     {
-        // Deletion failed. We likely need the PIN for management key access.
+        // Wanting credentials is the one refusal a PIN can settle, because the management key may be
+        // PIN-protected. Every other refusal stands on grounds no PIN satisfies, so prompting there
+        // would spend an attempt on a retry that can only fail the same way.
         if (!authenticate_pin_interactive(piv, "delete key '" + name_ + "'"))
         {
             mpss::utils::log_trace("Cannot delete key '{}': PIN authentication failed.", name_);
@@ -43,15 +45,14 @@ bool YubiKeyKeyPair::do_delete_key()
         deleted = piv.delete_key(slot_);
     }
 
-    if (deleted)
+    if (YubiKeyPIV::DeleteResult::deleted == deleted)
     {
         mpss::utils::log_trace("Key '{}' in slot {} deleted.", name_, utils::get_slot_name(slot_));
+        return true;
     }
-    else
-    {
-        mpss::utils::log_trace("Failed to delete key '{}' from slot {}.", name_, utils::get_slot_name(slot_));
-    }
-    return deleted;
+
+    mpss::utils::log_trace("Failed to delete key '{}' from slot {}.", name_, utils::get_slot_name(slot_));
+    return false;
 }
 
 std::size_t YubiKeyKeyPair::do_sign_hash(std::span<const std::byte> hash, std::span<std::byte> sig) const

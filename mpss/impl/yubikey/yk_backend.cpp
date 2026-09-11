@@ -214,7 +214,7 @@ std::unique_ptr<KeyPair> YubiKeyBackend::create_key(std::string_view name, Algor
         // the key with a dummy key and writes a marker certificate indicating the slot is free. If cleanup
         // itself fails, the slot holds an unlabeled key that MPSS won't find by name, but the slot is
         // consumed until manually cleared.
-        if (!piv.delete_key(slot))
+        if (YubiKeyPIV::DeleteResult::deleted != piv.delete_key(slot))
         {
             mpss::utils::log_warning("Failed to clean up slot {} after labeling failure.", utils::get_slot_name(slot));
         }
@@ -231,7 +231,8 @@ std::unique_ptr<KeyPair> YubiKeyBackend::create_key(std::string_view name, Algor
         // ambiguous and consume a slot. Roll back only while this slot still carries this name: a
         // slot another writer has since taken over holds their key, which is not ours to delete.
         const KeyProbeResult<std::string> own_label = piv.read_slot_label(slot);
-        if (KeyProbeStatus::found == own_label.status && own_label.value == key_name && !piv.delete_key(slot))
+        if (KeyProbeStatus::found == own_label.status && own_label.value == key_name &&
+            YubiKeyPIV::DeleteResult::deleted != piv.delete_key(slot))
         {
             mpss::utils::log_warning("Failed to clean up slot {} after a concurrent modification.",
                                      utils::get_slot_name(slot));
@@ -370,9 +371,12 @@ bool YubiKeyBackend::delete_key(std::string_view name) const
         }
 
         YubiKeyPIV::DeleteByNameResult result = piv.delete_keys_by_name(key_name);
-        if (result.delete_refused)
+        if (result.needs_authentication)
         {
-            // Deleting needs the management key, which may need the PIN on this device.
+            // Deleting needs the management key, which may need the PIN on this device. Only a refusal
+            // for want of credentials is retried: every other one stands on grounds no PIN satisfies,
+            // so prompting there would spend an attempt, and the caller's attention, on a retry that
+            // can only fail the same way.
             if (authenticate_pin_interactive(piv, "delete key '" + key_name + "'"))
             {
                 // The retry rescans every slot, so its own verdict on what could be read supersedes

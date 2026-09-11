@@ -1675,7 +1675,7 @@ TEST_F(YubiKeySlotBinding, LabelDoesNotResolveAfterSlotKeyIsReplaced)
     {
         YubiKeyPIV piv{serials_[0]};
         EXPECT_TRUE(piv.is_connected());
-        EXPECT_TRUE(piv.delete_key(slot));
+        EXPECT_EQ(mpss::impl::yubikey::YubiKeyPIV::DeleteResult::deleted, piv.delete_key(slot));
     }
 
     EXPECT_FALSE(opened);

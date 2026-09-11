@@ -147,6 +147,16 @@ class YubiKeyPIV
     std::size_t get_public_key(std::uint8_t slot, std::span<std::byte> public_key, bool probe = false);
 
     /**
+     * @brief Outcome of a key deletion attempt.
+     */
+    enum class DeleteResult
+    {
+        deleted,         ///< The key is gone from the slot.
+        unauthenticated, ///< Refused for want of credentials; verifying the PIN may let a retry through.
+        refused          ///< Refused on grounds no credential satisfies; a retry only repeats it.
+    };
+
+    /**
      * @brief Delete the key in the specified slot.
      *
      * Where the device can erase a slot outright, the key material is destroyed and the slot is left
@@ -156,9 +166,13 @@ class YubiKeyPIV
      * The caller must authenticate PIN and/or management key beforehand if required.
      *
      * @param slot The PIV slot number.
-     * @return true if deletion succeeded, false otherwise.
+     * @return DeleteResult::deleted on success; DeleteResult::unauthenticated when the device refused
+     * for want of credentials, which is the only refusal that verifying a PIN and retrying can change;
+     * DeleteResult::refused for every other failure. The overwrite fallback goes through key
+     * generation, so a device that refuses to generate -- a YubiKey FIPS device outside FIPS-approved
+     * mode, for instance -- refuses to delete this way too, and for the same unsatisfiable reason.
      */
-    bool delete_key(std::uint8_t slot);
+    DeleteResult delete_key(std::uint8_t slot);
 
     /**
      * @brief Get the touch policy of the key in the specified slot.
@@ -259,8 +273,12 @@ class YubiKeyPIV
         // How many slots were cleared.
         std::size_t deleted;
 
-        // A slot refused the delete. Retrying after authenticating may succeed.
+        // A slot refused the delete, so the name cannot be reported as cleared.
         bool delete_refused;
+
+        // A slot refused for want of credentials. This is the only refusal that verifying a PIN and
+        // retrying can change; every other one stands on grounds no credential satisfies.
+        bool needs_authentication;
 
         // A slot could not be read, so it may still carry the name.
         bool unreadable_slot;
@@ -360,9 +378,10 @@ class YubiKeyPIV
      */
     enum class EraseResult
     {
-        erased,      ///< The key was destroyed; the slot is left empty.
-        unsupported, ///< The device has no erase command and the slot is unchanged.
-        failed       ///< The erase was attempted and failed; the last error is set.
+        erased,          ///< The key was destroyed; the slot is left empty.
+        unsupported,     ///< The device has no erase command and the slot is unchanged.
+        unauthenticated, ///< Refused for want of credentials; verifying the PIN may let a retry through.
+        failed           ///< The erase was attempted and failed; the last error is set.
     };
 
     /**

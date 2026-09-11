@@ -626,7 +626,9 @@ YubiKeyPIV::EraseResult YubiKeyPIV::erase_slot(std::uint8_t slot)
     {
         if (!authenticate_mgm_key())
         {
-            return EraseResult::failed;
+            // The management key could not be established. A PIN-protected management key is unlocked
+            // by verifying the PIN, so the caller is told a retry is worth trying.
+            return EraseResult::unauthenticated;
         }
 
         rc = ykpiv_move_key(state_, slot, erase_key_destination);
@@ -635,6 +637,13 @@ YubiKeyPIV::EraseResult YubiKeyPIV::erase_slot(std::uint8_t slot)
     if (YKPIV_NOT_SUPPORTED == rc)
     {
         return EraseResult::unsupported;
+    }
+
+    if (YKPIV_AUTHENTICATION_ERROR == rc)
+    {
+        mpss::utils::log_and_set_error("Failed to erase the key in slot {}: {}", utils::get_slot_name(slot),
+                                       ykpiv_strerror(rc));
+        return EraseResult::unauthenticated;
     }
 
     if (YKPIV_OK != rc)
@@ -657,30 +666,36 @@ YubiKeyPIV::EraseResult YubiKeyPIV::erase_slot(std::uint8_t slot)
     return EraseResult::erased;
 }
 
-bool YubiKeyPIV::delete_key(std::uint8_t slot)
+YubiKeyPIV::DeleteResult YubiKeyPIV::delete_key(std::uint8_t slot)
 {
     if (nullptr == state_)
     {
         mpss::utils::log_and_set_error("YubiKey not connected.");
-        return false;
+        return DeleteResult::refused;
     }
 
     using enum EraseResult;
     switch (erase_slot(slot))
     {
     case erased:
-        return true;
+        return DeleteResult::deleted;
+    case unauthenticated:
+        return DeleteResult::unauthenticated;
     case failed:
-        return false;
+        return DeleteResult::refused;
     case unsupported:
         break;
     }
 
     // The device cannot erase a slot, so render the key unusable by overwriting it instead.
     // Policy is irrelevant for the dummy key - KeyPolicy::none resolves to device defaults.
-    if (GenerateResult::generated != generate_key(slot, YKPIV_ALGO_ECCP256))
+    const GenerateResult overwritten = generate_key(slot, YKPIV_ALGO_ECCP256);
+    if (GenerateResult::generated != overwritten)
     {
-        return false;
+        // Deleting this way is a generation, so it inherits generation's refusals verbatim -- including
+        // a device that will not generate at all, which no credential the caller supplies can change.
+        return (GenerateResult::unauthenticated == overwritten) ? DeleteResult::unauthenticated
+                                                                : DeleteResult::refused;
     }
 
     // Write a marker certificate so the slot is recognized as available for reuse.
@@ -692,10 +707,10 @@ bool YubiKeyPIV::delete_key(std::uint8_t slot)
         // The slot is now effectively unusable since the metadata is required to recognize it as free, but the key
         // material has been overwritten so it can't be used maliciously. We log a warning but return success since
         // the key material was securely deleted.
-        return true;
+        return DeleteResult::deleted;
     }
 
-    return true;
+    return DeleteResult::deleted;
 }
 
 std::uint8_t YubiKeyPIV::get_key_touch_policy(std::uint8_t slot)
@@ -1128,13 +1143,18 @@ YubiKeyPIV::DeleteByNameResult YubiKeyPIV::delete_keys_by_name(std::string_view 
             continue;
         }
 
-        if (delete_key(slot))
+        const DeleteResult cleared = delete_key(slot);
+        if (DeleteResult::deleted == cleared)
         {
             ++result.deleted;
             continue;
         }
 
         result.delete_refused = true;
+        if (DeleteResult::unauthenticated == cleared)
+        {
+            result.needs_authentication = true;
+        }
     }
 
     return result;
