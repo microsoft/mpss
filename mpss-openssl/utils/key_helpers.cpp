@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 #include "mpss-openssl/utils/utils.h"
-#include <memory>
 #include <mpss/mpss.h>
 #include <string_view>
 
