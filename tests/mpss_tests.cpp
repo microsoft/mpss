@@ -1113,8 +1113,6 @@ TEST(KeyPolicyTest, RoundTripThroughUint64)
     static_assert(back == policy);
 }
 
-#ifdef MPSS_BACKEND_YUBIKEY
-
 TEST(KeyPolicyTest, YubikeyPinFieldValues)
 {
     static_assert(static_cast<std::uint64_t>(KeyPolicy::yubikey_pin_never) == 1);
@@ -1159,8 +1157,6 @@ TEST(KeyPolicyTest, CombineAndExtractAllFields)
     static_assert(3 == pin);
     static_assert(3 == touch);
 }
-
-#endif // MPSS_BACKEND_YUBIKEY
 
 #ifdef MPSS_BACKEND_YUBIKEY
 TEST_F(MPSS, YubiKeyBackendRejectsUnsupportedKeyPolicy)

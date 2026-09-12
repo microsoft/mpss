@@ -797,8 +797,6 @@ TEST(KeyPolicyDefines, AppleSecureEnclaveUserPresenceMatchesCppEnum)
                   static_cast<std::uint64_t>(mpss::KeyPolicy::apple_secure_enclave_user_presence));
 }
 
-#ifdef MPSS_BACKEND_YUBIKEY
-
 TEST(KeyPolicyDefines, YubikeyPinDefinesMatchCppEnum)
 {
     static_assert(MPSS_KEY_POLICY_YUBIKEY_PIN_NEVER == static_cast<std::uint64_t>(mpss::KeyPolicy::yubikey_pin_never));
@@ -816,8 +814,6 @@ TEST(KeyPolicyDefines, YubikeyTouchDefinesMatchCppEnum)
     static_assert(MPSS_KEY_POLICY_YUBIKEY_TOUCH_CACHED ==
                   static_cast<std::uint64_t>(mpss::KeyPolicy::yubikey_touch_cached));
 }
-
-#endif // MPSS_BACKEND_YUBIKEY
 
 // --- KeyPolicy provider parameter pass-through test ---
 

@@ -22,12 +22,15 @@ namespace mpss
  * - Bits 4-7:  YubiKey touch policy (4-bit field).
  * - Bit 8:      Apple Secure Enclave user presence.
  * - Bits 9-63:  Reserved for other backends.
+ *
+ * The layout is fixed, so every constant is defined regardless of which backends this build
+ * includes. Naming a policy a backend cannot enforce is rejected at runtime by that backend rather
+ * than at compile time, which keeps portable callers free of build-configuration conditionals.
  */
 enum class MPSS_DECOR KeyPolicy : std::uint64_t
 {
     none = 0, /**< No policy specified. All fields fall back to env var / backend defaults. */
 
-#ifdef MPSS_BACKEND_YUBIKEY
     // -- YubiKey PIN policy (bits 0-3). Zero = use env var / MPSS default. --
 
     yubikey_pin_never = 1U,  /**< Never require PIN for signing. */
@@ -41,20 +44,15 @@ enum class MPSS_DECOR KeyPolicy : std::uint64_t
     yubikey_touch_always = 2U << 4U, /**< Require physical touch for every signing operation. */
     yubikey_touch_cached = 3U << 4U, /**< Require physical touch once per 15-second window. */
     // Values 4-15 reserved (auto, future policies).
-#endif // MPSS_BACKEND_YUBIKEY
 
     apple_secure_enclave_user_presence = 1ULL << 8U, /**< Require system user authentication when this key signs. */
 };
-
-#ifdef MPSS_BACKEND_YUBIKEY
 
 /** @brief Group mask for YubiKey PIN policy (bits 0-3). */
 inline constexpr KeyPolicy yubikey_pin_mask = KeyPolicy{0xFU};
 
 /** @brief Group mask for YubiKey touch policy (bits 4-7). */
 inline constexpr KeyPolicy yubikey_touch_mask = KeyPolicy{0xFU << 4U};
-
-#endif // MPSS_BACKEND_YUBIKEY
 
 // NOLINTBEGIN(readability-redundant-casting,misc-no-recursion)
 // readability-redundant-casting: outer static_cast from uint64_t to enum class is required.

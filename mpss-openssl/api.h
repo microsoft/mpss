@@ -12,18 +12,22 @@
 
 #include <stddef.h>
 
-/** @brief Key policy constants for use with the "mpss_key_policy" provider parameter. */
+/**
+ * @brief Key policy constants for use with the "mpss_key_policy" provider parameter.
+ *
+ * These mirror @ref mpss::KeyPolicy and share its fixed bit layout, so every constant is defined
+ * regardless of which backends this build includes. Naming a policy a backend cannot enforce is
+ * rejected at runtime by that backend.
+ */
 // NOLINTBEGIN(*-macro-to-enum) - C/C++ dual header; macros required for C compatibility.
 #define MPSS_KEY_POLICY_NONE 0U
 
-#ifdef MPSS_BACKEND_YUBIKEY
 #define MPSS_KEY_POLICY_YUBIKEY_PIN_NEVER 1U
 #define MPSS_KEY_POLICY_YUBIKEY_PIN_ONCE 2U
 #define MPSS_KEY_POLICY_YUBIKEY_PIN_ALWAYS 3U
 #define MPSS_KEY_POLICY_YUBIKEY_TOUCH_NEVER (1U << 4U)
 #define MPSS_KEY_POLICY_YUBIKEY_TOUCH_ALWAYS (2U << 4U)
 #define MPSS_KEY_POLICY_YUBIKEY_TOUCH_CACHED (3U << 4U)
-#endif
 
 #define MPSS_KEY_POLICY_APPLE_SECURE_ENCLAVE_USER_PRESENCE (1ULL << 8U)
 // NOLINTEND(*-macro-to-enum)
