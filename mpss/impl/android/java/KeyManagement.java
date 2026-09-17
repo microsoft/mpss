@@ -106,6 +106,66 @@ public class KeyManagement {
     }
 
     /**
+     * Whether this key is one MPSS can vouch for.
+     * @param keyInfo Properties read back from the key store.
+     * @return Null when the key is usable, otherwise why it is refused.
+     */
+    private static String GetKeyRefusalReason(KeyInfo keyInfo) {
+        // Where a key is now says nothing about where it came from. A key imported into the key
+        // store genuinely resides in secure hardware, so it reports hardware backing while whoever
+        // imported it still holds the private material.
+        final int origin = keyInfo.getOrigin();
+        if (KeyProperties.ORIGIN_GENERATED != origin) {
+            return "was not generated inside the key store (origin: " + DescribeOrigin(origin) + ")";
+        }
+
+        return null;
+    }
+
+    /**
+     * Name an origin for a log message, since the framework values are easy to misread as flags.
+     * @param origin Origin value read back from the key store.
+     * @return Name of the origin.
+     */
+    private static String DescribeOrigin(int origin) {
+        switch (origin) {
+            case KeyProperties.ORIGIN_GENERATED:
+                return "generated";
+            case KeyProperties.ORIGIN_IMPORTED:
+                return "imported";
+            case KeyProperties.ORIGIN_SECURELY_IMPORTED:
+                return "securely imported";
+            case KeyProperties.ORIGIN_UNKNOWN:
+                return "unknown";
+            default:
+                return "unrecognized value " + origin;
+        }
+    }
+
+    /**
+     * Report the capabilities a key needs in order to sign here.
+     *
+     * These are reported rather than refused. A key store that honors a capability at generation
+     * but does not echo it back would otherwise make its own keys permanently unopenable, and a
+     * key that genuinely lacks one cannot produce a signature regardless.
+     * @param keyName Name of the key.
+     * @param keyInfo Properties read back from the key store.
+     */
+    private static void LogMissingKeyCapabilities(String keyName, KeyInfo keyInfo) {
+        if (0 == (keyInfo.getPurposes() & KeyProperties.PURPOSE_SIGN)) {
+            Log.w("MPSS", "Key '" + keyName + "' does not report a signing purpose.");
+        }
+
+        if (!Arrays.asList(keyInfo.getDigests()).contains(KeyProperties.DIGEST_NONE)) {
+            Log.w("MPSS", "Key '" + keyName + "' does not report accepting pre-hashed input.");
+        }
+
+        if (keyInfo.isUserAuthenticationRequired()) {
+            Log.w("MPSS", "Key '" + keyName + "' reports requiring user authentication.");
+        }
+    }
+
+    /**
      * Get security level for the given key pair.
      * @param keyName Name of the keypair.
      * @return Integer indicating security level of the key. Possible values are:
@@ -134,6 +194,16 @@ public class KeyManagement {
 
             KeyFactory keyFactory = KeyFactory.getInstance(pk.getAlgorithm(), "AndroidKeyStore");
             KeyInfo keyInfo = keyFactory.getKeySpec(pk, KeyInfo.class);
+
+            String refusal = GetKeyRefusalReason(keyInfo);
+            if (null != refusal) {
+                String msg = "Refusing key '" + keyName + "': it " + refusal + ".";
+                Log.e("MPSS", msg);
+                SetError(msg);
+                return -1;
+            }
+
+            LogMissingKeyCapabilities(keyName, keyInfo);
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 return Api31Impl.GetKeySecurityLevel(keyInfo, keyName);
