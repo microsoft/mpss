@@ -13,9 +13,9 @@ namespace mpss_openssl::testing
 {
 
 // Aliases for what the provider already declares, so the tests do not maintain a second set.
-using bio_ptr = utils::bio_ptr;
-using evp_pkey_ptr = utils::evp_pkey_ptr;
-using evp_pkey_ctx_ptr = utils::evp_pkey_ctx_ptr;
+using utils::bio_ptr;
+using utils::evp_pkey_ctx_ptr;
+using utils::evp_pkey_ptr;
 
 // The provider owns none of these types, so there is nothing to alias and the tests declare them
 // against the same deleter helper. It supplies encoder callbacks rather than driving an encoder

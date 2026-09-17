@@ -5,7 +5,7 @@ Checks: >
   -cppcoreguidelines-pro-type-cstyle-cast,
   -hicpp-avoid-c-arrays,
   -hicpp-no-array-decay,
-  -hicpp-signed-bitwise,
+  -bugprone-signed-bitwise,
   -misc-non-private-member-variables-in-classes,
   -cppcoreguidelines-non-private-member-variables-in-classes,
   -modernize-avoid-c-arrays,

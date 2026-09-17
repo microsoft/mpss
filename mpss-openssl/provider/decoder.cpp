@@ -57,7 +57,7 @@ try
         return nullptr;
     }
 
-    auto dctx = mpss_new<mpss_decoder_ctx>();
+    auto *dctx = mpss_new<mpss_decoder_ctx>();
     if (nullptr == dctx)
     {
         return nullptr;

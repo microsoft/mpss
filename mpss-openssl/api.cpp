@@ -128,7 +128,7 @@ try
     // Backend availability is determined at compile time, so it won't change.
     static std::vector<const char *> ptrs;
     static std::once_flag flag;
-    std::call_once(flag, []() {
+    std::call_once(flag, [] {
         ptrs = mpss::get_available_backends();
         ptrs.push_back(nullptr); // null-terminate
     });

@@ -248,12 +248,12 @@ try
         if (flush_handlers && flush_handlers[i])
         {
             mpss_flush_handler_t cb = flush_handlers[i];
-            cpp_flush[i] = [cb]() { cb(); };
+            cpp_flush[i] = [cb] { cb(); };
         }
         if (close_handlers && close_handlers[i])
         {
             mpss_close_handler_t cb = close_handlers[i];
-            cpp_close[i] = [cb]() { cb(); };
+            cpp_close[i] = [cb] { cb(); };
         }
     }
 

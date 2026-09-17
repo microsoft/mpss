@@ -39,7 +39,11 @@ Checks: >
   -readability-identifier-length,
   -readability-implicit-bool-conversion,
   -readability-magic-numbers,
-  -readability-named-parameter
+  -readability-named-parameter,
+  -readability-trailing-comma
+
+CheckOptions:
+  bugprone-unused-return-value.AllowCastToVoid: true
 
 WarningsAsErrors: '*,-cppcoreguidelines-init-variables,-cppcoreguidelines-pro-type-member-init,-hicpp-member-init,-readability-simplify-boolean-expr'
 HeaderFilterRegex: '(mpss|mpss-openssl|tests)/'

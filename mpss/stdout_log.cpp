@@ -29,11 +29,11 @@ std::shared_ptr<Logger> NewDefaultLogger()
     };
 
     std::array<flush_handler_t, log_level_count> flush_handlers{};
-    flush_handlers[static_cast<std::size_t>(trace)] = []() { std::cout << std::flush; };
-    flush_handlers[static_cast<std::size_t>(debug)] = []() { std::cout << std::flush; };
-    flush_handlers[static_cast<std::size_t>(info)] = []() { std::cout << std::flush; };
-    flush_handlers[static_cast<std::size_t>(warning)] = []() { std::cerr << std::flush; };
-    flush_handlers[static_cast<std::size_t>(error)] = []() { std::cerr << std::flush; };
+    flush_handlers[static_cast<std::size_t>(trace)] = [] { std::cout << std::flush; };
+    flush_handlers[static_cast<std::size_t>(debug)] = [] { std::cout << std::flush; };
+    flush_handlers[static_cast<std::size_t>(info)] = [] { std::cout << std::flush; };
+    flush_handlers[static_cast<std::size_t>(warning)] = [] { std::cerr << std::flush; };
+    flush_handlers[static_cast<std::size_t>(error)] = [] { std::cerr << std::flush; };
 
     // No special close actions needed for stdout/stderr.
     std::array<close_handler_t, log_level_count> close_handlers{};

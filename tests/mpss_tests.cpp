@@ -1317,6 +1317,7 @@ TEST(HexStringToBytesTest, ValidEvenLengthRoundTrips)
     ASSERT_TRUE(result.has_value());
     const std::vector<std::byte> expected{static_cast<std::byte>(0xde), static_cast<std::byte>(0xad),
                                           static_cast<std::byte>(0xbe), static_cast<std::byte>(0xef)};
+    // NOLINTNEXTLINE(bugprone-unchecked-optional-access) - guarded by the assertion above.
     EXPECT_EQ(expected, result.value());
 }
 
@@ -1324,6 +1325,7 @@ TEST(HexStringToBytesTest, EmptyStringIsEmptyVector)
 {
     auto result = mpss::utils::hex_string_to_bytes<std::vector<std::byte>>("");
     ASSERT_TRUE(result.has_value());
+    // NOLINTNEXTLINE(bugprone-unchecked-optional-access) - guarded by the assertion above.
     EXPECT_TRUE(result.value().empty());
 }
 

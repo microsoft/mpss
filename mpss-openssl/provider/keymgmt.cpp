@@ -294,12 +294,9 @@ try
     }
 
     p = OSSL_PARAM_locate_const(params, "mpss_key_policy");
-    if (nullptr != p)
+    if (nullptr != p && !OSSL_PARAM_get_uint64(p, &ctx->key_policy))
     {
-        if (!OSSL_PARAM_get_uint64(p, &ctx->key_policy))
-        {
-            return 0;
-        }
+        return 0;
     }
 
     return 1;

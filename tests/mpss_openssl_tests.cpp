@@ -383,7 +383,7 @@ TEST_F(MPSSDigest, SHA256)
     {
         const std::size_t size = rd() % (1024 * 1024);
         std::string input_data(size, '\0');
-        std::ranges::generate(input_data, [&rd]() { return static_cast<char>(rd() % 256); });
+        std::ranges::generate(input_data, [&rd] { return static_cast<char>(rd() % 256); });
         TestDigest("SHA256", EVP_sha256, input_data);
     }
 }
@@ -395,7 +395,7 @@ TEST_F(MPSSDigest, SHA384)
     {
         const std::size_t size = rd() % (1024 * 1024);
         std::string input_data(size, '\0');
-        std::ranges::generate(input_data, [&rd]() { return static_cast<char>(rd() % 256); });
+        std::ranges::generate(input_data, [&rd] { return static_cast<char>(rd() % 256); });
         TestDigest("SHA384", EVP_sha384, input_data);
     }
 }
@@ -407,7 +407,7 @@ TEST_F(MPSSDigest, SHA512)
     {
         const std::size_t size = rd() % (1024 * 1024);
         std::string input_data(size, '\0');
-        std::ranges::generate(input_data, [&rd]() { return static_cast<char>(rd() % 256); });
+        std::ranges::generate(input_data, [&rd] { return static_cast<char>(rd() % 256); });
         TestDigest("SHA512", EVP_sha512, input_data);
     }
 }
@@ -466,7 +466,7 @@ TEST_F(MPSSDigest, OneShotDigest)
         // Compare the one-shot against the default provider on random input.
         const std::size_t size = rd() % 4096;
         std::string input_data(size, '\0');
-        std::ranges::generate(input_data, [&rd]() { return static_cast<char>(rd() % 256); });
+        std::ranges::generate(input_data, [&rd] { return static_cast<char>(rd() % 256); });
 
         ASSERT_EQ(1, one_shot_digest(provider_ctx, reinterpret_cast<const unsigned char *>(input_data.data()),
                                      input_data.size(), mpss_digest, &mpss_digest_len, sizeof(mpss_digest)));

@@ -1,6 +1,7 @@
 InheritParentConfig: true
 Checks: >
   -bugprone-assignment-in-if-condition,
+  -bugprone-assignment-in-selection-statement,
   -bugprone-macro-parentheses,
   -cppcoreguidelines-avoid-c-arrays,
   -cppcoreguidelines-avoid-const-or-ref-data-members,
@@ -12,7 +13,7 @@ Checks: >
   -hicpp-avoid-c-arrays,
   -hicpp-deprecated-headers,
   -hicpp-no-array-decay,
-  -hicpp-signed-bitwise,
+  -bugprone-signed-bitwise,
   -misc-non-private-member-variables-in-classes,
   -modernize-avoid-c-arrays,
   -modernize-deprecated-headers,
@@ -20,4 +21,5 @@ Checks: >
   -modernize-redundant-void-arg,
   -modernize-use-designated-initializers,
   -modernize-use-using,
-  -readability-avoid-const-params-in-decls
+  -readability-avoid-const-params-in-decls,
+  -readability-trivial-switch
