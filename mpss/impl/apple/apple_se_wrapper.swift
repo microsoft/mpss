@@ -5,29 +5,30 @@ import CryptoKit
 import Foundation
 import Security
 
-// C logging functions from mpss/log_c.h, resolved at link time.
+// C logging functions from mpss/log_c.h, resolved at link time. The attribute carries the C
+// symbol, so the Swift name beside it is local and has no bearing on linkage.
 @_silgen_name("mpss_log_debug")
-private func c_mpss_log_debug(_ message: UnsafePointer<CChar>)
+private func cMpssLogDebug(_ message: UnsafePointer<CChar>)
 
 @_silgen_name("mpss_log_trace")
-private func c_mpss_log_trace(_ message: UnsafePointer<CChar>)
+private func cMpssLogTrace(_ message: UnsafePointer<CChar>)
 
 @_silgen_name("mpss_log_warning")
-private func c_mpss_log_warning(_ message: UnsafePointer<CChar>)
+private func cMpssLogWarning(_ message: UnsafePointer<CChar>)
 
 /// Log a trace message through the unified C++ logger.
 private func logTrace(_ message: String) {
-    message.withCString { c_mpss_log_trace($0) }
+    message.withCString { cMpssLogTrace($0) }
 }
 
 /// Log a debug message through the unified C++ logger.
 private func logDebug(_ message: String) {
-    message.withCString { c_mpss_log_debug($0) }
+    message.withCString { cMpssLogDebug($0) }
 }
 
 /// Log a warning through the unified C++ logger.
 private func logWarning(_ message: String) {
-    message.withCString { c_mpss_log_warning($0) }
+    message.withCString { cMpssLogWarning($0) }
 }
 
 // The dispatch queue is used to serialize access to the key store in order to make it thread-safe.
@@ -39,8 +40,8 @@ nonisolated(unsafe) private let _keyStore = NSMutableDictionary()
 // How many open handles depend on each cached key. See removeKeyFromDict.
 nonisolated(unsafe) private var _keyStoreRefs: [String: Int] = [:]
 
-let KeyChainAccountName = "P256Key"
-let ErrorKey = "com.microsoft.mpss.ErrorKey"
+let keyChainAccountName = "P256Key"
+let errorKey = "com.microsoft.mpss.ErrorKey"
 
 private enum AppleOperationResult: Int32 {
     case operationalError = -1
@@ -82,19 +83,19 @@ extension Digest {
 /// Get the current last error.
 /// - Returns: The current last error.
 private func getError() -> String {
-    Thread.current.threadDictionary[ErrorKey] as? String ?? ""
+    Thread.current.threadDictionary[errorKey] as? String ?? ""
 }
 
 /// Set the current last error.
 /// - Parameters:
 ///     - error: The new last error.
 private func setError(_ error: String) {
-    Thread.current.threadDictionary[ErrorKey] = error
+    Thread.current.threadDictionary[errorKey] = error
 }
 
 /// Clear the current last error.
 private func clearError() {
-    Thread.current.threadDictionary.removeObject(forKey: ErrorKey)
+    Thread.current.threadDictionary.removeObject(forKey: errorKey)
 }
 
 /// Store a private key in the in-memory dictionary.
@@ -180,7 +181,7 @@ private func getKey(_ keyName: String, takeHold: Bool) -> KeyLookupResult {
 
         // Try from keychain.
         logDebug("Key not found in dictionary, trying to get from Keychain.")
-        switch retrieveDataFromKeychain(account: KeyChainAccountName, service: keyName) {
+        switch retrieveDataFromKeychain(account: keyChainAccountName, service: keyName) {
         case .found(let keyChainData):
             let result = try SecureEnclave.P256.Signing.PrivateKey(
                 dataRepresentation: keyChainData)
@@ -408,7 +409,7 @@ private func createKeyPriv(
 
         // Save it now.
         let status = storeDataInKeychain(
-            data: privateKey.dataRepresentation, account: KeyChainAccountName, service: keyName)
+            data: privateKey.dataRepresentation, account: keyChainAccountName, service: keyName)
 
         if status != errSecSuccess {
             setError("Error storing private key in Keychain: \(status)")
@@ -483,7 +484,7 @@ func removeExistingKey(_ keyName: UnsafePointer<CChar>) -> Bool {
 private func removeExistingKey(_ keyName: String) -> Bool {
     let fullKeyName = getKeyName(keyName)
     purgeKeyFromDict(fullKeyName)
-    let status = removeDataFromKeyChain(account: KeyChainAccountName, service: fullKeyName)
+    let status = removeDataFromKeyChain(account: keyChainAccountName, service: fullKeyName)
     return status == errSecSuccess || status == errSecItemNotFound
 }
 

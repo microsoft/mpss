@@ -2,4 +2,13 @@
 Language: Cpp
 BasedOnStyle: Microsoft
 BreakAfterAttributes: Always
+---
+# Objective-C follows the prevailing convention for the language (two-space indent, attached
+# braces) rather than the Allman style used for C++, which is what apple_api_wrapper.m was
+# already written in. The column limit matches the C++ section. Function bodies are not folded
+# onto the signature line, which a 120-column limit would otherwise do to several of them.
+Language: ObjC
+BasedOnStyle: Google
+ColumnLimit: 120
+AllowShortFunctionsOnASingleLine: Empty
 ...
