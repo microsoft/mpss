@@ -43,74 +43,38 @@ cmake --install out/build/<configure-preset-name> --prefix <destination> # optio
 
 Run `cmake --list-presets=all` to list presets. Desktop names containing `-with-yubikey` enable
 YubiKey support; `-shared` selects shared libraries, otherwise static. Android uses shared
-libraries and the iOS Simulator preset uses static libraries.
+libraries and the iOS Simulator preset uses static libraries. Linux offers only `-with-yubikey`
+presets, because it has no OS-native backend and MPSS requires at least one backend.
 
 Each configure preset has a separate `out/build/<name>` directory and vcpkg installation.
 With Visual Studio or Xcode, add `--config Debug` or `--config Release` when installing.
 Linux presets target the host architecture; Windows, macOS, Android, and iOS presets name
 their target architecture.
 
-### Windows
+### Configuring Without Presets
 
-To configure manually:
+On Windows:
 
 ```cmd
 cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake"
 ```
 
-### macOS
-
-To configure manually:
+On macOS:
 
 ```bash
 cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
 ```
 
-### Linux / YubiKey Backend
-
-#### Prerequisites
-
-The YubiKey backend requires a PIV-capable YubiKey with the PIV application enabled and firmware
-support for [reading slot metadata](https://docs.yubico.com/yesdk/users-manual/application-piv/apdu/metadata.html).
-Install the `ykman` CLI separately for device administration. FIPS models also need
-[FIPS provisioning](#fips-device-readiness).
-
-On **Linux**, the PC/SC smart card library must be installed separately, as it is a system dependency:
+Linux has no OS-native backend, so the YubiKey backend is not optional there: configuration fails
+with `No backend available` unless it is enabled.
 
 ```bash
-# Debian/Ubuntu
-sudo apt install libpcsclite-dev
-
-# Fedora/RHEL
-sudo dnf install pcsc-lite-devel
+cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+    -DMPSS_BACKEND_YUBIKEY=ON
 ```
 
-At runtime, a working PC/SC service (normally `pcscd` on Linux) and permission to access the
-reader are required as well.
-
-#### Build Configuration
-
-- **Linux:**
-  ```bash
-  cmake --preset linux-with-yubikey-release
-  cmake --build --preset linux-with-yubikey-release
-  ```
-
-- **macOS:**
-  ```bash
-  cmake --preset macos-arm64-with-yubikey-release
-  cmake --build --preset macos-arm64-with-yubikey-release
-  ```
-
-  Use `macos-x64-...` for x64. The presets target macOS 13.3 or later.
-
-- **Windows:**
-  ```cmd
-  cmake --preset win-vs2022-x64-with-yubikey
-  cmake --build --preset win-vs2022-x64-with-yubikey-release
-  ```
-
-For device setup and backend selection, see [Using MPSS with YubiKey PIV](#using-mpss-with-yubikey-piv).
+See [YubiKey Backend](#yubikey-backend) for its prerequisites, which on Linux include a system
+PC/SC library.
 
 ### iOS
 
@@ -130,9 +94,16 @@ cmake -DBUILD_TYPE=Debug -DOUTPUT_DIR=./out -P cmake/ios_xcframework.cmake
 The script creates `libmpss.xcframework` and optionally `libmpss-openssl.xcframework` in the
 project root, with arm64 slices for iOS devices and the Apple Silicon iOS simulator.
 
-Add the bundles to your Xcode project. The provider bundle does not embed OpenSSL; link an
-iOS-built OpenSSL separately. Use the core API from C++/Objective-C++, or provide a bridge
-for Swift callers. The OpenSSL provider also offers a C API.
+Add the XCFrameworks to your Xcode project.
+
+If you include the provider, your app must also link an OpenSSL built for the iOS target. The
+provider archive deliberately leaves OpenSSL's symbols undefined so that your own link step
+resolves them, which is also why one set of headers serves both the device and simulator slices.
+Building OpenSSL for iOS through vcpkg is the usual route; the macOS OpenSSL on your build host
+will not link against an iOS binary.
+
+The MPSS core API is C++, so call it from C++ or Objective-C++. Swift cannot import it directly
+and needs a small Objective-C++ wrapper.
 
 For other Apple platforms, build directly with the appropriate `CMAKE_SYSTEM_NAME`,
 `CMAKE_OSX_SYSROOT`, and `CMAKE_OSX_ARCHITECTURES`, then bundle the resulting `.a` files into
@@ -383,7 +354,7 @@ The device ABI must match the build. Install and run the APK:
 ```bash
 adb install -r out/build/android-arm64-debug/android-tests/mpss-tests.apk
 adb logcat -c
-adb shell am instrument -w com.microsoft.research.mpss.tests/.TestRunner
+adb shell am instrument -w com.microsoft.mpss.tests/.TestRunner
 adb logcat -d -s MPSS:V MPSS_TESTS:V '*:S'
 ```
 
@@ -392,7 +363,7 @@ final pass, skip, and failure counts.
 
 The test APK is signed with Gradle's local debug key. If an APK with the same application ID but a
 different signing key is already installed, remove it first with
-`adb uninstall com.microsoft.research.mpss.tests`.
+`adb uninstall com.microsoft.mpss.tests`.
 
 Emulators exercise AndroidKeyStore and JNI integration; TEE and StrongBox require physical-device testing.
 
@@ -412,6 +383,55 @@ Without `externalNativeBuild`, also copy `libc++_shared.so` from the same instal
 `jniLibs/<abi>/`. Otherwise, let Gradle package it.
 
 **Note**: Only shared libraries are supported on Android. Static builds will produce a configuration error.
+
+### YubiKey Backend
+
+Unlike the sections above, this is an optional backend rather than a platform. It is available on
+Linux, macOS, and Windows, so the build steps below cover all three.
+
+#### Prerequisites
+
+The YubiKey backend requires a PIV-capable YubiKey with the PIV application enabled and firmware
+support for [reading slot metadata](https://docs.yubico.com/yesdk/users-manual/application-piv/apdu/metadata.html).
+Install the `ykman` CLI separately for device administration. FIPS models also need
+[FIPS provisioning](#fips-device-readiness).
+
+On **Linux**, the PC/SC smart card library must be installed separately, as it is a system dependency:
+
+```bash
+# Debian/Ubuntu
+sudo apt install libpcsclite-dev
+
+# Fedora/RHEL
+sudo dnf install pcsc-lite-devel
+```
+
+At runtime, a working PC/SC service (normally `pcscd` on Linux) and permission to access the
+reader are required as well.
+
+#### Build Configuration
+
+- **Linux:**
+  ```bash
+  cmake --preset linux-with-yubikey-release
+  cmake --build --preset linux-with-yubikey-release
+  ```
+
+- **macOS:**
+  ```bash
+  cmake --preset macos-arm64-with-yubikey-release
+  cmake --build --preset macos-arm64-with-yubikey-release
+  ```
+
+  Use `macos-x64-...` for x64. The presets target macOS 13.3 or later.
+
+- **Windows:**
+  ```cmd
+  cmake --preset win-vs2022-x64-with-yubikey
+  cmake --build --preset win-vs2022-x64-with-yubikey-release
+  ```
+
+For device setup and backend selection, see [Using MPSS with YubiKey PIV](#using-mpss-with-yubikey-piv).
 
 ### Common Build Options
 
@@ -591,7 +611,7 @@ The library supports the following ECDSA algorithms:
 
 **Note**: The YubiKey backend does not support P-521 (secp521r1). Use an OS-native backend for
 P-521 where available, but do not assume it will be hardware-backed. Apple Secure Enclave and
-Android StrongBox are used only for P-256, and Windows TPM curve support varies by device.
+Android StrongBox are used only for P-256, and Windows TPM algorithm support varies by device.
 
 ### Standalone Verification
 
@@ -766,7 +786,37 @@ that opt-in. Unsupported policies still fail creation.
 
 ### Custom Interaction Handlers
 
-Applications that need custom PIN entry (e.g., a GUI dialog) or touch notifications can install a custom interaction handler:
+MPSS requests the PIN, and signals when the device is waiting to be touched, through one interface.
+Implement it to replace the built-in terminal prompt with a GUI dialog, a secure-store lookup, or
+whatever suits the application.
+
+| Method | Must implement | Called when |
+| --- | --- | --- |
+| `request_pin` | Yes | MPSS needs a PIN. Return it, or `std::nullopt` to cancel the operation |
+| `notify_touch_needed` | Yes | A touch-protected operation is waiting for the user to touch the device |
+| `notify_touch_complete` | Yes | That operation finished; `success` is false if the touch timed out |
+| `notify_pin_result` | No | After every attempt, and after a request that never reached the device. The only report of success, lockout, or device error |
+
+`request_pin` drives the retry loop. Returning a PIN makes one attempt; if it is wrong, MPSS calls
+again with `context.last_status` set to `wrong_pin` and `context.retries_remaining` giving the
+device's remaining tries, and the handler decides whether to ask again or give up by returning
+`std::nullopt`. Do not return a value the device already refused: MPSS refuses to present it a
+second time, because each wrong PIN spends one of the few tries before the device locks.
+
+The two PIN methods report different things, which is why a UI usually needs both. `request_pin`
+learns only that a previous attempt was wrong, since it is the request for the *next* attempt;
+once the PIN is accepted, or the device locks or errors, MPSS stops calling it. Those outcomes
+arrive at `notify_pin_result` instead, so that is where a dialog opened in `request_pin` finds out
+to close.
+
+`notify_pin_result` answers every `request_pin` call, so UI opened while answering a request can
+always be taken down. When the PIN never reaches the device the result is `not_attempted`: that
+covers a handler that cancels, returns an empty PIN, or throws, and a value MPSS withholds because
+this device already refused it. No retry is spent in any of those cases. The operation itself also
+fails, and the reason is available through its return value and `mpss::get_error()`.
+
+Installing a handler replaces the built-in terminal handler, so `MPSS_YUBIKEY_PIN` is no longer
+consulted unless your own implementation chooses to read it.
 
 ```cpp
 #include "mpss/interaction_handler.h"
@@ -775,29 +825,55 @@ class MyInteractionHandler : public mpss::InteractionHandler {
 public:
     std::optional<mpss::SecureString> request_pin(const mpss::PinRequestContext &context) override
     {
-        if (mpss::PinStatus::wrong_pin == context.last_status) {
-            // Show "Wrong PIN" in UI. context.retries_remaining has the count.
+        if (mpss::PinStatus::wrong_pin == context.last_status &&
+            !my_ui::confirm_retry(context.retries_remaining)) {
+            return std::nullopt;  // Give up rather than spend another try.
         }
-        // Replace this stub with a dialog or secure-store lookup that returns a SecureString.
-        // Until implemented, cancel rather than supplying a guessed or hardcoded PIN.
-        return std::nullopt;
+
+        // context.operation describes what needs the PIN, for the prompt text. Have the dialog
+        // return a SecureString so the PIN is never held in an ordinary std::string.
+        return my_ui::prompt_for_pin(context.operation);  // std::nullopt if the user cancels.
     }
+
+    void notify_touch_needed() override { my_ui::show_touch_prompt(); }
+
+    void notify_touch_complete(bool success) override { my_ui::hide_touch_prompt(success); }
+
+    // Optional, but it is the only place an outcome other than "wrong PIN" is reported: on success,
+    // lockout, a device error, or a PIN that never reached the device, MPSS stops calling request_pin,
+    // so a dialog opened there would never learn to close itself. Exactly one result follows every
+    // request, so dismissing here is always reached.
     void notify_pin_result(mpss::PinResult result, int retries_remaining) override
     {
-        // Called after each PIN attempt. Update UI (e.g., dismiss dialog on success,
-        // show "PIN locked" warning on lockout).
+        if (mpss::PinResult::not_attempted == result) {
+            // MPSS withheld the PIN rather than spend one of the device's few tries on it, or the
+            // request was cancelled. No attempt was made, so retries_remaining is unchanged.
+            my_ui::hide_pin_dialog();
+            return;
+        }
+        my_ui::report_pin_result(result, retries_remaining);  // ok, wrong_pin, locked, or error.
     }
-    void notify_touch_needed() override { /* show "touch your YubiKey" UI */ }
-    void notify_touch_complete(bool success) override { /* dismiss UI; report failure if !success */ }
 };
 
-// Install before any MPSS operations (typically at application startup).
+// Install once, before any MPSS operation (typically at application startup).
 mpss::GetOrSetInteractionHandler(std::make_shared<MyInteractionHandler>());
 ```
 
-The handler controls retries. MPSS stops on cancellation, an empty PIN, success, lockout,
-authentication errors, or repetition of the same failed PIN within one operation.
-Separate operations can still exhaust the retry counter if given the same wrong PIN.
+`notify_touch_needed` and `notify_touch_complete` always come in pairs around the signing call, so
+the completion arrives even when no touch was actually required: with a cached touch the device
+returns at once and the two land back to back, which shows up as a brief flicker rather than a
+prompt the user must act on. A handler that opens a modal dialog should tolerate that, for example
+by delaying the dialog briefly and cancelling it if completion has already arrived.
+
+Never log the PIN, and do not keep it after returning it. The handler is called on whichever thread
+performs the operation, so an implementation that drives UI must marshal to its own UI thread.
+
+MPSS stops asking on cancellation, an empty PIN, success, lockout, authentication errors, or
+repetition of a PIN this device has already refused.
+
+Callers that cannot subclass a C++ interface can install the same four behaviors as plain function
+pointers through [mpss-openssl/interaction_handler.h](mpss-openssl/interaction_handler.h), which
+declares `mpss_request_pin_handler_t` and the three notification types.
 
 ### Device Selection
 
@@ -811,6 +887,18 @@ export MPSS_YUBIKEY_SERIAL=18268739
 Creation, opening, and deletion by name obey this selection. Malformed serials are warned
 about and treated as unset. Existing `KeyPair` handles retain their serial and slot.
 By-name deletion also refuses device enumerations that could not identify an attached device.
+
+Each device has its own PIN, while `MPSS_YUBIKEY_PIN` holds a single value, so a PIN that suits one
+device will generally not suit another. Because a device locks after a few wrong PINs and every
+operation authenticates afresh, a stale configured PIN would otherwise be spent one retry at a time
+until the device locked. MPSS therefore declines to present a PIN that the device has already
+refused, and reports that as the reason the operation failed.
+The record is kept per serial, so a value one device refused is still offered to another, where it
+may well be correct. Only values that device actually refused are withheld, so correcting the PIN
+takes effect immediately. MPSS retains a keyed fingerprint of each refused PIN rather than the PIN
+itself.
+The record lasts for the lifetime of the loaded library. If the device PIN is changed elsewhere to a
+value MPSS has already seen refused, restart the process so that value is offered again.
 
 ### Summary of Runtime Environment Variables
 
@@ -833,8 +921,9 @@ By-name deletion also refuses device enumerations that could not identify an att
 | Algorithms | P-256 and P-384; no P-521 |
 | Device access | Key operations require the device, including verification through a `KeyPair`. Standalone verification with an extracted public key does not |
 | Authentication | Creation/deletion request a PIN only after authentication-related failure; other refusals do not trigger a PIN retry |
+| PIN lockout | A PIN the device refuses is not presented to it again for the lifetime of the process, so a stale `MPSS_YUBIKEY_PIN` cannot spend the device's remaining retries. Recorded per serial, so other devices are unaffected |
 | PIN policy | MPSS reconnects per operation, so `once` need not cache the PIN across signing calls. `never` affects signing, not management authentication |
-| Touch policy | `cached` uses a 15-second touch window. The interaction handler reports touch requests and completion; timeout fails signing |
+| Touch policy | `cached` needs a touch only if more than 15 seconds have passed since the last one. The handler is notified whenever the policy is not `never`, so under `cached` a prompt can appear when the cached touch means none is actually required. MPSS sets no timeout of its own; signing blocks until the device gives up, and an untouched key fails the operation |
 | Concurrency | Run one PIV writer per device. Multi-step operations are not atomic across processes |
 
 Names live in each slot's label certificate, whose public key must match the slot key.

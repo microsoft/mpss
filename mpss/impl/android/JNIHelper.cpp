@@ -67,8 +67,8 @@ bool JNIHelper::init(JavaVM *vm)
         return !failed;
     };
 
-    if (!cache_class("com/microsoft/research/mpss/KeyManagement", key_management_class_) ||
-        !cache_class("com/microsoft/research/mpss/Algorithm", algorithm_class_) ||
+    if (!cache_class("com/microsoft/mpss/KeyManagement", key_management_class_) ||
+        !cache_class("com/microsoft/mpss/Algorithm", algorithm_class_) ||
         !cache_class("java/lang/Boolean", boolean_class_))
     {
         uninit(vm);

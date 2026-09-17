@@ -12,7 +12,7 @@ if(NOT TARGET ${mpss_TARGET})
 endif()
 find_package(XCTest REQUIRED)
 
-set(MPSS_IOS_TEST_BUNDLE_IDENTIFIER "com.microsoft.research.mpss.tests"
+set(MPSS_IOS_TEST_BUNDLE_IDENTIFIER "com.microsoft.mpss.tests"
     CACHE STRING "Bundle identifier for the hosted iOS test application")
 if(MPSS_IOS_TEST_BUNDLE_IDENTIFIER STREQUAL "")
     message(FATAL_ERROR "MPSS_IOS_TEST_BUNDLE_IDENTIFIER must not be empty.")

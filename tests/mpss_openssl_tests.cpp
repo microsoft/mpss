@@ -31,6 +31,7 @@
 #include <openssl/pem.h>
 #include <openssl/proverr.h>
 #include <openssl/provider.h>
+#include <openssl/ssl.h>
 #include <openssl/store.h>
 #include <openssl/x509.h>
 #include <random>
@@ -148,6 +149,9 @@ using mpss_openssl::testing::bio_ptr;
 using mpss_openssl::testing::encoder_ctx_ptr;
 using mpss_openssl::testing::evp_pkey_ctx_ptr;
 using mpss_openssl::testing::evp_pkey_ptr;
+using mpss_openssl::testing::ssl_ctx_ptr;
+using mpss_openssl::testing::ssl_ptr;
+using mpss_openssl::testing::x509_ptr;
 
 // Process-unique, like every other key name in this suite, so that two test binaries running at the
 // same time cannot delete each other's fixture key. A function rather than a namespace-scope string
@@ -1434,6 +1438,125 @@ TEST_F(MPSSStore, ReferencePemCarriesExplicitBackend)
     evp_pkey_ptr decoded = DecodeReferencePem(libctx, ReferencePemFor("os", key_name));
     ASSERT_NE(nullptr, decoded.get());
     EXPECT_FALSE(SignDigest(libctx, decoded.get()).empty());
+}
+
+// Scenario: a key reopened from a reference PEM serves as a TLS server's private key.
+// Expected behavior: the handshake completes. The server signs during the handshake, so completing
+// one proves the reopened key signs through the provider -- the end-to-end claim the reference PEM
+// exists to support, an unmodified OpenSSL consumer using a hardware key it never sees material for.
+TEST_F(MPSSStore, AReferenceReloadedKeyCompletesATlsHandshake)
+{
+    if (!mpss_is_algorithm_available(mpss_p256_algorithm))
+    {
+        GTEST_SKIP() << "Algorithm not supported by current backend";
+    }
+
+    const std::string key_name = reference_fixture_key_name();
+    mpss_delete_key(key_name.c_str());
+    SCOPE_GUARD(mpss_delete_key(key_name.c_str()));
+
+    evp_pkey_ptr created = GenerateKey(libctx, key_name);
+    if (nullptr == created)
+    {
+        GTEST_SKIP() << "MPSS provider key generation failed: " << mpss_get_error();
+    }
+
+    const std::string pem = EncodeReferencePem(created.get());
+    ASSERT_FALSE(pem.empty());
+
+    // Drop the original handle so the handshake can only be served by the reopened key.
+    created.reset();
+
+    evp_pkey_ptr server_key = DecodeReferencePem(libctx, pem);
+    ASSERT_NE(nullptr, server_key.get());
+
+    // The reopened key must belong to this provider, or the handshake below would prove nothing
+    // about MPSS.
+    EXPECT_EQ(mpss_prov, EVP_PKEY_get0_provider(server_key.get()));
+
+    // A self-signed certificate over the reopened key, signed by that same key.
+    const x509_ptr server_cert(X509_new_ex(libctx, nullptr));
+    ASSERT_NE(nullptr, server_cert.get());
+    ASSERT_EQ(1, X509_set_version(server_cert.get(), 2));
+    ASSERT_EQ(1, ASN1_INTEGER_set(X509_get_serialNumber(server_cert.get()), 1));
+    ASSERT_NE(nullptr, X509_gmtime_adj(X509_getm_notBefore(server_cert.get()), 0));
+    ASSERT_NE(nullptr, X509_gmtime_adj(X509_getm_notAfter(server_cert.get()), 31536000L));
+    ASSERT_EQ(1, X509_set_pubkey(server_cert.get(), server_key.get()));
+
+    X509_NAME *subject = X509_get_subject_name(server_cert.get());
+    ASSERT_NE(nullptr, subject);
+    ASSERT_EQ(1, X509_NAME_add_entry_by_txt(subject, "CN", MBSTRING_ASC,
+                                            reinterpret_cast<const unsigned char *>("localhost"), -1, -1, 0));
+    ASSERT_EQ(1, X509_set_issuer_name(server_cert.get(), subject));
+    ASSERT_GT(X509_sign(server_cert.get(), server_key.get(), EVP_sha256()), 0);
+
+    const ssl_ctx_ptr server_ctx(SSL_CTX_new_ex(libctx, nullptr, TLS_server_method()));
+    ASSERT_NE(nullptr, server_ctx.get());
+    ASSERT_EQ(1, SSL_CTX_use_certificate(server_ctx.get(), server_cert.get()));
+    ASSERT_EQ(1, SSL_CTX_use_PrivateKey(server_ctx.get(), server_key.get()));
+
+    const ssl_ctx_ptr client_ctx(SSL_CTX_new_ex(libctx, nullptr, TLS_client_method()));
+    ASSERT_NE(nullptr, client_ctx.get());
+    SSL_CTX_set_verify(client_ctx.get(), SSL_VERIFY_PEER, nullptr);
+    ASSERT_EQ(1, X509_STORE_add_cert(SSL_CTX_get_cert_store(client_ctx.get()), server_cert.get()));
+
+    const ssl_ptr server(SSL_new(server_ctx.get()));
+    const ssl_ptr client(SSL_new(client_ctx.get()));
+    ASSERT_NE(nullptr, server.get());
+    ASSERT_NE(nullptr, client.get());
+    ASSERT_EQ(1, SSL_set1_host(client.get(), "localhost"));
+
+    // An in-memory transport, so the test needs no socket and cannot block on one.
+    BIO *server_side = nullptr;
+    BIO *client_side = nullptr;
+    ASSERT_EQ(1, BIO_new_bio_pair(&server_side, 0, &client_side, 0));
+    SSL_set_bio(server.get(), server_side, server_side);
+    SSL_set_bio(client.get(), client_side, client_side);
+
+    SSL_set_accept_state(server.get());
+    SSL_set_connect_state(client.get());
+
+    // Drive both ends until they agree or stop making progress. The bound is a guard against a
+    // handshake that never settles; a healthy one needs far fewer rounds than this.
+    constexpr int max_rounds = 64;
+    bool client_done = false;
+    bool server_done = false;
+    for (int round = 0; round < max_rounds && !(client_done && server_done); ++round)
+    {
+        if (!client_done)
+        {
+            const int rc = SSL_do_handshake(client.get());
+            if (1 == rc)
+            {
+                client_done = true;
+            }
+            else
+            {
+                const int err = SSL_get_error(client.get(), rc);
+                ASSERT_TRUE(SSL_ERROR_WANT_READ == err || SSL_ERROR_WANT_WRITE == err)
+                    << "client handshake failed: " << err << " (mpss: " << mpss_get_error() << ")";
+            }
+        }
+
+        if (!server_done)
+        {
+            const int rc = SSL_do_handshake(server.get());
+            if (1 == rc)
+            {
+                server_done = true;
+            }
+            else
+            {
+                const int err = SSL_get_error(server.get(), rc);
+                ASSERT_TRUE(SSL_ERROR_WANT_READ == err || SSL_ERROR_WANT_WRITE == err)
+                    << "server handshake failed: " << err << " (mpss: " << mpss_get_error() << ")";
+            }
+        }
+    }
+
+    ASSERT_TRUE(client_done) << "client did not finish the handshake";
+    ASSERT_TRUE(server_done) << "server did not finish the handshake";
+    EXPECT_EQ(X509_V_OK, SSL_get_verify_result(client.get()));
 }
 
 class CreateAndDeleteKeyTest : public ::testing::TestWithParam<const char *>

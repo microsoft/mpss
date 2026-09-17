@@ -234,7 +234,7 @@ std::optional<bool> java_create_key(std::string_view key_name, mpss::Algorithm a
     }
 
     jmethodID method = env->GetStaticMethodID(
-        key_management, "CreateKey", "(Ljava/lang/String;Lcom/microsoft/research/mpss/Algorithm;)Ljava/lang/Boolean;");
+        key_management, "CreateKey", "(Ljava/lang/String;Lcom/microsoft/mpss/Algorithm;)Ljava/lang/Boolean;");
     if (mpss::impl::os::utils::check_and_clear_exception(env, "resolving KeyManagement.CreateKey"))
     {
         return std::nullopt;
@@ -270,7 +270,7 @@ std::optional<bool> java_create_key(std::string_view key_name, mpss::Algorithm a
     }
 
     jfieldID algorithm_field_id =
-        env->GetStaticFieldID(algorithm_class, algorithm_field, "Lcom/microsoft/research/mpss/Algorithm;");
+        env->GetStaticFieldID(algorithm_class, algorithm_field, "Lcom/microsoft/mpss/Algorithm;");
     if (mpss::impl::os::utils::check_and_clear_exception(env, "resolving an Algorithm enum value"))
     {
         return std::nullopt;
@@ -756,7 +756,7 @@ TEST(AndroidJNITest, PendingJavaExceptionIsCleared)
     ASSERT_TRUE(guard.valid());
     JNIEnv *const env = guard.env();
 
-    jclass missing_class = env->FindClass("com/microsoft/research/mpss/MissingForTest");
+    jclass missing_class = env->FindClass("com/microsoft/mpss/MissingForTest");
     ASSERT_TRUE(mpss::impl::os::utils::check_and_clear_exception(env, "finding a test-only missing class"));
     ASSERT_EQ(nullptr, missing_class);
     ASSERT_FALSE(env->ExceptionCheck());

@@ -1,9 +1,11 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+#include "mpss/interaction_handler.h"
 #include "mpss/key_policy.h"
 #include "mpss/log.h"
 #include "mpss/mpss.h"
+#include "mpss/secure_types.h"
 #include "mpss/utils/utilities.h"
 #include "tests/compat_env.h"
 #include "tests/test_key_names.h"
@@ -21,7 +23,9 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -1843,6 +1847,266 @@ TEST_F(MultiYubiKeyTest, KeysOnDifferentDevicesAreIndependent)
     key_a->delete_key();
     key_b->delete_key();
 }
+
+#ifndef MPSS_CORE_IS_SHARED
+// A device allows only a few wrong PINs before it locks, and every operation asks for a PIN afresh, so a
+// value a device has already refused must not be presented to it again. Device-independent -- these
+// exercise the record directly, so they never spend a PIN attempt on hardware.
+namespace
+{
+// The record is process-wide and cannot be reset, so each test needs serials no other test uses. These
+// are outside the range real YubiKeys report.
+[[nodiscard]]
+std::uint32_t unique_test_serial()
+{
+    static std::uint32_t next = 0xF0000000;
+    ++next;
+    return next;
+}
+} // namespace
+
+TEST(YubiKeyRejectedPins, ARejectedPinIsNotPresentedToTheSameDeviceAgain)
+{
+    using namespace mpss::impl::yubikey;
+
+    const std::uint32_t serial = unique_test_serial();
+    EXPECT_FALSE(pin_already_rejected(serial, "not-a-real-pin-a"));
+
+    remember_rejected_pin(serial, "not-a-real-pin-a");
+    EXPECT_TRUE(pin_already_rejected(serial, "not-a-real-pin-a"));
+
+    // Only that value is refused; a different PIN is still worth presenting.
+    EXPECT_FALSE(pin_already_rejected(serial, "not-a-real-pin-b"));
+
+    // An empty PIN is not a value the device ever judged.
+    remember_rejected_pin(serial, "");
+    EXPECT_FALSE(pin_already_rejected(serial, ""));
+    EXPECT_TRUE(pin_already_rejected(serial, "not-a-real-pin-a"));
+}
+
+TEST(YubiKeyRejectedPins, EveryRejectedPinStaysRejected)
+{
+    using namespace mpss::impl::yubikey;
+
+    const std::uint32_t serial = unique_test_serial();
+    remember_rejected_pin(serial, "not-a-real-pin-a");
+    remember_rejected_pin(serial, "not-a-real-pin-b");
+
+    // Recording the second must not forget the first, or cycling between two wrong values would spend a
+    // retry on each pass.
+    EXPECT_TRUE(pin_already_rejected(serial, "not-a-real-pin-a"));
+    EXPECT_TRUE(pin_already_rejected(serial, "not-a-real-pin-b"));
+    EXPECT_FALSE(pin_already_rejected(serial, "not-a-real-pin-c"));
+
+    // Recording a value twice is harmless.
+    remember_rejected_pin(serial, "not-a-real-pin-a");
+    EXPECT_TRUE(pin_already_rejected(serial, "not-a-real-pin-a"));
+}
+
+TEST(YubiKeyRejectedPins, ValuesTheDeviceIsNotGivenAsWrittenAreIgnored)
+{
+    using namespace mpss::impl::yubikey;
+
+    const std::uint32_t serial = unique_test_serial();
+
+    // The device is handed a null-terminated string, so a value with an embedded null is not comparable
+    // with what it actually saw.
+    const std::string_view embedded_null{"not-a\0-real-pin", 15};
+    remember_rejected_pin(serial, embedded_null);
+    EXPECT_FALSE(pin_already_rejected(serial, embedded_null));
+
+    remember_rejected_pin(serial, "");
+    EXPECT_FALSE(pin_already_rejected(serial, ""));
+}
+
+TEST(YubiKeyRejectedPins, ARejectionOnOneDeviceDoesNotBlockAnother)
+{
+    using namespace mpss::impl::yubikey;
+
+    const std::uint32_t rejecting_serial = unique_test_serial();
+    const std::uint32_t other_serial = unique_test_serial();
+
+    remember_rejected_pin(rejecting_serial, "not-a-real-pin-a");
+
+    EXPECT_TRUE(pin_already_rejected(rejecting_serial, "not-a-real-pin-a"));
+    // The same value may well be the correct PIN of a different device, so it must still be offered there.
+    EXPECT_FALSE(pin_already_rejected(other_serial, "not-a-real-pin-a"));
+}
+
+// The record only protects a device if the authentication path consults it, which the tests above cannot
+// show. This drives a real operation instead. A passing run presents nothing to the device: the value is
+// fabricated and already recorded as refused, so the operation must fail without reaching the card. Only a
+// run that has already lost the guard spends a retry.
+class YubiKeyPinGuard : public ::testing::Test
+{
+  protected:
+    void SetUp() override
+    {
+        serials_ = mpss::impl::yubikey::YubiKeyPIV::available_serials();
+        if (serials_.empty())
+        {
+            GTEST_SKIP() << "Requires a connected YubiKey.";
+        }
+
+        const char *value = std::getenv("MPSS_YUBIKEY_PIN"); // NOLINT(concurrency-mt-unsafe)
+        saved_pin_ = (nullptr == value) ? std::nullopt : std::optional<std::string>{value};
+    }
+
+    void TearDown() override
+    {
+        restore_pin();
+    }
+
+    void restore_pin()
+    {
+        if (saved_pin_.has_value())
+        {
+            setenv("MPSS_YUBIKEY_PIN", saved_pin_->c_str(), 1); // NOLINT(concurrency-mt-unsafe)
+        }
+        else
+        {
+            unsetenv("MPSS_YUBIKEY_PIN"); // NOLINT(concurrency-mt-unsafe)
+        }
+    }
+
+    std::vector<std::uint32_t> serials_; // NOLINT(misc-non-private-member-variables-in-classes)
+
+  private:
+    std::optional<std::string> saved_pin_;
+};
+
+TEST_F(YubiKeyPinGuard, AnAlreadyRejectedPinIsNotPresentedToTheDevice)
+{
+    const std::string key_name = test_key_name("mpss_yk_pin_guard");
+    MPSS::DeleteKey(key_name);
+
+    std::unique_ptr<mpss::KeyPair> handle = mpss::KeyPair::Create(key_name, ecdsa_secp256r1_sha256, "yubikey");
+    if (nullptr == handle)
+    {
+        GTEST_SKIP() << "Connected YubiKey cannot create keys in its current state.";
+    }
+
+    // A value the device has never been given, recorded as though it had refused it.
+    const std::string fabricated = "not-a-real-pin-d";
+    mpss::impl::yubikey::remember_rejected_pin(serials_[0], fabricated);
+    setenv("MPSS_YUBIKEY_PIN", fabricated.c_str(), 1); // NOLINT(concurrency-mt-unsafe)
+
+    const std::vector<std::byte> hash(32, static_cast<std::byte>('h'));
+    std::vector<std::byte> signature(handle->sign_hash_size());
+    EXPECT_EQ(0, handle->sign_hash(hash, signature));
+
+    // The refusal must come from the record, not from the device rejecting the value.
+    EXPECT_NE(std::string::npos, mpss::get_error().find("already rejected"));
+
+    restore_pin();
+    MPSS::DeleteKey(key_name);
+}
+
+// Every PIN request must be answered by exactly one result, including when the PIN never reaches the
+// device: a handler that opened UI while answering the request has nothing else to tell it to close.
+namespace
+{
+class CountingHandler : public mpss::InteractionHandler
+{
+  public:
+    explicit CountingHandler(std::optional<mpss::SecureString> pin) : pin_{std::move(pin)}
+    {
+    }
+
+    std::optional<mpss::SecureString> request_pin(const mpss::PinRequestContext & /*context*/) override
+    {
+        ++requests;
+        if (throw_from_request)
+        {
+            throw std::runtime_error{"handler failure"};
+        }
+        return pin_;
+    }
+
+    void notify_pin_result(mpss::PinResult result, int /*retries_remaining*/) override
+    {
+        ++results;
+        last_result = result;
+    }
+
+    void notify_touch_needed() override
+    {
+    }
+
+    void notify_touch_complete(bool /*success*/) override
+    {
+    }
+
+    // NOLINTBEGIN(misc-non-private-member-variables-in-classes) - a test double.
+    int requests{0};
+    int results{0};
+    bool throw_from_request{false};
+    mpss::PinResult last_result{mpss::PinResult::ok};
+    // NOLINTEND(misc-non-private-member-variables-in-classes)
+
+  private:
+    std::optional<mpss::SecureString> pin_;
+};
+
+class RestoreHandler
+{
+  public:
+    RestoreHandler() = default;
+    RestoreHandler(const RestoreHandler &) = delete;
+    RestoreHandler(RestoreHandler &&) = delete;
+    RestoreHandler &operator=(const RestoreHandler &) = delete;
+    RestoreHandler &operator=(RestoreHandler &&) = delete;
+    ~RestoreHandler()
+    {
+        mpss::ResetDefaultInteractionHandler();
+    }
+};
+} // namespace
+
+TEST_F(YubiKeyPinGuard, EveryPinRequestIsAnsweredByExactlyOneResult)
+{
+    const RestoreHandler restore;
+
+    // A value recorded as refused, so MPSS withholds it and never reaches the device.
+    const std::string withheld = "not-a-real-pin-e";
+    mpss::impl::yubikey::remember_rejected_pin(serials_[0], withheld);
+
+    const std::string key_name = test_key_name("mpss_yk_one_result");
+    MPSS::DeleteKey(key_name);
+    std::unique_ptr<mpss::KeyPair> handle = mpss::KeyPair::Create(key_name, ecdsa_secp256r1_sha256, "yubikey");
+    if (nullptr == handle)
+    {
+        GTEST_SKIP() << "Connected YubiKey cannot create keys in its current state.";
+    }
+
+    const std::vector<std::byte> hash(32, static_cast<std::byte>('h'));
+    std::vector<std::byte> signature(handle->sign_hash_size());
+
+    auto withholding = std::make_shared<CountingHandler>(mpss::SecureString{withheld.c_str()});
+    mpss::GetOrSetInteractionHandler(withholding);
+    EXPECT_EQ(0, handle->sign_hash(hash, signature));
+    EXPECT_EQ(withholding->requests, withholding->results);
+    EXPECT_EQ(mpss::PinResult::not_attempted, withholding->last_result);
+
+    // Cancelling is answered too, so a handler that cancels still hears back.
+    auto cancelling = std::make_shared<CountingHandler>(std::nullopt);
+    mpss::GetOrSetInteractionHandler(cancelling);
+    EXPECT_EQ(0, handle->sign_hash(hash, signature));
+    EXPECT_EQ(cancelling->requests, cancelling->results);
+    EXPECT_EQ(mpss::PinResult::not_attempted, cancelling->last_result);
+
+    // A handler that throws is answered as well, and its exception does not escape the operation.
+    auto throwing = std::make_shared<CountingHandler>(std::nullopt);
+    throwing->throw_from_request = true;
+    mpss::GetOrSetInteractionHandler(throwing);
+    EXPECT_EQ(0, handle->sign_hash(hash, signature));
+    EXPECT_EQ(throwing->requests, throwing->results);
+    EXPECT_EQ(mpss::PinResult::not_attempted, throwing->last_result);
+
+    mpss::ResetDefaultInteractionHandler();
+    MPSS::DeleteKey(key_name);
+}
+#endif // MPSS_CORE_IS_SHARED
 
 #endif // MPSS_BACKEND_YUBIKEY
 

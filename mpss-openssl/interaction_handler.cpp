@@ -16,6 +16,17 @@
 namespace
 {
 
+// The callbacks carry these across the C boundary as plain ints, so the C++ enumerations and the C
+// constants must agree value for value. Appending to either is safe; renumbering or reordering is not,
+// and would silently misreport results to C callers rather than fail to build.
+static_assert(static_cast<int>(mpss::PinResult::ok) == MPSS_PIN_RESULT_OK);
+static_assert(static_cast<int>(mpss::PinResult::wrong_pin) == MPSS_PIN_RESULT_WRONG_PIN);
+static_assert(static_cast<int>(mpss::PinResult::locked) == MPSS_PIN_RESULT_LOCKED);
+static_assert(static_cast<int>(mpss::PinResult::error) == MPSS_PIN_RESULT_ERROR);
+static_assert(static_cast<int>(mpss::PinResult::not_attempted) == MPSS_PIN_RESULT_NOT_ATTEMPTED);
+static_assert(static_cast<int>(mpss::PinStatus::first_attempt) == MPSS_PIN_STATUS_FIRST_ATTEMPT);
+static_assert(static_cast<int>(mpss::PinStatus::wrong_pin) == MPSS_PIN_STATUS_WRONG_PIN);
+
 /**
  * @brief Adapter that wraps C function-pointer callbacks into the C++ InteractionHandler interface.
  */

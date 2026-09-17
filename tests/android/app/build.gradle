@@ -30,13 +30,13 @@ layout.buildDirectory.set(file("${mpssTestDirectory}/gradle-build"))
 
 android
 {
-    namespace = "com.microsoft.research.mpss.tests"
+    namespace = "com.microsoft.mpss.tests"
     compileSdk = mpssCompileApi
     buildToolsVersion = mpssBuildToolsVersion
 
     defaultConfig
     {
-        applicationId = "com.microsoft.research.mpss.tests"
+        applicationId = "com.microsoft.mpss.tests"
         minSdk = mpssMinApi
         targetSdk = mpssCompileApi
         versionCode = 1

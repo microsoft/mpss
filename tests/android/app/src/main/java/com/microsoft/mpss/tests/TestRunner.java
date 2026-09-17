@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-package com.microsoft.research.mpss.tests;
+package com.microsoft.mpss.tests;
 
 import android.app.Activity;
 import android.app.Instrumentation;

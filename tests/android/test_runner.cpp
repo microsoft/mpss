@@ -10,7 +10,7 @@ extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM * /*vm*/, void * /*reserved*
     return mpss::impl::os::JNIHelper::initialized() ? JNI_VERSION_1_6 : JNI_ERR;
 }
 
-extern "C" JNIEXPORT jint JNICALL Java_com_microsoft_research_mpss_tests_TestRunner_runAllTests(JNIEnv * /*env*/,
+extern "C" JNIEXPORT jint JNICALL Java_com_microsoft_mpss_tests_TestRunner_runAllTests(JNIEnv * /*env*/,
                                                                                                 jclass /*test_runner*/)
 {
     char executable_name[] = "mpss_tests";

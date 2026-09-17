@@ -9,5 +9,5 @@
         android:functionalTest="true"
         android:handleProfiling="false"
         android:label="MPSS Tests"
-        android:targetPackage="com.microsoft.research.mpss.tests" />
+        android:targetPackage="com.microsoft.mpss.tests" />
 </manifest>

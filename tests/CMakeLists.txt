@@ -19,6 +19,11 @@ if(NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
         )
         # mpss comes transitively through mpss_openssl's PUBLIC dependency.
         list(APPEND mpss_TESTS_LINK_LIBRARIES ${mpss_openssl_TARGET})
+
+        # libssl is a test-only dependency: the tests drive a TLS handshake, while the provider
+        # itself links libcrypto alone and must keep doing so.
+        find_package(OpenSSL 3 REQUIRED)
+        list(APPEND mpss_TESTS_LINK_LIBRARIES OpenSSL::SSL)
     elseif(TARGET ${mpss_TARGET})
         list(APPEND mpss_TESTS_LINK_LIBRARIES ${mpss_TARGET})
     endif()
@@ -55,17 +60,34 @@ if(NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
             target_link_libraries(mpss_win32_mock_tests
                 PRIVATE ${mpss_TARGET} GTest::gtest GTest::gmock gmock_win32)
             target_include_directories(mpss_win32_mock_tests PRIVATE "${CMAKE_CURRENT_LIST_DIR}/..")
+        elseif(MPSS_BUILD_WIN32_MOCK_TESTS)
+            # Requested but not buildable here. Without a message the configure still succeeds, so
+            # the suite looks like it ran.
+            if(NOT WIN32)
+                message(STATUS "Win32 mock tests skipped: they patch the NCrypt import table, so they apply to Windows only.")
+            elseif(NOT MPSS_BUILD_MPSS_CORE_STATIC)
+                message(STATUS "Win32 mock tests skipped: they need the static core library, and this build is shared.")
+            else()
+                message(STATUS "Win32 mock tests skipped: the core target '${mpss_TARGET}' is not part of this build.")
+            endif()
         endif()
     endif()
 
     return()
 endif()
 
-# Standalone mode: build tests against an installed or build-tree mpss.
+# Standalone mode: build the tests against an installed mpss. An mpss build tree is not enough;
+# find_package expects the installed layout.
+#
+# Dependencies must already be resolvable. The tests directory has no vcpkg manifest, so manifest
+# mode is turned off and the dependency prefix is supplied instead, for example the vcpkg_installed
+# tree of an existing MPSS build.
 #
 # Usage:
-#   cmake -S tests -B build_tests \
-#         -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT_DIR/scripts/buildsystems/vcpkg.cmake \
+#   cmake -S tests -B build_tests -G Ninja \
+#         -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake \
+#         -DVCPKG_MANIFEST_MODE=OFF \
+#         -DCMAKE_PREFIX_PATH=/path/to/vcpkg_installed/<triplet> \
 #         -Dmpss_ROOT=/path/to/mpss/install/dir \
 #         -DCMAKE_BUILD_TYPE=<Debug|Release>
 #   cmake --build build_tests --target mpss_tests
@@ -110,6 +132,10 @@ if(MPSS_OPENSSL_FOUND)
     else()
         target_link_libraries(mpss_tests PRIVATE mpss::mpss_openssl_static)
     endif()
+
+    # The same test-only libssl dependency as the integrated branch above.
+    find_package(OpenSSL 3 REQUIRED)
+    target_link_libraries(mpss_tests PRIVATE OpenSSL::SSL)
 elseif(MPSS_CORE_FOUND)
     if(TARGET mpss::mpss)
         target_link_libraries(mpss_tests PRIVATE mpss::mpss)

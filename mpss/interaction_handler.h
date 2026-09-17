@@ -25,6 +25,14 @@ enum class PinResult
     wrong_pin, /**< PIN was incorrect (retries may remain). */
     locked,    /**< PIN is locked (too many wrong attempts). Use PUK to unlock. */
     error,     /**< Non-PIN error (e.g., device disconnected). */
+    /**
+     * @brief The PIN was never presented to the device, so no retry was spent.
+     *
+     * Reported when the handler cancels or throws, and when MPSS withholds a value the device has
+     * already refused. It closes the loop for a handler that opened UI in @ref
+     * InteractionHandler::request_pin: every PIN request is answered by exactly one result.
+     */
+    not_attempted,
 };
 
 /**
@@ -83,6 +91,11 @@ class InteractionHandler
      * This is a notification callback; the return value is void. Implementations can use it to
      * update UI (e.g., dismiss a dialog on success, show a "PIN locked" warning). The default
      * implementation does nothing.
+     *
+     * Exactly one result follows every @ref request_pin call, including @ref PinResult::not_attempted
+     * when the PIN never reaches the device, so UI opened while answering a request can always be
+     * taken down again. Exceptions thrown from here are swallowed on the paths that report
+     * not_attempted, since those are already reporting a failure.
      *
      * @param result The outcome of the PIN attempt.
      * @param retries_remaining PIN retries remaining on the device, or -1 if unknown.

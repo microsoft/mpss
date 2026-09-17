@@ -10,20 +10,26 @@ namespace mpss::impl
  * @brief Outcome of looking up a key by name in a backing store.
  *
  * A lookup has three outcomes, not two. Collapsing @ref not_found and @ref operational_error into a
- * single "no key" answer makes a store that could not be queried indistinguishable from a store that
- * was queried and holds nothing. Backends that report this distinction let creation refuse to proceed
- * when the store could not be read, because a key of the same name may already be present.
+ * single "no key" answer makes a name that could not be ruled out indistinguishable from a name that
+ * was ruled out. Backends that report this distinction let creation refuse to proceed when the name
+ * was never established to be free, because a key of the same name may already be present.
  */
 enum class KeyProbeStatus
 {
-    /** @brief The store was queried and holds a key with this name. */
+    /** @brief The store was queried and holds a usable key with this name. */
     found,
 
     /** @brief The store was queried and holds no key with this name. */
     not_found,
 
     /**
-     * @brief The store could not be queried, so the presence of the key is unknown.
+     * @brief The lookup produced no usable key and did not rule the name out.
+     *
+     * This covers a store that could not be queried at all, and a key that was located but cannot be
+     * used -- one whose algorithm this backend does not support, for instance. The two differ in
+     * whether presence is known, but they agree on what the caller may do: the name was never
+     * established to be free, so creating a key under it risks replacing or shadowing one already
+     * there, depending on how the backend places keys.
      *
      * The last error describes the failure.
      */

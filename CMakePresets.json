@@ -866,28 +866,6 @@
             }
         },
         {
-            "name": "linux-debug",
-            "displayName": "Linux Debug (Ninja)",
-            "configurePreset": "linux-debug",
-            "jobs": 0,
-            "condition": {
-                "type": "equals",
-                "lhs": "${hostSystemName}",
-                "rhs": "Linux"
-            }
-        },
-        {
-            "name": "linux-release",
-            "displayName": "Linux Release (Ninja)",
-            "configurePreset": "linux-release",
-            "jobs": 0,
-            "condition": {
-                "type": "equals",
-                "lhs": "${hostSystemName}",
-                "rhs": "Linux"
-            }
-        },
-        {
             "name": "linux-with-yubikey-debug",
             "displayName": "Linux Debug (Ninja) [YubiKey]",
             "configurePreset": "linux-with-yubikey-debug",

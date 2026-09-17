@@ -11,11 +11,19 @@
 #include <cstdlib>
 #include <cstring>
 #include <format>
+#include <map>
+#include <mutex>
 #include <openssl/core_names.h>
+#include <openssl/crypto.h>
 #include <openssl/evp.h>
+#include <openssl/hmac.h>
+#include <openssl/rand.h>
+#include <openssl/sha.h>
 #include <openssl/x509.h>
+#include <optional>
 #include <span>
 #include <utility>
+#include <vector>
 #include <ykpiv/ykpiv.h>
 
 namespace
@@ -238,14 +246,22 @@ mpss::PinResult YubiKeyPIV::authenticate_pin(std::string_view pin, int &retries_
         return mpss::PinResult::ok;
     }
 
-    retries_out = tries;
-
-    if (YKPIV_PIN_LOCKED == rc || 0 == tries)
+    if (YKPIV_PIN_LOCKED == rc || (YKPIV_WRONG_PIN == rc && 0 == tries))
     {
+        retries_out = 0;
         mpss::utils::log_and_set_error("YubiKey PIN is locked. Use the PUK to unlock it or reset the PIV module.");
         return mpss::PinResult::locked;
     }
 
+    if (YKPIV_WRONG_PIN != rc)
+    {
+        // Transport and applet failures leave the retry counter untouched or negative. The device never
+        // judged the PIN, so the caller must not record it as rejected.
+        mpss::utils::log_and_set_error("PIN verification could not be completed: {}.", ykpiv_strerror(rc));
+        return mpss::PinResult::error;
+    }
+
+    retries_out = tries;
     mpss::utils::log_warning("PIN verification failed: {} ({} tries remaining).", ykpiv_strerror(rc), tries);
     return mpss::PinResult::wrong_pin;
 }
@@ -421,7 +437,7 @@ YubiKeyPIV::GenerateResult YubiKeyPIV::generate_key(std::uint8_t slot, std::uint
 
     // A wrong PIN is worth another prompt; a locked one is not, and neither is anything else.
     return (YKPIV_AUTHENTICATION_ERROR == rc || YKPIV_WRONG_PIN == rc) ? GenerateResult::unauthenticated
-                                                                      : GenerateResult::refused;
+                                                                       : GenerateResult::refused;
 }
 
 std::string YubiKeyPIV::describe_default_credentials()
@@ -694,8 +710,7 @@ YubiKeyPIV::DeleteResult YubiKeyPIV::delete_key(std::uint8_t slot)
     {
         // Deleting this way is a generation, so it inherits generation's refusals verbatim -- including
         // a device that will not generate at all, which no credential the caller supplies can change.
-        return (GenerateResult::unauthenticated == overwritten) ? DeleteResult::unauthenticated
-                                                                : DeleteResult::refused;
+        return (GenerateResult::unauthenticated == overwritten) ? DeleteResult::unauthenticated : DeleteResult::refused;
     }
 
     // Write a marker certificate so the slot is recognized as available for reuse.
@@ -835,8 +850,9 @@ bool YubiKeyPIV::write_slot_label(std::uint8_t slot, std::string_view name)
 
     // The slot's private key cannot sign here without a PIN and, under a touch policy, a user touch,
     // so the certificate is signed by an ephemeral key. The signature therefore proves nothing; the
-    // binding that matters is the subject public key set below.
-    EVP_PKEY *ephemeral_key = EVP_EC_gen("P-256"); // NOLINT(cppcoreguidelines-pro-type-cstyle-cast)
+    // binding that matters is the subject public key set below. X.509 mandates a signature and hence a
+    // digest, so one is produced to satisfy the format and no property of that hash is relied upon.
+    EVP_PKEY *ephemeral_key = EVP_EC_gen("P-384"); // NOLINT(cppcoreguidelines-pro-type-cstyle-cast)
     if (nullptr == ephemeral_key)
     {
         mpss::utils::log_and_set_error("Failed to generate ephemeral key for slot label.");
@@ -928,7 +944,7 @@ bool YubiKeyPIV::write_slot_label(std::uint8_t slot, std::string_view name)
     }
 
     // Sign with the ephemeral key.
-    if (X509_sign(cert, ephemeral_key, EVP_sha256()) <= 0)
+    if (X509_sign(cert, ephemeral_key, EVP_sha384()) <= 0)
     {
         mpss::utils::log_and_set_error("Failed to sign slot {} certificate.", utils::get_slot_name(slot));
         return false;
@@ -1319,12 +1335,161 @@ std::vector<std::uint32_t> YubiKeyPIV::available_serials(bool *device_skipped)
     return serials;
 }
 
+namespace
+{
+
+using PinDigest = std::array<unsigned char, SHA384_DIGEST_LENGTH>;
+
+struct RejectedPins
+{
+    std::mutex mtx;
+    // An HMAC key shorter than the digest would be the weakest part of the construction, so match it.
+    std::array<unsigned char, SHA384_DIGEST_LENGTH> key{};
+    // Every entry cost the device one retry to learn, so these lists stay short without a cap.
+    std::map<std::uint32_t, std::vector<PinDigest>> by_serial;
+};
+
+[[nodiscard]]
+RejectedPins &rejected_pins()
+{
+    // Immortal singleton state, for the same reason as the global logger: a host static destroyed after
+    // this one would otherwise lock a destroyed mutex. The one-time allocation is reclaimed by the OS at
+    // process exit. Scoped to this loaded copy of MPSS, so a host that links the static core into two
+    // images gets one registry per image.
+    static RejectedPins &state = []() -> RejectedPins & {
+        auto *fresh = new RejectedPins{}; // NOLINT(cppcoreguidelines-owning-memory) - intentional immortal singleton,
+                                          // never freed.
+        // The key must stay secret: anyone holding it could recover a PIN from a stored fingerprint by
+        // trying the few million candidates, so it is drawn from the private DRBG rather than the public
+        // one.
+        if (1 != RAND_priv_bytes(fresh->key.data(), static_cast<int>(fresh->key.size())))
+        {
+            // The key only raises the cost of recovering a PIN from a fingerprint. Losing it weakens that
+            // and nothing else, so keep the lockout protection rather than trading it away.
+            mpss::utils::log_warning(
+                "Could not draw a random key for PIN fingerprints; lockout protection is unaffected.");
+        }
+        return *fresh;
+    }();
+    return state;
+}
+
+/**
+ * @brief Fingerprint a PIN, or nothing if the digest could not be computed.
+ *
+ * Returning empty rather than a zero digest matters: zero digests would compare equal to one another, so
+ * a PIN the device never saw could be taken for one it refused.
+ */
+[[nodiscard]]
+std::optional<PinDigest> fingerprint_pin(const RejectedPins &state, std::string_view pin)
+{
+    PinDigest digest{};
+    unsigned int digest_size = 0;
+    const unsigned char *result =
+        HMAC(EVP_sha384(), state.key.data(), static_cast<int>(state.key.size()),
+             reinterpret_cast<const unsigned char *>(pin.data()), pin.size(), digest.data(), &digest_size);
+    if (nullptr == result || digest.size() != digest_size)
+    {
+        return std::nullopt;
+    }
+    return digest;
+}
+
+/**
+ * @brief Whether a PIN can be compared with what the device is actually given.
+ *
+ * The device receives a null-terminated string and so never sees anything past an embedded null. Two
+ * values sharing a prefix would present identically while fingerprinting differently, and the second
+ * would be offered as though the device had never refused it.
+ */
+[[nodiscard]]
+bool is_comparable_pin(std::string_view pin)
+{
+    return !pin.empty() && std::string_view::npos == pin.find('\0');
+}
+
+[[nodiscard]]
+bool same_digest(const PinDigest &lhs, const PinDigest &rhs)
+{
+    return 0 == CRYPTO_memcmp(lhs.data(), rhs.data(), lhs.size());
+}
+
+} // namespace
+
+void remember_rejected_pin(std::uint32_t serial, std::string_view pin)
+{
+    if (!is_comparable_pin(pin))
+    {
+        return;
+    }
+
+    RejectedPins &state = rejected_pins();
+    const std::scoped_lock lock{state.mtx};
+    const std::optional<PinDigest> digest = fingerprint_pin(state, pin);
+    if (!digest.has_value())
+    {
+        mpss::utils::log_warning("Could not fingerprint a rejected PIN; it may be presented to YubiKey {} again.",
+                                 serial);
+        return;
+    }
+
+    std::vector<PinDigest> &known = state.by_serial[serial];
+    if (std::none_of(known.begin(), known.end(), [&digest](const PinDigest &entry) {
+            return same_digest(entry, *digest); // NOLINT(bugprone-unchecked-optional-access) - guarded above.
+        }))
+    {
+        known.push_back(*digest); // NOLINT(bugprone-unchecked-optional-access) - guarded above.
+    }
+}
+
+bool pin_already_rejected(std::uint32_t serial, std::string_view pin)
+{
+    if (!is_comparable_pin(pin))
+    {
+        return false;
+    }
+
+    RejectedPins &state = rejected_pins();
+    const std::scoped_lock lock{state.mtx};
+    const auto entry = state.by_serial.find(serial);
+    if (state.by_serial.end() == entry)
+    {
+        return false;
+    }
+
+    const std::optional<PinDigest> digest = fingerprint_pin(state, pin);
+    if (!digest.has_value())
+    {
+        // Without a comparable fingerprint there is no evidence this value was refused, and withholding it
+        // anyway would block a PIN that may well be correct.
+        return false;
+    }
+
+    return std::any_of(entry->second.begin(), entry->second.end(), [&digest](const PinDigest &known) {
+        return same_digest(known, *digest); // NOLINT(bugprone-unchecked-optional-access) - guarded above.
+    });
+}
+
 bool authenticate_pin_interactive(YubiKeyPIV &piv, std::string_view context)
 {
     const auto handler = mpss::GetInteractionHandler();
     mpss::SecureString last_failed_pin;
     mpss::PinStatus status = mpss::PinStatus::first_attempt;
     int retries = -1;
+    const std::uint32_t serial = piv.get_serial();
+
+    // Every way out of the loop reports a result, so a handler that opened UI while answering a request
+    // always learns to take it down. These paths are already reporting a failure, and one of them runs
+    // after the handler itself threw, so a throwing notification must not replace the real error.
+    const auto report_not_attempted = [&handler, &retries]() noexcept {
+        try
+        {
+            handler->notify_pin_result(mpss::PinResult::not_attempted, retries);
+        }
+        catch (...) // NOLINT(bugprone-empty-catch) - see above; nothing useful remains to report.
+        {
+        }
+    };
 
     while (true)
     {
@@ -1337,12 +1502,14 @@ bool authenticate_pin_interactive(YubiKeyPIV &piv, std::string_view context)
         catch (const std::exception &e)
         {
             mpss::utils::log_and_set_error("Interaction handler error: {}", e.what());
+            report_not_attempted();
             return false;
         }
 
         if (!pin_opt || pin_opt->empty())
         {
             mpss::utils::log_and_set_error("YubiKey PIN not provided.");
+            report_not_attempted();
             return false;
         }
 
@@ -1351,10 +1518,27 @@ bool authenticate_pin_interactive(YubiKeyPIV &piv, std::string_view context)
         if (!last_failed_pin.empty() && *pin_opt == last_failed_pin)
         {
             mpss::utils::log_and_set_error("Same PIN provided again after failure. Aborting to prevent lockout.");
+            report_not_attempted();
+            return false;
+        }
+
+        // The same applies across operations, which each ask for a PIN afresh: a value this device has
+        // already refused would cost another retry and cannot succeed.
+        if (pin_already_rejected(serial, *pin_opt))
+        {
+            mpss::utils::log_and_set_error("YubiKey {} already rejected this PIN. Aborting to prevent lockout.",
+                                           serial);
+            report_not_attempted();
             return false;
         }
 
         const mpss::PinResult result = piv.authenticate_pin(*pin_opt, retries);
+        if (mpss::PinResult::wrong_pin == result)
+        {
+            // Recorded before the handler is notified, since a handler that throws or reenters must not be
+            // able to lose the one fact that prevents the next operation spending another retry.
+            remember_rejected_pin(serial, *pin_opt);
+        }
         handler->notify_pin_result(result, retries);
 
         if (mpss::PinResult::ok == result)

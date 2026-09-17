@@ -402,7 +402,8 @@ class YubiKeyPIV
  * Calls @ref mpss::InteractionHandler::request_pin in a loop, passing the result of each attempt back to the
  * handler via @ref mpss::InteractionHandler::notify_pin_result. The handler controls the retry policy by returning
  * std::nullopt to cancel. As a safety net, the function aborts if the handler returns the same PIN that just
- * failed (to prevent lockout from environment-variable-based handlers).
+ * failed, and also if it returns any PIN this device has already rejected during the lifetime of this loaded
+ * copy of MPSS (to prevent lockout from environment-variable-based handlers).
  *
  * @param piv An already-connected @ref YubiKeyPIV instance.
  * @param context Human-readable description of the operation (for the PIN prompt).
@@ -410,6 +411,35 @@ class YubiKeyPIV
  */
 [[nodiscard]]
 bool authenticate_pin_interactive(YubiKeyPIV &piv, std::string_view context);
+
+/**
+ * @brief Record that a YubiKey rejected a PIN, so that value is never presented to it again.
+ *
+ * A device allows only a few wrong PINs before it locks, and every operation asks for a PIN afresh, so a
+ * configured value that is wrong would otherwise be spent one retry at a time until the device locks. The
+ * record is scoped to the serial that rejected the value, because the same PIN may well be correct on a
+ * different device, and it lasts for the lifetime of this loaded copy of MPSS.
+ *
+ * Only a keyed fingerprint is retained, never the PIN: recognizing a value already known to be wrong needs
+ * nothing more. The key is drawn from the private DRBG where available, so the stored fingerprints are
+ * not a precomputable dictionary over the small space of possible PINs.
+ *
+ * @param serial The serial number of the YubiKey that rejected the PIN.
+ * @param pin The PIN the device rejected. Empty values, and values containing an embedded null, are
+ *            ignored because the device is not given them as written.
+ */
+void remember_rejected_pin(std::uint32_t serial, std::string_view pin);
+
+/**
+ * @brief Check whether a YubiKey has already rejected this PIN.
+ *
+ * @param serial The serial number of the YubiKey about to be asked.
+ * @param pin The PIN that would be presented.
+ * @return true if this device already rejected this value, in which case presenting it again would only
+ *         consume another retry.
+ */
+[[nodiscard]]
+bool pin_already_rejected(std::uint32_t serial, std::string_view pin);
 
 /**
  * @brief Check whether a key name is reserved for MPSS internal use.

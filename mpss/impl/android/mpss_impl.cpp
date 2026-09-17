@@ -182,7 +182,7 @@ OpenKeyResult try_open_key(std::string_view name)
 
     // Now we need the Algorithm.
     jmethodID mid_algo = env->GetStaticMethodID(key_management, "GetKeyAlgorithm",
-                                                "(Ljava/lang/String;)Lcom/microsoft/research/mpss/Algorithm;");
+                                                "(Ljava/lang/String;)Lcom/microsoft/mpss/Algorithm;");
     if (utils::check_and_clear_exception(env, "resolving KeyManagement.GetKeyAlgorithm"))
     {
         return {.status = KeyProbeStatus::operational_error, .value = nullptr};
@@ -421,7 +421,7 @@ std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm, 
     }
 
     jmethodID method = env->GetStaticMethodID(
-        key_management, "CreateKey", "(Ljava/lang/String;Lcom/microsoft/research/mpss/Algorithm;)Ljava/lang/Boolean;");
+        key_management, "CreateKey", "(Ljava/lang/String;Lcom/microsoft/mpss/Algorithm;)Ljava/lang/Boolean;");
     if (utils::check_and_clear_exception(env, "resolving KeyManagement.CreateKey"))
     {
         return nullptr;
@@ -456,13 +456,13 @@ std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm, 
     switch (algorithm)
     {
     case ecdsa_secp256r1_sha256:
-        algo_field_id = env->GetStaticFieldID(algorithm_class, "secp256r1", "Lcom/microsoft/research/mpss/Algorithm;");
+        algo_field_id = env->GetStaticFieldID(algorithm_class, "secp256r1", "Lcom/microsoft/mpss/Algorithm;");
         break;
     case ecdsa_secp384r1_sha384:
-        algo_field_id = env->GetStaticFieldID(algorithm_class, "secp384r1", "Lcom/microsoft/research/mpss/Algorithm;");
+        algo_field_id = env->GetStaticFieldID(algorithm_class, "secp384r1", "Lcom/microsoft/mpss/Algorithm;");
         break;
     case ecdsa_secp521r1_sha512:
-        algo_field_id = env->GetStaticFieldID(algorithm_class, "secp521r1", "Lcom/microsoft/research/mpss/Algorithm;");
+        algo_field_id = env->GetStaticFieldID(algorithm_class, "secp521r1", "Lcom/microsoft/mpss/Algorithm;");
         break;
     default:
         mpss::utils::log_and_set_error("Unsupported algorithm '{}'.", get_algorithm_info(algorithm).type_str);
