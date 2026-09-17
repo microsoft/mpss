@@ -201,6 +201,43 @@ void DoubleCreation(Algorithm algorithm, std::string_view suffix)
     ASSERT_TRUE(reopened_handle->delete_key());
 }
 
+// The protection a key reports must not change between creating it and reopening it by name. Which
+// tier a key lands in depends on the machine, so the two reports are compared with each other
+// rather than against a fixed expectation, and this holds on every backend.
+void ReopenReportsTheSameProtection(Algorithm algorithm, std::string_view suffix)
+{
+    if (!mpss::is_algorithm_available(algorithm))
+    {
+        GTEST_SKIP() << "Algorithm not supported by current backend";
+    }
+
+    const std::string key_name = test_key_name("test_protection_"s + suffix.data());
+    MPSS::DeleteKey(key_name);
+
+    std::string created_storage;
+    bool created_hardware_backed = false;
+    {
+        std::unique_ptr<mpss::KeyPair> handle = MPSS::CreateKey(key_name, algorithm);
+        ASSERT_NE(nullptr, handle);
+        ASSERT_NE(nullptr, handle->key_info().storage_description);
+
+        created_storage = handle->key_info().storage_description;
+        created_hardware_backed = handle->key_info().is_hardware_backed;
+
+        // An empty description would satisfy the comparison below while telling a caller nothing.
+        ASSERT_FALSE(created_storage.empty());
+    }
+
+    std::unique_ptr<mpss::KeyPair> reopened_handle = mpss::KeyPair::Open(key_name);
+    ASSERT_NE(nullptr, reopened_handle);
+    ASSERT_NE(nullptr, reopened_handle->key_info().storage_description);
+
+    EXPECT_EQ(created_storage, std::string{reopened_handle->key_info().storage_description});
+    EXPECT_EQ(created_hardware_backed, reopened_handle->key_info().is_hardware_backed);
+
+    ASSERT_TRUE(reopened_handle->delete_key());
+}
+
 TEST_F(MPSS, SignAndVerify256)
 {
     SignAndVerify(ecdsa_secp256r1_sha256, "256", 32);
@@ -214,6 +251,21 @@ TEST_F(MPSS, SignAndVerify384)
 TEST_F(MPSS, SignAndVerify521)
 {
     SignAndVerify(ecdsa_secp521r1_sha512, "521", 64);
+}
+
+TEST_F(MPSS, ReopenReportsTheSameProtection256)
+{
+    ReopenReportsTheSameProtection(ecdsa_secp256r1_sha256, "256");
+}
+
+TEST_F(MPSS, ReopenReportsTheSameProtection384)
+{
+    ReopenReportsTheSameProtection(ecdsa_secp384r1_sha384, "384");
+}
+
+TEST_F(MPSS, ReopenReportsTheSameProtection521)
+{
+    ReopenReportsTheSameProtection(ecdsa_secp521r1_sha512, "521");
 }
 
 TEST_F(MPSS, DoubleCreation256)
