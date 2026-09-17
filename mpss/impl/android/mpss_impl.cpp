@@ -7,6 +7,7 @@
 #include "mpss/impl/android/android_utils.h"
 #include "mpss/impl/key_probe.h"
 #include "mpss/impl/os_backend.h"
+#include "mpss/utils/scope_guard.h"
 #include "mpss/utils/utilities.h"
 #include <optional>
 
@@ -117,6 +118,20 @@ namespace
 
 using OpenKeyResult = KeyProbeResult<std::unique_ptr<KeyPair>>;
 
+// Release the hold a successful open or create took on the cached key. Nothing else will: the hold
+// is released by the key pair's destructor, and on these paths no key pair is ever constructed.
+void release_cached_key(JNIEnv *env, jclass key_management, jstring key_name)
+{
+    jmethodID method = env->GetStaticMethodID(key_management, "CloseKey", "(Ljava/lang/String;)V");
+    if (utils::check_and_clear_exception(env, "resolving KeyManagement.CloseKey") || nullptr == method)
+    {
+        return;
+    }
+
+    env->CallStaticVoidMethod(key_management, method, key_name);
+    static_cast<void>(utils::check_and_clear_exception(env, "calling KeyManagement.CloseKey"));
+}
+
 OpenKeyResult try_open_key(std::string_view name)
 {
     mpss::utils::log_trace("Attempting to open key '{}' on Android backend.", name);
@@ -180,9 +195,20 @@ OpenKeyResult try_open_key(std::string_view name)
         return {.status = KeyProbeStatus::not_found, .value = nullptr};
     }
 
+    // The open took a hold on the cached key so that another handle's close cannot evict it. Every
+    // path from here that does not hand back a key pair has to release that hold, or the entry
+    // outlives the handle that justified it.
+    bool handed_to_caller = false;
+    SCOPE_GUARD({
+        if (!handed_to_caller)
+        {
+            release_cached_key(env, key_management, key_name.get());
+        }
+    });
+
     // Now we need the Algorithm.
-    jmethodID mid_algo = env->GetStaticMethodID(key_management, "GetKeyAlgorithm",
-                                                "(Ljava/lang/String;)Lcom/microsoft/mpss/Algorithm;");
+    jmethodID mid_algo =
+        env->GetStaticMethodID(key_management, "GetKeyAlgorithm", "(Ljava/lang/String;)Lcom/microsoft/mpss/Algorithm;");
     if (utils::check_and_clear_exception(env, "resolving KeyManagement.GetKeyAlgorithm"))
     {
         return {.status = KeyProbeStatus::operational_error, .value = nullptr};
@@ -270,6 +296,7 @@ OpenKeyResult try_open_key(std::string_view name)
 
     // Finally, we can return the key.
     mpss::utils::log_trace("Key '{}' opened on Android with {} storage.", name, storage_description);
+    handed_to_caller = true;
     return {.status = KeyProbeStatus::found,
             .value = std::make_unique<AndroidKeyPair>(algorithm, name, hardware_backed, storage_description)};
 }
@@ -420,8 +447,8 @@ std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm, 
         return nullptr;
     }
 
-    jmethodID method = env->GetStaticMethodID(
-        key_management, "CreateKey", "(Ljava/lang/String;Lcom/microsoft/mpss/Algorithm;)Ljava/lang/Boolean;");
+    jmethodID method = env->GetStaticMethodID(key_management, "CreateKey",
+                                              "(Ljava/lang/String;Lcom/microsoft/mpss/Algorithm;)Ljava/lang/Boolean;");
     if (utils::check_and_clear_exception(env, "resolving KeyManagement.CreateKey"))
     {
         return nullptr;
@@ -512,6 +539,16 @@ std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm, 
         return nullptr;
     }
 
+    // Creation took a hold on the cached key, released by the key pair's destructor. A path that
+    // returns without one has to release it here instead.
+    bool handed_to_caller = false;
+    SCOPE_GUARD({
+        if (!handed_to_caller)
+        {
+            release_cached_key(env, key_management, key_name.get());
+        }
+    });
+
     bool hardware_backed = false;
     const char *storage_description = nullptr;
     get_key_properties(name, hardware_backed, &storage_description);
@@ -523,6 +560,7 @@ std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm, 
     }
 
     mpss::utils::log_trace("Key '{}' created on Android with {} storage.", name, storage_description);
+    handed_to_caller = true;
     return std::make_unique<AndroidKeyPair>(algorithm, name, hardware_backed, storage_description);
 }
 

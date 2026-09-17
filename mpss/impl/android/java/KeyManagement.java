@@ -307,6 +307,7 @@ public class KeyManagement {
                 }
 
                 MemKeyStore.AddKey(keyName, kp);
+                MemKeyStore.RetainKey(keyName);
                 return true;
             } catch (InvalidAlgorithmParameterException | NoSuchAlgorithmException |
                      NoSuchProviderException | InvalidKeySpecException ex) {
@@ -521,12 +522,12 @@ public class KeyManagement {
                 ks.load(/* param */ null);
                 if (!ks.containsAlias(keyName)) {
                     // The alias holds nothing, which is the requested state.
-                    MemKeyStore.RemoveKey(keyName);
+                    MemKeyStore.PurgeKey(keyName);
                     return true;
                 }
 
                 ks.deleteEntry(keyName);
-                MemKeyStore.RemoveKey(keyName);
+                MemKeyStore.PurgeKey(keyName);
 
                 if (ks.containsAlias(keyName)) {
                     String msg = "Key still present after deletion: " + keyName;
@@ -559,9 +560,14 @@ public class KeyManagement {
         ClearError();
         try {
             if (null == keyName) throw new IllegalArgumentException("keyName is null.");
-            KeyPair kp = GetExistingKeyPair(keyName);
-            if (null != kp) {
-                return true;
+            synchronized (_keyLock) {
+                KeyPair kp = GetExistingKeyPair(keyName);
+                if (null != kp) {
+                    // Taking the hold under the same lock the lookup uses keeps a concurrent close
+                    // or delete from evicting the entry between the two.
+                    MemKeyStore.RetainKey(keyName);
+                    return true;
+                }
             }
             return _lastError.get().isEmpty() ? false : null;
         } catch (RuntimeException ex) {
