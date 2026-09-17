@@ -11,7 +11,7 @@ extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM * /*vm*/, void * /*reserved*
 }
 
 extern "C" JNIEXPORT jint JNICALL Java_com_microsoft_mpss_tests_TestRunner_runAllTests(JNIEnv * /*env*/,
-                                                                                                jclass /*test_runner*/)
+                                                                                       jclass /*test_runner*/)
 {
     char executable_name[] = "mpss_tests";
     char *argv[] = {executable_name, nullptr};

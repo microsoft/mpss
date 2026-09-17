@@ -50,8 +50,7 @@ std::string wide_to_utf8(std::wstring_view value)
         return {};
     }
 
-    const int utf8_size =
-        ::WideCharToMultiByte(CP_UTF8, 0, value.data(), value_size, nullptr, 0, nullptr, nullptr);
+    const int utf8_size = ::WideCharToMultiByte(CP_UTF8, 0, value.data(), value_size, nullptr, 0, nullptr, nullptr);
     if (0 >= utf8_size)
     {
         return {};

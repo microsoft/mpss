@@ -24,8 +24,8 @@ std::shared_ptr<Logger> GetOrSetLogger(std::shared_ptr<Logger> new_logger)
         std::shared_mutex mtx;
         std::shared_ptr<Logger> logger;
     };
-    static State &state =
-        *new State{.logger = NewDefaultLogger()}; // NOLINT(cppcoreguidelines-owning-memory) - intentional immortal singleton, never freed.
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory) - intentional immortal singleton, never freed.
+    static State &state = *new State{.logger = NewDefaultLogger()};
 
     if (nullptr != new_logger)
     {

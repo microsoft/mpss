@@ -233,8 +233,8 @@ std::optional<bool> java_create_key(std::string_view key_name, mpss::Algorithm a
         return std::nullopt;
     }
 
-    jmethodID method = env->GetStaticMethodID(
-        key_management, "CreateKey", "(Ljava/lang/String;Lcom/microsoft/mpss/Algorithm;)Ljava/lang/Boolean;");
+    jmethodID method = env->GetStaticMethodID(key_management, "CreateKey",
+                                              "(Ljava/lang/String;Lcom/microsoft/mpss/Algorithm;)Ljava/lang/Boolean;");
     if (mpss::impl::os::utils::check_and_clear_exception(env, "resolving KeyManagement.CreateKey"))
     {
         return std::nullopt;
