@@ -101,31 +101,34 @@ private func clearError() {
 /// - Parameters:
 ///     - keyName: Name of the key to store.
 ///     - key: The private key to store.
-private func storeKeyInDict(keyName: String, key: SecureEnclave.P256.Signing.PrivateKey) {
+///     - takeHold: Whether to record a hold on the entry, which the caller must later release.
+private func storeKeyInDict(
+    keyName: String, key: SecureEnclave.P256.Signing.PrivateKey, takeHold: Bool
+) {
     _keyStoreQueue.sync {
         _keyStore[keyName] = key
-    }
-}
-
-/// Record that one more handle depends on this name's cached key.
-/// - Parameters:
-///     - keyName: Name of the key being handed to a caller.
-private func retainKeyInDict(_ keyName: String) {
-    _keyStoreQueue.sync {
-        _keyStoreRefs[keyName] = (_keyStoreRefs[keyName] ?? 0) + 1
+        if takeHold {
+            _keyStoreRefs[keyName] = (_keyStoreRefs[keyName] ?? 0) + 1
+        }
     }
 }
 
 /// Get a private key from the in-memory dictionary.
 /// - Parameters:
 ///      - keyName: Name of the key to retrieve.
+///      - takeHold: Whether to record a hold on the entry, which the caller must later release.
 /// - Returns: Private key if found, nil otherwise.
-private func getKeyFromDict(keyName: String) -> SecureEnclave.P256.Signing.PrivateKey? {
+private func getKeyFromDict(
+    keyName: String, takeHold: Bool
+) -> SecureEnclave.P256.Signing.PrivateKey? {
     return _keyStoreQueue.sync(execute: {
         guard
             let result = _keyStore.value(forKey: keyName) as? SecureEnclave.P256.Signing.PrivateKey?
         else {
             return nil
+        }
+        if takeHold, nil != result {
+            _keyStoreRefs[keyName] = (_keyStoreRefs[keyName] ?? 0) + 1
         }
         return result
     })
@@ -164,11 +167,14 @@ private func purgeKeyFromDict(_ keyName: String) {
 /// Will try to get from in-memory dictionary, if not found will try to recreate from data in Keychain.
 ///  - Parameters:
 ///      - keyName: Name of the key to retrieve.
+///      - takeHold: Whether to record a hold on the cached entry, which the caller must later
+///        release. Taken inside the lookup so a concurrent close cannot evict the entry in
+///        between.
 /// - Returns: Private key, or nil if not found.
-private func getKey(_ keyName: String) -> KeyLookupResult {
+private func getKey(_ keyName: String, takeHold: Bool) -> KeyLookupResult {
     do {
         // Try first from dictionary.
-        if let result = getKeyFromDict(keyName: keyName) {
+        if let result = getKeyFromDict(keyName: keyName, takeHold: takeHold) {
             return .found(result)
         }
 
@@ -178,7 +184,7 @@ private func getKey(_ keyName: String) -> KeyLookupResult {
         case .found(let keyChainData):
             let result = try SecureEnclave.P256.Signing.PrivateKey(
                 dataRepresentation: keyChainData)
-            storeKeyInDict(keyName: keyName, key: result)
+            storeKeyInDict(keyName: keyName, key: result, takeHold: takeHold)
             return .found(result)
         case .notFound:
             logDebug("Key not found in Keychain.")
@@ -409,7 +415,7 @@ private func createKeyPriv(
             return nil
         }
 
-        storeKeyInDict(keyName: keyName, key: privateKey)
+        storeKeyInDict(keyName: keyName, key: privateKey, takeHold: true)
 
         return privateKey
     } catch {
@@ -447,9 +453,8 @@ func openExistingKey(_ keyName: UnsafePointer<CChar>) -> Int32 {
 /// - Returns: Success, expected-negative if absent, or operational-error.
 private func openExistingKey(_ keyName: String) -> AppleOperationResult {
     let fullKeyName = getKeyName(keyName)
-    switch getKey(fullKeyName) {
+    switch getKey(fullKeyName, takeHold: true) {
     case .found:
-        retainKeyInDict(fullKeyName)
         return .success
     case .notFound:
         return .expectedNegative
@@ -514,7 +519,6 @@ private func createKey(_ keyName: String, requireUserPresence: Bool) -> Bool {
     if nil == privateKey {
         return false
     }
-    retainKeyInDict(fullKeyName)
     return true
 }
 
@@ -569,7 +573,7 @@ private func sign(keyName: String, hash: any Digest) -> Data? {
 
         // Try to get existing key.
         let privateKey: SecureEnclave.P256.Signing.PrivateKey
-        switch getKey(fullKeyName) {
+        switch getKey(fullKeyName, takeHold: false) {
         case .found(let foundKey):
             privateKey = foundKey
         case .notFound:
@@ -628,7 +632,7 @@ private func verifySignature(
     do {
         let fullKeyName = getKeyName(keyName)
         let privateKey: SecureEnclave.P256.Signing.PrivateKey
-        switch getKey(fullKeyName) {
+        switch getKey(fullKeyName, takeHold: false) {
         case .found(let foundKey):
             privateKey = foundKey
         case .notFound:
@@ -737,7 +741,7 @@ func getPublicKey(
 private func getPublicKey(keyName: String) -> Data? {
     let fullKeyName = getKeyName(keyName)
     let privateKey: SecureEnclave.P256.Signing.PrivateKey
-    switch getKey(fullKeyName) {
+    switch getKey(fullKeyName, takeHold: false) {
     case .found(let foundKey):
         privateKey = foundKey
     case .notFound:

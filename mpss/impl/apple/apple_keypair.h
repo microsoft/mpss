@@ -35,6 +35,8 @@ class AppleKeyPairBase : public mpss::KeyPair
 
   private:
     std::string name_;
+
+    bool released_{false};
 };
 
 } // namespace mpss::impl::os

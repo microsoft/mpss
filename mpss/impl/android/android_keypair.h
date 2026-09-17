@@ -47,6 +47,8 @@ class AndroidKeyPair : public mpss::KeyPair
     void close_key();
 
     std::string key_name_;
+
+    bool released_{false};
 };
 
 } // namespace mpss::impl::os

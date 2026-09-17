@@ -12,11 +12,16 @@
 static dispatch_queue_t _keyStoreQueue; // NOLINT(bugprone-reserved-identifier)
 static NSMutableDictionary<NSString *, id> *_keyStore; // NOLINT(bugprone-reserved-identifier)
 
+// How many open handles depend on each cached key, so that one handle's close does not evict an
+// entry another handle is still using.
+static NSMutableDictionary<NSString *, NSNumber *> *_keyStoreRefs; // NOLINT(bugprone-reserved-identifier)
+
 void InitializeKeyStore() {
   static dispatch_once_t onceToken;
   dispatch_once(&onceToken, ^{
     _keyStoreQueue = dispatch_queue_create("com.microsoft.mpss.KeyStore", DISPATCH_QUEUE_SERIAL);
     _keyStore = [[NSMutableDictionary alloc] init];
+    _keyStoreRefs = [[NSMutableDictionary alloc] init];
   });
 }
 
@@ -38,17 +43,28 @@ NSString *GetKeyLabel(const char *keyName) {
   return keyNameWithPrefix;
 }
 
-void StoreKey(NSString *keyLabel, SecKeyRef keyRef) {
+// Taking the hold inside the block that finds or stores the entry keeps a concurrent close or
+// delete from evicting it in between, which would leave a hold recorded against a name with
+// nothing cached.
+static void RetainLocked(NSString *keyLabel) {
+  NSNumber *holds = _keyStoreRefs[keyLabel];
+  _keyStoreRefs[keyLabel] = @((holds != nil ? [holds integerValue] : 0) + 1);
+}
+
+void StoreKey(NSString *keyLabel, SecKeyRef keyRef, BOOL takeHold) {
   InitializeKeyStore();
 
   if (keyLabel && keyRef) {
     dispatch_sync(_keyStoreQueue, ^{
       _keyStore[keyLabel] = (__bridge id)keyRef;
+      if (takeHold) {
+        RetainLocked(keyLabel);
+      }
     });
   }
 }
 
-SecKeyRef CopyKey(NSString *keyLabel) {
+SecKeyRef CopyKey(NSString *keyLabel, BOOL takeHold) {
   InitializeKeyStore();
 
   __block SecKeyRef result = NULL;
@@ -56,6 +72,9 @@ SecKeyRef CopyKey(NSString *keyLabel) {
     result = (__bridge SecKeyRef)(_keyStore[keyLabel]);
     if (result) {
       CFRetain(result);
+      if (takeHold) {
+        RetainLocked(keyLabel);
+      }
     }
   });
   return result;
@@ -65,9 +84,24 @@ void RemoveKey(NSString *keyLabel) {
   InitializeKeyStore();
 
   dispatch_sync(_keyStoreQueue, ^{
-    if (_keyStore[keyLabel]) {
-      [_keyStore removeObjectForKey:keyLabel];
+    NSNumber *holds = _keyStoreRefs[keyLabel];
+    if (holds != nil && [holds integerValue] > 1) {
+      _keyStoreRefs[keyLabel] = @([holds integerValue] - 1);
+      return;
     }
+    [_keyStoreRefs removeObjectForKey:keyLabel];
+    [_keyStore removeObjectForKey:keyLabel];
+  });
+}
+
+// Drop a cached key regardless of how many holds remain. Deleting a key invalidates every handle
+// to it, so the entry must not survive on another handle's hold.
+void PurgeKey(NSString *keyLabel) {
+  InitializeKeyStore();
+
+  dispatch_sync(_keyStoreQueue, ^{
+    [_keyStoreRefs removeObjectForKey:keyLabel];
+    [_keyStore removeObjectForKey:keyLabel];
   });
 }
 
@@ -124,8 +158,8 @@ static bool IsExpectedVerificationFailure(CFErrorRef error) {
          CFErrorGetCode(error) == errSecVerifyFailed;
 }
 
-static int32_t OpenExistingKeyInternal(NSString *keyLabel, int *bitSize) {
-  SecKeyRef keyRef = CopyKey(keyLabel);
+static int32_t OpenExistingKeyInternal(NSString *keyLabel, int *bitSize, BOOL takeHold) {
+  SecKeyRef keyRef = CopyKey(keyLabel, takeHold);
 
   if (keyRef) {
     mpss_log_debug("Found existing key in local dictionary.");
@@ -192,7 +226,7 @@ static int32_t OpenExistingKeyInternal(NSString *keyLabel, int *bitSize) {
   CFRelease(items);
 
   mpss_log_debug("Retrieved key from OS.");
-  StoreKey(keyLabel, keyRef);
+  StoreKey(keyLabel, keyRef, takeHold);
   *bitSize = GetKeySize(keyRef);
   CFRelease(keyRef);
   return MPSS_APPLE_RESULT_SUCCESS;
@@ -218,7 +252,7 @@ int32_t MPSS_OpenExistingKey(const char *keyName, int *bitSize) {
 
   @autoreleasepool {
     NSString *keyLabel = GetKeyLabel(keyName);
-    return OpenExistingKeyInternal(keyLabel, bitSize);
+    return OpenExistingKeyInternal(keyLabel, bitSize, YES);
   }
 }
 
@@ -295,7 +329,7 @@ bool MPSS_CreateKey(const char *keyName, int bitSize) {
     int existingBitSize = 0;
     NSString *keyLabel = GetKeyLabel(keyName);
     const int32_t openResult =
-        OpenExistingKeyInternal(keyLabel, &existingBitSize);
+        OpenExistingKeyInternal(keyLabel, &existingBitSize, NO);
     if (openResult == MPSS_APPLE_RESULT_SUCCESS) {
       NSString *error = [NSString stringWithFormat:@"Key %s already exists.", keyName];
       SetThreadLocalError(error);
@@ -409,7 +443,7 @@ bool MPSS_CreateKey(const char *keyName, int bitSize) {
       return false;
     }
 
-    StoreKey(keyLabel, keyRef);
+    StoreKey(keyLabel, keyRef, YES);
     CFRelease(keyRef);
 
     return true;
@@ -428,7 +462,7 @@ bool MPSS_SignHash(const char *keyName, int signatureType, const uint8_t *hash,
 
   @autoreleasepool {
     NSString *keyLabel = GetKeyLabel(keyName);
-    SecKeyRef keyRef = CopyKey(keyLabel);
+    SecKeyRef keyRef = CopyKey(keyLabel, NO);
 
     if (keyRef == NULL) {
       mpss_log_debug("Key not found.");
@@ -495,7 +529,7 @@ int32_t MPSS_VerifySignature(const char *keyName, int signatureType,
 
   @autoreleasepool {
     NSString *keyLabel = GetKeyLabel(keyName);
-    SecKeyRef keyRef = CopyKey(keyLabel);
+    SecKeyRef keyRef = CopyKey(keyLabel, NO);
 
     if (keyRef == NULL) {
       NSString *error = @"Key not found.";
@@ -649,7 +683,7 @@ bool MPSS_GetPublicKey(const char *keyName, uint8_t *pk, size_t *pkSize) {
 
   @autoreleasepool {
     NSString *keyLabel = GetKeyLabel(keyName);
-    SecKeyRef keyRef = CopyKey(keyLabel);
+    SecKeyRef keyRef = CopyKey(keyLabel, NO);
 
     if (keyRef == NULL) {
       NSString *error = @"Key not found.";
@@ -740,7 +774,7 @@ bool MPSS_DeleteKey(const char *keyName) {
 
   @autoreleasepool {
     NSString *keyLabel = GetKeyLabel(keyName);
-    RemoveKey(keyLabel);
+    PurgeKey(keyLabel);
 
     NSString *op_status = @"";
 

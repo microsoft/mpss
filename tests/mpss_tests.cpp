@@ -238,6 +238,45 @@ void ReopenReportsTheSameProtection(Algorithm algorithm, std::string_view suffix
     ASSERT_TRUE(reopened_handle->delete_key());
 }
 
+// Releasing one handle must not disturb another handle open on the same name. A handle may be
+// released explicitly and is released again when it is destroyed, so the second release must not
+// give up a hold the first one already gave up.
+void ReleaseDoesNotDisturbAnotherHandle(Algorithm algorithm, std::string_view suffix, std::size_t hash_size)
+{
+    if (!mpss::is_algorithm_available(algorithm))
+    {
+        GTEST_SKIP() << "Algorithm not supported by current backend";
+    }
+
+    const std::string key_name = test_key_name("release_test_"s + suffix.data());
+    MPSS::DeleteKey(key_name);
+
+    {
+        std::unique_ptr<mpss::KeyPair> created = MPSS::CreateKey(key_name, algorithm);
+        ASSERT_NE(nullptr, created);
+    }
+
+    std::unique_ptr<mpss::KeyPair> first = mpss::KeyPair::Open(key_name);
+    ASSERT_NE(nullptr, first);
+    std::unique_ptr<mpss::KeyPair> second = mpss::KeyPair::Open(key_name);
+    ASSERT_NE(nullptr, second);
+
+    first->release_key();
+    first.reset();
+
+    const std::vector<std::byte> hash(hash_size, std::byte{0x2A});
+    const std::size_t sig_size = second->sign_hash(hash, {});
+    ASSERT_NE(0, sig_size);
+
+    std::vector<std::byte> signature(sig_size);
+    const std::size_t written = second->sign_hash(hash, signature);
+    ASSERT_NE(0, written);
+    signature.resize(written);
+    ASSERT_TRUE(second->verify(hash, signature));
+
+    ASSERT_TRUE(second->delete_key());
+}
+
 TEST_F(MPSS, SignAndVerify256)
 {
     SignAndVerify(ecdsa_secp256r1_sha256, "256", 32);
@@ -266,6 +305,21 @@ TEST_F(MPSS, ReopenReportsTheSameProtection384)
 TEST_F(MPSS, ReopenReportsTheSameProtection521)
 {
     ReopenReportsTheSameProtection(ecdsa_secp521r1_sha512, "521");
+}
+
+TEST_F(MPSS, ReleaseDoesNotDisturbAnotherHandle256)
+{
+    ReleaseDoesNotDisturbAnotherHandle(ecdsa_secp256r1_sha256, "256", 32);
+}
+
+TEST_F(MPSS, ReleaseDoesNotDisturbAnotherHandle384)
+{
+    ReleaseDoesNotDisturbAnotherHandle(ecdsa_secp384r1_sha384, "384", 48);
+}
+
+TEST_F(MPSS, ReleaseDoesNotDisturbAnotherHandle521)
+{
+    ReleaseDoesNotDisturbAnotherHandle(ecdsa_secp521r1_sha512, "521", 64);
 }
 
 TEST_F(MPSS, DoubleCreation256)
