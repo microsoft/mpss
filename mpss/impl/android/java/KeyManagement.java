@@ -244,9 +244,10 @@ public class KeyManagement {
      * Tries to create first in StrongBox when supported, then falls back to AndroidKeyStore.
      * @param keyName Name of the key to create.
      * @param algorithm Algorithm for the key.
-     * @return True if key was created successfully, False otherwise.
+     * @return The generation the hold was taken on, or null if the key could not be created. The
+     *         generation must be handed back to CloseKey.
      */
-    public static Boolean CreateKey(String keyName, Algorithm algorithm) {
+    public static Long CreateKey(String keyName, Algorithm algorithm) {
         ClearError();
         synchronized (_keyLock) {
             try {
@@ -263,13 +264,13 @@ public class KeyManagement {
                         String msg = "Key with same name already exists: " + keyName;
                         Log.e("MPSS", msg);
                         SetError(msg);
-                        return false;
+                        return null;
                     }
                 } catch (KeyStoreException | IOException | CertificateException | NoSuchAlgorithmException ex) {
                     String msg = "Could not determine whether key exists; refusing to create: " + ex.toString();
                     Log.e("MPSS", msg);
                     SetError(msg);
-                    return false;
+                    return null;
                 }
 
                 KeyPair kp = null;
@@ -291,7 +292,7 @@ public class KeyManagement {
                     String msg = "Failed to create key in TEE.";
                     Log.w("MPSS", msg);
                     SetError(msg);
-                    return false;
+                    return null;
                 }
 
                 // Try again without StrongBox.
@@ -303,23 +304,22 @@ public class KeyManagement {
                     String msg = "Failed to create key: " + keyName;
                     Log.e("MPSS", msg);
                     SetError(msg);
-                    return false;
+                    return null;
                 }
 
                 MemKeyStore.AddKey(keyName, kp);
-                MemKeyStore.RetainKey(keyName);
-                return true;
+                return MemKeyStore.RetainKey(keyName);
             } catch (InvalidAlgorithmParameterException | NoSuchAlgorithmException |
                      NoSuchProviderException | InvalidKeySpecException ex) {
                 String msg = "Error creating key: " + ex.toString();
                 Log.e("MPSS", msg);
                 SetError(msg);
-                return false;
+                return null;
             } catch (RuntimeException ex) {
                 String msg = "Unexpected error creating key: " + ex.toString();
                 Log.e("MPSS", msg);
                 SetError(msg);
-                return false;
+                return null;
             }
         }
     }
@@ -495,12 +495,13 @@ public class KeyManagement {
     /**
      * Close the given key.
      * @param keyName Name of the key to close.
+     * @param generation The generation the hold was taken on, as returned by OpenKey or CreateKey.
      */
-    public static void CloseKey(String keyName) {
+    public static void CloseKey(String keyName, long generation) {
         ClearError();
         if (null == keyName) throw new IllegalArgumentException("keyName is null.");
         synchronized (_keyLock) {
-            MemKeyStore.RemoveKey(keyName);
+            MemKeyStore.RemoveKey(keyName, generation);
         }
     }
 
@@ -554,9 +555,10 @@ public class KeyManagement {
     /**
      * Open the key pair with the given name.
      * @param keyName Name of the key pair to open.
-     * @return True if the key pair was opened successfully, False otherwise.
+     * @return The generation the hold was taken on, -1 if no such key exists, or null on error. The
+     *         generation must be handed back to CloseKey.
      */
-    public static Boolean OpenKey(String keyName) {
+    public static Long OpenKey(String keyName) {
         ClearError();
         try {
             if (null == keyName) throw new IllegalArgumentException("keyName is null.");
@@ -565,11 +567,10 @@ public class KeyManagement {
                 if (null != kp) {
                     // Taking the hold under the same lock the lookup uses keeps a concurrent close
                     // or delete from evicting the entry between the two.
-                    MemKeyStore.RetainKey(keyName);
-                    return true;
+                    return MemKeyStore.RetainKey(keyName);
                 }
             }
-            return _lastError.get().isEmpty() ? false : null;
+            return _lastError.get().isEmpty() ? -1L : null;
         } catch (RuntimeException ex) {
             String msg = "Unexpected error opening key: " + ex.toString();
             Log.e("MPSS", msg);

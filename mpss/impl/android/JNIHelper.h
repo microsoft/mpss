@@ -21,6 +21,8 @@ class JNIHelper
     static jclass algorithm_class();
     static jclass boolean_class();
     static jmethodID boolean_value_method();
+    static jclass long_class();
+    static jmethodID long_value_method();
 
   private:
     static JavaVM *java_vm_;
@@ -28,6 +30,8 @@ class JNIHelper
     static jclass algorithm_class_;
     static jclass boolean_class_;
     static jmethodID boolean_value_method_;
+    static jclass long_class_;
+    static jmethodID long_value_method_;
 };
 
 // RAII Wrapper

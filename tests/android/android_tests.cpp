@@ -216,7 +216,56 @@ std::optional<bool> java_key_operation(std::string_view operation, std::string_v
     return mpss::impl::os::utils::unbox_boolean(env, result.get());
 }
 
-std::optional<bool> java_create_key(std::string_view key_name, mpss::Algorithm algorithm)
+// OpenKey and CreateKey report the cache generation their hold was taken on, so they return a
+// Long rather than a Boolean. A negative value means the key does not exist.
+std::optional<std::int64_t> java_open_key(std::string_view key_name)
+{
+    mpss::impl::os::JNIEnvGuard guard;
+    if (!guard.valid())
+    {
+        mpss::utils::set_error("Android JNI environment is unavailable.");
+        return std::nullopt;
+    }
+    JNIEnv *const env = guard.env();
+
+    jclass key_management = mpss::impl::os::JNIHelper::key_management_class();
+    if (nullptr == key_management)
+    {
+        mpss::utils::set_error("Could not get KeyManagement Java class.");
+        return std::nullopt;
+    }
+
+    jmethodID method = env->GetStaticMethodID(key_management, "OpenKey", "(Ljava/lang/String;)Ljava/lang/Long;");
+    if (mpss::impl::os::utils::check_and_clear_exception(env, "resolving KeyManagement.OpenKey") || nullptr == method)
+    {
+        mpss::utils::set_error("Could not get KeyManagement.OpenKey Java method.");
+        return std::nullopt;
+    }
+
+    const std::string key_name_string{key_name};
+    jni_string java_key_name(env, env->NewStringUTF(key_name_string.c_str()));
+    if (mpss::impl::os::utils::check_and_clear_exception(env, "converting an Android key name to a Java string") ||
+        java_key_name.is_null())
+    {
+        mpss::utils::set_error("Could not convert key name to Java String.");
+        return std::nullopt;
+    }
+
+    jni_object result(env, env->CallStaticObjectMethod(key_management, method, java_key_name.get()));
+    if (mpss::impl::os::utils::check_and_clear_exception(env, "calling KeyManagement.OpenKey"))
+    {
+        return std::nullopt;
+    }
+    if (result.is_null())
+    {
+        mpss::impl::os::utils::report_java_error(env, "KeyManagement.OpenKey");
+        return std::nullopt;
+    }
+
+    return mpss::impl::os::utils::unbox_long(env, result.get());
+}
+
+std::optional<std::int64_t> java_create_key(std::string_view key_name, mpss::Algorithm algorithm)
 {
     mpss::impl::os::JNIEnvGuard guard;
     if (!guard.valid())
@@ -234,7 +283,7 @@ std::optional<bool> java_create_key(std::string_view key_name, mpss::Algorithm a
     }
 
     jmethodID method = env->GetStaticMethodID(key_management, "CreateKey",
-                                              "(Ljava/lang/String;Lcom/microsoft/mpss/Algorithm;)Ljava/lang/Boolean;");
+                                              "(Ljava/lang/String;Lcom/microsoft/mpss/Algorithm;)Ljava/lang/Long;");
     if (mpss::impl::os::utils::check_and_clear_exception(env, "resolving KeyManagement.CreateKey"))
     {
         return std::nullopt;
@@ -316,13 +365,7 @@ std::optional<bool> java_create_key(std::string_view key_name, mpss::Algorithm a
         return std::nullopt;
     }
 
-    const std::optional<bool> created = mpss::impl::os::utils::unbox_boolean(env, result.get());
-    if (created.has_value() && !created.value())
-    {
-        mpss::impl::os::utils::report_java_error(env, "KeyManagement.CreateKey");
-    }
-
-    return created;
+    return mpss::impl::os::utils::unbox_long(env, result.get());
 }
 
 } // namespace
@@ -354,9 +397,9 @@ TEST(AndroidSecurityTest, JavaCreateKeyRefusesToReplaceExistingKey)
     handle.reset();
 
     // The Java layer is called directly because the backend rejects a duplicate name before the JNI crossing.
-    const std::optional<bool> created = java_create_key(key_name, ecdsa_secp256r1_sha256);
-    ASSERT_TRUE(created.has_value());
-    EXPECT_FALSE(created.value());
+    // A refused creation reports no generation, since there is no hold to report one for.
+    const std::optional<std::int64_t> created = java_create_key(key_name, ecdsa_secp256r1_sha256);
+    EXPECT_FALSE(created.has_value());
     EXPECT_NE(std::string::npos, mpss::get_error().find("Key with same name already exists"));
 
     std::unique_ptr<mpss::KeyPair> reopened = mpss::KeyPair::Open(key_name);
@@ -698,7 +741,7 @@ TEST(AndroidJNITest, ConcurrentOpenAndDeleteLeaveCacheConsistent)
     constexpr std::size_t opener_count = 8;
     std::latch ready(opener_count + 1);
     std::latch start(1);
-    std::array<std::optional<bool>, opener_count> open_results;
+    std::array<std::optional<std::int64_t>, opener_count> open_results;
     std::array<std::string, opener_count> open_errors;
     std::array<std::thread, opener_count> openers;
     for (std::size_t opener_index = 0; opener_index < openers.size(); ++opener_index)
@@ -706,7 +749,7 @@ TEST(AndroidJNITest, ConcurrentOpenAndDeleteLeaveCacheConsistent)
         openers[opener_index] = std::thread([&, opener_index]() {
             ready.count_down();
             start.wait();
-            open_results[opener_index] = java_key_operation("OpenKey", key_name);
+            open_results[opener_index] = java_open_key(key_name);
             if (!open_results[opener_index].has_value())
             {
                 open_errors[opener_index] = mpss::get_error();
@@ -741,9 +784,9 @@ TEST(AndroidJNITest, ConcurrentOpenAndDeleteLeaveCacheConsistent)
         ASSERT_TRUE(open_results[opener_index].has_value()) << open_errors[opener_index];
     }
 
-    const std::optional<bool> final_open_result = java_key_operation("OpenKey", key_name);
+    const std::optional<std::int64_t> final_open_result = java_open_key(key_name);
     ASSERT_TRUE(final_open_result.has_value()) << mpss::get_error();
-    ASSERT_FALSE(*final_open_result);
+    ASSERT_GT(0, *final_open_result);
 
     std::unique_ptr<mpss::KeyPair> replacement = mpss::KeyPair::Create(key_name, ecdsa_secp256r1_sha256);
     ASSERT_NE(nullptr, replacement) << mpss::get_error();

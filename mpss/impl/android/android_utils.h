@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <jni.h>
 #include <optional>
 #include <span>
@@ -44,6 +45,8 @@ std::size_t copy_jbyte_array_to_span(JNIEnv *env, jbyteArray array, std::span<st
  * @return Value of the Java boolean object, or no value on failure
  */
 std::optional<bool> unbox_boolean(JNIEnv *env, jobject boolean_obj);
+
+std::optional<std::int64_t> unbox_long(JNIEnv *env, jobject long_obj);
 
 /**
  * Consume the current KeyManagement error and report it with operation context.

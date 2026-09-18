@@ -302,7 +302,7 @@ void AndroidKeyPair::close_key()
         return;
     }
 
-    jmethodID method = env->GetStaticMethodID(key_management, "CloseKey", "(Ljava/lang/String;)V");
+    jmethodID method = env->GetStaticMethodID(key_management, "CloseKey", "(Ljava/lang/String;J)V");
     if (utils::check_and_clear_exception(env, "resolving KeyManagement.CloseKey"))
     {
         return;
@@ -324,7 +324,7 @@ void AndroidKeyPair::close_key()
         return;
     }
 
-    env->CallStaticVoidMethod(key_management, method, key_name.get());
+    env->CallStaticVoidMethod(key_management, method, key_name.get(), static_cast<jlong>(generation_));
     static_cast<void>(utils::check_and_clear_exception(env, "calling KeyManagement.CloseKey"));
 }
 

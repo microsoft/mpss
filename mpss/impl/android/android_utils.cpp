@@ -204,6 +204,31 @@ std::optional<bool> unbox_boolean(JNIEnv *env, jobject boolean_obj)
     return JNI_TRUE == result;
 }
 
+std::optional<std::int64_t> unbox_long(JNIEnv *env, jobject long_obj)
+{
+    if (nullptr == env || nullptr == long_obj)
+    {
+        mpss::utils::log_and_set_error("Cannot unbox an unavailable Java Long.");
+        return std::nullopt;
+    }
+
+    jclass long_class = JNIHelper::long_class();
+    jmethodID method = JNIHelper::long_value_method();
+    if (nullptr == long_class || nullptr == method)
+    {
+        mpss::utils::log_and_set_error("Java Long metadata is unavailable.");
+        return std::nullopt;
+    }
+
+    const jlong result = env->CallLongMethod(long_obj, method);
+    if (check_and_clear_exception(env, "unboxing a Java Long"))
+    {
+        return std::nullopt;
+    }
+
+    return static_cast<std::int64_t>(result);
+}
+
 // NOLINTNEXTLINE(readability-non-const-parameter) - JNI requires non-const JNIEnv.
 void report_java_error(JNIEnv *env, std::string_view operation)
 {

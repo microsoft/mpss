@@ -120,15 +120,15 @@ using OpenKeyResult = KeyProbeResult<std::unique_ptr<KeyPair>>;
 
 // Release the hold a successful open or create took on the cached key. Nothing else will: the hold
 // is released by the key pair's destructor, and on these paths no key pair is ever constructed.
-void release_cached_key(JNIEnv *env, jclass key_management, jstring key_name)
+void release_cached_key(JNIEnv *env, jclass key_management, jstring key_name, std::uint64_t generation)
 {
-    jmethodID method = env->GetStaticMethodID(key_management, "CloseKey", "(Ljava/lang/String;)V");
+    jmethodID method = env->GetStaticMethodID(key_management, "CloseKey", "(Ljava/lang/String;J)V");
     if (utils::check_and_clear_exception(env, "resolving KeyManagement.CloseKey") || nullptr == method)
     {
         return;
     }
 
-    env->CallStaticVoidMethod(key_management, method, key_name);
+    env->CallStaticVoidMethod(key_management, method, key_name, static_cast<jlong>(generation));
     static_cast<void>(utils::check_and_clear_exception(env, "calling KeyManagement.CloseKey"));
 }
 
@@ -163,7 +163,7 @@ OpenKeyResult try_open_key(std::string_view name)
         return {.status = KeyProbeStatus::operational_error, .value = nullptr};
     }
 
-    jmethodID method = env->GetStaticMethodID(key_management, "OpenKey", "(Ljava/lang/String;)Ljava/lang/Boolean;");
+    jmethodID method = env->GetStaticMethodID(key_management, "OpenKey", "(Ljava/lang/String;)Ljava/lang/Long;");
     if (utils::check_and_clear_exception(env, "resolving KeyManagement.OpenKey"))
     {
         return {.status = KeyProbeStatus::operational_error, .value = nullptr};
@@ -185,15 +185,16 @@ OpenKeyResult try_open_key(std::string_view name)
         return {.status = KeyProbeStatus::operational_error, .value = nullptr};
     }
 
-    const std::optional<bool> opened = utils::unbox_boolean(env, result.get());
+    const std::optional<std::int64_t> opened = utils::unbox_long(env, result.get());
     if (!opened.has_value())
     {
         return {.status = KeyProbeStatus::operational_error, .value = nullptr};
     }
-    if (!opened.value())
+    if (0 > opened.value())
     {
         return {.status = KeyProbeStatus::not_found, .value = nullptr};
     }
+    const std::uint64_t generation = static_cast<std::uint64_t>(opened.value());
 
     // The open took a hold on the cached key so that another handle's close cannot evict it. Every
     // path from here that does not hand back a key pair has to release that hold, or the entry
@@ -202,7 +203,7 @@ OpenKeyResult try_open_key(std::string_view name)
     SCOPE_GUARD({
         if (!handed_to_caller)
         {
-            release_cached_key(env, key_management, key_name.get());
+            release_cached_key(env, key_management, key_name.get(), generation);
         }
     });
 
@@ -298,7 +299,8 @@ OpenKeyResult try_open_key(std::string_view name)
     mpss::utils::log_trace("Key '{}' opened on Android with {} storage.", name, storage_description);
     handed_to_caller = true;
     return {.status = KeyProbeStatus::found,
-            .value = std::make_unique<AndroidKeyPair>(algorithm, name, hardware_backed, storage_description)};
+            .value =
+                std::make_unique<AndroidKeyPair>(algorithm, name, hardware_backed, storage_description, generation)};
 }
 
 } // namespace
@@ -448,7 +450,7 @@ std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm, 
     }
 
     jmethodID method = env->GetStaticMethodID(key_management, "CreateKey",
-                                              "(Ljava/lang/String;Lcom/microsoft/mpss/Algorithm;)Ljava/lang/Boolean;");
+                                              "(Ljava/lang/String;Lcom/microsoft/mpss/Algorithm;)Ljava/lang/Long;");
     if (utils::check_and_clear_exception(env, "resolving KeyManagement.CreateKey"))
     {
         return nullptr;
@@ -528,16 +530,13 @@ std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm, 
         return nullptr;
     }
 
-    const std::optional<bool> created = utils::unbox_boolean(env, result.get());
+    const std::optional<std::int64_t> created = utils::unbox_long(env, result.get());
     if (!created.has_value())
-    {
-        return nullptr;
-    }
-    if (!created.value())
     {
         utils::report_java_error(env, "KeyManagement.CreateKey");
         return nullptr;
     }
+    const std::uint64_t generation = static_cast<std::uint64_t>(created.value());
 
     // Creation took a hold on the cached key, released by the key pair's destructor. A path that
     // returns without one has to release it here instead.
@@ -545,7 +544,7 @@ std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm, 
     SCOPE_GUARD({
         if (!handed_to_caller)
         {
-            release_cached_key(env, key_management, key_name.get());
+            release_cached_key(env, key_management, key_name.get(), generation);
         }
     });
 
@@ -561,7 +560,7 @@ std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm, 
 
     mpss::utils::log_trace("Key '{}' created on Android with {} storage.", name, storage_description);
     handed_to_caller = true;
-    return std::make_unique<AndroidKeyPair>(algorithm, name, hardware_backed, storage_description);
+    return std::make_unique<AndroidKeyPair>(algorithm, name, hardware_backed, storage_description, generation);
 }
 
 bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_key, Algorithm algorithm,

@@ -29,6 +29,8 @@ jclass mpss::impl::os::JNIHelper::key_management_class_ = nullptr;
 jclass mpss::impl::os::JNIHelper::algorithm_class_ = nullptr;
 jclass mpss::impl::os::JNIHelper::boolean_class_ = nullptr;
 jmethodID mpss::impl::os::JNIHelper::boolean_value_method_ = nullptr;
+jclass mpss::impl::os::JNIHelper::long_class_ = nullptr;
+jmethodID mpss::impl::os::JNIHelper::long_value_method_ = nullptr;
 thread_local bool mpss::impl::os::JNIEnvGuard::attached_ = false;
 thread_local int mpss::impl::os::JNIEnvGuard::ref_count_ = 0;
 
@@ -69,7 +71,14 @@ bool JNIHelper::init(JavaVM *vm)
 
     if (!cache_class("com/microsoft/mpss/KeyManagement", key_management_class_) ||
         !cache_class("com/microsoft/mpss/Algorithm", algorithm_class_) ||
-        !cache_class("java/lang/Boolean", boolean_class_))
+        !cache_class("java/lang/Boolean", boolean_class_) || !cache_class("java/lang/Long", long_class_))
+    {
+        uninit(vm);
+        return false;
+    }
+
+    long_value_method_ = env->GetMethodID(long_class_, "longValue", "()J");
+    if (utils::check_and_clear_exception(env, "resolving Long.longValue") || nullptr == long_value_method_)
     {
         uninit(vm);
         return false;
@@ -111,6 +120,8 @@ void JNIHelper::uninit(JavaVM *vm)
 
     boolean_value_method_ = nullptr;
     boolean_class_ = nullptr;
+    long_value_method_ = nullptr;
+    long_class_ = nullptr;
     algorithm_class_ = nullptr;
     key_management_class_ = nullptr;
     java_vm_ = nullptr;
@@ -181,6 +192,16 @@ jclass JNIHelper::boolean_class()
 jmethodID JNIHelper::boolean_value_method()
 {
     return boolean_value_method_;
+}
+
+jclass JNIHelper::long_class()
+{
+    return long_class_;
+}
+
+jmethodID JNIHelper::long_value_method()
+{
+    return long_value_method_;
 }
 
 // RAII Wrapper.

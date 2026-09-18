@@ -4,6 +4,7 @@
 #pragma once
 
 #include "mpss/mpss.h"
+#include <cstdint>
 
 namespace mpss::impl::os
 {
@@ -12,8 +13,8 @@ class AndroidKeyPair : public mpss::KeyPair
 {
   public:
     AndroidKeyPair(mpss::Algorithm algorithm, std::string_view name, bool hardware_backed,
-                   const char *storage_description)
-        : mpss::KeyPair{algorithm, hardware_backed, storage_description}, key_name_{name}
+                   const char *storage_description, std::uint64_t generation)
+        : mpss::KeyPair{algorithm, hardware_backed, storage_description}, key_name_{name}, generation_{generation}
     {
     }
 
@@ -47,6 +48,11 @@ class AndroidKeyPair : public mpss::KeyPair
     void close_key();
 
     std::string key_name_;
+
+    // The cache entry this handle took its hold on, handed back when closing so that a name
+    // deleted and created again while this handle was alive cannot have this release charged
+    // against the key that now holds the name.
+    std::uint64_t generation_;
 };
 
 } // namespace mpss::impl::os
