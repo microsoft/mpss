@@ -323,6 +323,42 @@ void ReleasedHandleRefusesOperations(Algorithm algorithm, std::string_view suffi
     MPSS::DeleteKey(key_name);
 }
 
+// Deleting a name and creating it again while a handle to the old key is still alive must not let
+// that handle's release disturb the new key. The stale handle is destroyed last, after the new one
+// is already in use.
+void StaleHandleDoesNotDisturbARecreatedKey(Algorithm algorithm, std::string_view suffix, std::size_t hash_size)
+{
+    if (!mpss::is_algorithm_available(algorithm))
+    {
+        GTEST_SKIP() << "Algorithm not supported by current backend";
+    }
+
+    const std::string key_name = test_key_name("stale_test_"s + suffix.data());
+    MPSS::DeleteKey(key_name);
+
+    std::unique_ptr<mpss::KeyPair> stale = MPSS::CreateKey(key_name, algorithm);
+    ASSERT_NE(nullptr, stale);
+
+    MPSS::DeleteKey(key_name);
+
+    std::unique_ptr<mpss::KeyPair> fresh = MPSS::CreateKey(key_name, algorithm);
+    ASSERT_NE(nullptr, fresh);
+
+    // The stale handle's release is charged against the key it was opened on, not the new one.
+    stale.reset();
+
+    const std::vector<std::byte> hash(hash_size, std::byte{0x2A});
+    const std::size_t sig_size = fresh->sign_hash(hash, {});
+    ASSERT_NE(0, sig_size);
+    std::vector<std::byte> signature(sig_size);
+    const std::size_t written = fresh->sign_hash(hash, signature);
+    ASSERT_NE(0, written);
+    signature.resize(written);
+    EXPECT_TRUE(fresh->verify(hash, signature));
+
+    ASSERT_TRUE(fresh->delete_key());
+}
+
 TEST_F(MPSS, SignAndVerify256)
 {
     SignAndVerify(ecdsa_secp256r1_sha256, "256", 32);
@@ -381,6 +417,21 @@ TEST_F(MPSS, ReleasedHandleRefusesOperations384)
 TEST_F(MPSS, ReleasedHandleRefusesOperations521)
 {
     ReleasedHandleRefusesOperations(ecdsa_secp521r1_sha512, "521", 64);
+}
+
+TEST_F(MPSS, StaleHandleDoesNotDisturbARecreatedKey256)
+{
+    StaleHandleDoesNotDisturbARecreatedKey(ecdsa_secp256r1_sha256, "256", 32);
+}
+
+TEST_F(MPSS, StaleHandleDoesNotDisturbARecreatedKey384)
+{
+    StaleHandleDoesNotDisturbARecreatedKey(ecdsa_secp384r1_sha384, "384", 48);
+}
+
+TEST_F(MPSS, StaleHandleDoesNotDisturbARecreatedKey521)
+{
+    StaleHandleDoesNotDisturbARecreatedKey(ecdsa_secp521r1_sha512, "521", 64);
 }
 
 TEST_F(MPSS, DoubleCreation256)
@@ -862,10 +913,11 @@ TEST(AppleErrorPropagation, MissingOpenHasNoErrorDetail)
     (void)MPSS_SE_RemoveExistingKey(key_name);
 
     int bit_size = 0;
-    EXPECT_EQ(MPSS_APPLE_RESULT_EXPECTED_NEGATIVE, MPSS_OpenExistingKey(key_name, &bit_size));
+    std::uint64_t generation = 0;
+    EXPECT_EQ(MPSS_APPLE_RESULT_EXPECTED_NEGATIVE, MPSS_OpenExistingKey(key_name, &bit_size, &generation));
     EXPECT_TRUE(mpss::impl::os::utils::take_keychain_error().empty());
 
-    EXPECT_EQ(MPSS_APPLE_RESULT_EXPECTED_NEGATIVE, MPSS_SE_OpenExistingKey(key_name));
+    EXPECT_EQ(MPSS_APPLE_RESULT_EXPECTED_NEGATIVE, MPSS_SE_OpenExistingKey(key_name, &generation));
     EXPECT_TRUE(mpss::impl::os::utils::take_secure_enclave_error().empty());
 
     EXPECT_EQ(nullptr, mpss::KeyPair::Open(key_name));
@@ -892,7 +944,8 @@ TEST(AppleErrorPropagation, WrapperErrorsAreConsumedOnce)
     EXPECT_TRUE(mpss::impl::os::utils::take_secure_enclave_error().empty());
 
     int bit_size = 0;
-    EXPECT_EQ(MPSS_APPLE_RESULT_OPERATIONAL_ERROR, MPSS_OpenExistingKey(nullptr, &bit_size));
+    std::uint64_t generation = 0;
+    EXPECT_EQ(MPSS_APPLE_RESULT_OPERATIONAL_ERROR, MPSS_OpenExistingKey(nullptr, &bit_size, &generation));
     EXPECT_FALSE(mpss::impl::os::utils::take_keychain_error().empty());
 
     const char unicode_key_name[] = {static_cast<char>(0xC3), static_cast<char>(0xA9), '\0'};

@@ -40,6 +40,13 @@ nonisolated(unsafe) private let _keyStore = NSMutableDictionary()
 // How many open handles depend on each cached key. See removeKeyFromDict.
 nonisolated(unsafe) private var _keyStoreRefs: [String: Int] = [:]
 
+// Which entry each hold was taken on. A name can be deleted and created again while a handle to the
+// old key is still alive, and that handle's release must not be charged against the new key. A
+// release for a generation the cache has moved past therefore does nothing. Generations are never
+// reused.
+nonisolated(unsafe) private var _keyStoreGen: [String: UInt64] = [:]
+nonisolated(unsafe) private var _nextGeneration: UInt64 = 0
+
 let keyChainAccountName = "P256Key"
 let errorKey = "com.microsoft.mpss.ErrorKey"
 
@@ -104,12 +111,21 @@ private func clearError() {
 ///     - key: The private key to store.
 ///     - takeHold: Whether to record a hold on the entry, which the caller must later release.
 private func storeKeyInDict(
-    keyName: String, key: SecureEnclave.P256.Signing.PrivateKey, takeHold: Bool
+    keyName: String, key: SecureEnclave.P256.Signing.PrivateKey, takeHold: Bool,
+    generation: UnsafeMutablePointer<UInt64>? = nil
 ) {
     _keyStoreQueue.sync {
         _keyStore[keyName] = key
+        // A generation is established when the name starts being cached and kept while it stays
+        // cached, so that two lookups which both miss and both store do not orphan the first one's
+        // hold. Deleting removes the generation, which is what makes the next create a new one.
+        if nil == _keyStoreGen[keyName] {
+            _nextGeneration += 1
+            _keyStoreGen[keyName] = _nextGeneration
+        }
         if takeHold {
             _keyStoreRefs[keyName] = (_keyStoreRefs[keyName] ?? 0) + 1
+            generation?.pointee = _keyStoreGen[keyName] ?? 0
         }
     }
 }
@@ -120,7 +136,7 @@ private func storeKeyInDict(
 ///      - takeHold: Whether to record a hold on the entry, which the caller must later release.
 /// - Returns: Private key if found, nil otherwise.
 private func getKeyFromDict(
-    keyName: String, takeHold: Bool
+    keyName: String, takeHold: Bool, generation: UnsafeMutablePointer<UInt64>? = nil
 ) -> SecureEnclave.P256.Signing.PrivateKey? {
     return _keyStoreQueue.sync(execute: {
         guard
@@ -130,6 +146,7 @@ private func getKeyFromDict(
         }
         if takeHold, nil != result {
             _keyStoreRefs[keyName] = (_keyStoreRefs[keyName] ?? 0) + 1
+            generation?.pointee = _keyStoreGen[keyName] ?? 0
         }
         return result
     })
@@ -141,14 +158,20 @@ private func getKeyFromDict(
 /// where a different key could answer to that name.
 /// - Parameters:
 ///     - keyName: Name of the key to release.
-private func removeKeyFromDict(_ keyName: String) {
+private func removeKeyFromDict(_ keyName: String, _ generation: UInt64) {
     _keyStoreQueue.sync {
+        guard _keyStoreGen[keyName] == generation else {
+            // The hold was taken on an entry this name has since moved past, so there is nothing of
+            // this handle's left to give up and whatever holds the name now belongs to someone else.
+            return
+        }
         let holds = _keyStoreRefs[keyName] ?? 0
         if holds > 1 {
             _keyStoreRefs[keyName] = holds - 1
             return
         }
         _keyStoreRefs.removeValue(forKey: keyName)
+        _keyStoreGen.removeValue(forKey: keyName)
         _keyStore.removeObject(forKey: keyName)
     }
 }
@@ -160,6 +183,7 @@ private func removeKeyFromDict(_ keyName: String) {
 private func purgeKeyFromDict(_ keyName: String) {
     _keyStoreQueue.sync {
         _keyStoreRefs.removeValue(forKey: keyName)
+        _keyStoreGen.removeValue(forKey: keyName)
         _keyStore.removeObject(forKey: keyName)
     }
 }
@@ -172,10 +196,13 @@ private func purgeKeyFromDict(_ keyName: String) {
 ///        release. Taken inside the lookup so a concurrent close cannot evict the entry in
 ///        between.
 /// - Returns: Private key, or nil if not found.
-private func getKey(_ keyName: String, takeHold: Bool) -> KeyLookupResult {
+private func getKey(
+    _ keyName: String, takeHold: Bool, generation: UnsafeMutablePointer<UInt64>? = nil
+) -> KeyLookupResult {
     do {
         // Try first from dictionary.
-        if let result = getKeyFromDict(keyName: keyName, takeHold: takeHold) {
+        if let result = getKeyFromDict(keyName: keyName, takeHold: takeHold, generation: generation)
+        {
             return .found(result)
         }
 
@@ -185,7 +212,8 @@ private func getKey(_ keyName: String, takeHold: Bool) -> KeyLookupResult {
         case .found(let keyChainData):
             let result = try SecureEnclave.P256.Signing.PrivateKey(
                 dataRepresentation: keyChainData)
-            storeKeyInDict(keyName: keyName, key: result, takeHold: takeHold)
+            storeKeyInDict(
+                keyName: keyName, key: result, takeHold: takeHold, generation: generation)
             return .found(result)
         case .notFound:
             logDebug("Key not found in Keychain.")
@@ -385,7 +413,7 @@ private func getKeyName(_ keyName: String) -> String {
 ///     - requireUserPresence: Whether signing requires system user authentication.
 /// - Returns: Random private key, or nil if it could not be created.
 private func createKeyPriv(
-    _ keyName: String, requireUserPresence: Bool
+    _ keyName: String, requireUserPresence: Bool, generation: UnsafeMutablePointer<UInt64>
 ) -> SecureEnclave.P256.Signing.PrivateKey? {
     do {
         let accessFlags: SecAccessControlCreateFlags =
@@ -416,7 +444,7 @@ private func createKeyPriv(
             return nil
         }
 
-        storeKeyInDict(keyName: keyName, key: privateKey, takeHold: true)
+        storeKeyInDict(keyName: keyName, key: privateKey, takeHold: true, generation: generation)
 
         return privateKey
     } catch {
@@ -440,21 +468,28 @@ func isSupported() -> Bool {
 /// Open an existing private key.
 /// - Parameters:
 ///     - keyName: Name of the private key to open.
+///     - generation: Receives the cache entry the hold was taken on, to be handed back to
+///       MPSS_SE_CloseKey.
 /// - Returns: Success, expected-negative if absent, or operational-error.
 @_cdecl("MPSS_SE_OpenExistingKey")
-func openExistingKey(_ keyName: UnsafePointer<CChar>) -> Int32 {
+func openExistingKey(_ keyName: UnsafePointer<CChar>, _ generation: UnsafeMutablePointer<UInt64>)
+    -> Int32
+{
     clearError()
     let keyNameString = String(cString: keyName)
-    return openExistingKey(keyNameString).rawValue
+    return openExistingKey(keyNameString, generation).rawValue
 }
 
 /// Open an existing private key.
 /// - Parameters:
 ///     - keyName: Name of the private key to open.
+///     - generation: Receives the cache entry the hold was taken on.
 /// - Returns: Success, expected-negative if absent, or operational-error.
-private func openExistingKey(_ keyName: String) -> AppleOperationResult {
+private func openExistingKey(_ keyName: String, _ generation: UnsafeMutablePointer<UInt64>)
+    -> AppleOperationResult
+{
     let fullKeyName = getKeyName(keyName)
-    switch getKey(fullKeyName, takeHold: true) {
+    switch getKey(fullKeyName, takeHold: true, generation: generation) {
     case .found:
         return .success
     case .notFound:
@@ -491,10 +526,10 @@ private func removeExistingKey(_ keyName: String) -> Bool {
 /// Close existing key.
 /// Will remove existing key from the in-memory dictionary.
 @_cdecl("MPSS_SE_CloseKey")
-func closeKey(_ keyName: UnsafePointer<CChar>) {
+func closeKey(_ keyName: UnsafePointer<CChar>, _ generation: UInt64) {
     let keyNameString = String(cString: keyName)
     let fullKeyName = getKeyName(keyNameString)
-    removeKeyFromDict(fullKeyName)
+    removeKeyFromDict(fullKeyName, generation)
 }
 
 /// Create a random P256 private key in the Secure Enclave.
@@ -503,10 +538,14 @@ func closeKey(_ keyName: UnsafePointer<CChar>) {
 ///     - requireUserPresence: Whether signing requires system user authentication.
 /// - Returns: True if key was created successfully, False otherwise.
 @_cdecl("MPSS_SE_CreateKey")
-func createKey(_ keyName: UnsafePointer<CChar>, _ requireUserPresence: Bool) -> Bool {
+func createKey(
+    _ keyName: UnsafePointer<CChar>, _ requireUserPresence: Bool,
+    _ generation: UnsafeMutablePointer<UInt64>
+) -> Bool {
     clearError()
     let keyNameString = String(cString: keyName)
-    return createKey(keyNameString, requireUserPresence: requireUserPresence)
+    return createKey(
+        keyNameString, requireUserPresence: requireUserPresence, generation: generation)
 }
 
 /// Create a random P256 private key in the Secure Enclave.
@@ -514,9 +553,12 @@ func createKey(_ keyName: UnsafePointer<CChar>, _ requireUserPresence: Bool) -> 
 ///     - keyName: Name that identifies the created key.
 ///     - requireUserPresence: Whether signing requires system user authentication.
 /// - Returns: True if key was created successfully, False otherwise.
-private func createKey(_ keyName: String, requireUserPresence: Bool) -> Bool {
+private func createKey(
+    _ keyName: String, requireUserPresence: Bool, generation: UnsafeMutablePointer<UInt64>
+) -> Bool {
     let fullKeyName = getKeyName(keyName)
-    let privateKey = createKeyPriv(fullKeyName, requireUserPresence: requireUserPresence)
+    let privateKey = createKeyPriv(
+        fullKeyName, requireUserPresence: requireUserPresence, generation: generation)
     if nil == privateKey {
         return false
     }

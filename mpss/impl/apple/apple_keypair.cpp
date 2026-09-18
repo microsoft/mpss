@@ -8,8 +8,8 @@ namespace mpss::impl::os
 {
 
 AppleKeyPairBase::AppleKeyPairBase(std::string_view name, Algorithm algorithm, bool hardware_backed,
-                                   const char *storage_description)
-    : KeyPair{algorithm, hardware_backed, storage_description}, name_{name}
+                                   const char *storage_description, std::uint64_t generation)
+    : KeyPair{algorithm, hardware_backed, storage_description}, name_{name}, generation_{generation}
 {
 }
 

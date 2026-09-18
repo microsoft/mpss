@@ -10,10 +10,13 @@
 extern "C"
 {
     bool MPSS_SE_SecureEnclaveIsSupported();
-    bool MPSS_SE_CreateKey(const char *keyName, bool requireUserPresence);
-    std::int32_t MPSS_SE_OpenExistingKey(const char *keyName);
+    bool MPSS_SE_CreateKey(const char *keyName, bool requireUserPresence, std::uint64_t *generation);
+    // On success takes a hold on the cached key and reports the generation it was taken on, which
+    // must be handed back to MPSS_SE_CloseKey so a release cannot be charged against a later key
+    // of the same name.
+    std::int32_t MPSS_SE_OpenExistingKey(const char *keyName, std::uint64_t *generation);
     bool MPSS_SE_RemoveExistingKey(const char *keyName);
-    void MPSS_SE_CloseKey(const char *keyName);
+    void MPSS_SE_CloseKey(const char *keyName, std::uint64_t generation);
     bool MPSS_SE_Sign(const char *keyName, const std::uint8_t *hash, std::size_t hashSize, std::uint8_t *sig,
                       std::size_t *sigSize);
     std::int32_t MPSS_SE_VerifySignature(const char *keyName, const std::uint8_t *hash, std::size_t hashSize,

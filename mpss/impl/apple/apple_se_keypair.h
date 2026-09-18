@@ -4,6 +4,7 @@
 #pragma once
 
 #include "mpss/impl/apple/apple_keypair.h"
+#include <cstdint>
 
 namespace mpss::impl::os
 {
@@ -17,7 +18,7 @@ namespace mpss::impl::os
 class AppleSEKeyPair : public AppleKeyPairBase
 {
   public:
-    AppleSEKeyPair(std::string_view name, Algorithm algorithm);
+    AppleSEKeyPair(std::string_view name, Algorithm algorithm, std::uint64_t generation);
     ~AppleSEKeyPair() override;
 
   protected:

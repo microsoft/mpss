@@ -4,6 +4,7 @@
 #pragma once
 
 #include "mpss/mpss.h"
+#include <cstdint>
 
 namespace mpss::impl::os
 {
@@ -21,7 +22,8 @@ class AppleKeyPairBase : public mpss::KeyPair
     ~AppleKeyPairBase() override = default;
 
   protected:
-    AppleKeyPairBase(std::string_view name, Algorithm algorithm, bool hardware_backed, const char *storage_description);
+    AppleKeyPairBase(std::string_view name, Algorithm algorithm, bool hardware_backed, const char *storage_description,
+                     std::uint64_t generation);
 
     [[nodiscard]]
     std::string name() const
@@ -29,8 +31,19 @@ class AppleKeyPairBase : public mpss::KeyPair
         return name_;
     }
 
+    // The cache entry this handle took its hold on. Handed back when releasing so that a name
+    // deleted and created again while this handle was alive cannot have this release charged
+    // against the key that now holds the name.
+    [[nodiscard]]
+    std::uint64_t generation() const noexcept
+    {
+        return generation_;
+    }
+
   private:
     std::string name_;
+
+    std::uint64_t generation_;
 };
 
 } // namespace mpss::impl::os

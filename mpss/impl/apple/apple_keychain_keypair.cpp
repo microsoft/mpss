@@ -14,8 +14,8 @@ constexpr const char *storage_description = "Keychain";
 namespace mpss::impl::os
 {
 
-AppleKeychainKeyPair::AppleKeychainKeyPair(std::string_view name, Algorithm algorithm)
-    : AppleKeyPairBase{name, algorithm, /* hardware_backed */ false, storage_description}
+AppleKeychainKeyPair::AppleKeychainKeyPair(std::string_view name, Algorithm algorithm, std::uint64_t generation)
+    : AppleKeyPairBase{name, algorithm, /* hardware_backed */ false, storage_description, generation}
 {
 }
 
@@ -80,7 +80,7 @@ std::size_t AppleKeychainKeyPair::do_extract_key(std::span<std::byte> public_key
 
 void AppleKeychainKeyPair::do_release_key()
 {
-    MPSS_RemoveKey(name().c_str());
+    MPSS_RemoveKey(name().c_str(), generation());
 }
 
 } // namespace mpss::impl::os

@@ -14,8 +14,8 @@ constexpr const char *storage_description = "Secure Enclave";
 namespace mpss::impl::os
 {
 
-AppleSEKeyPair::AppleSEKeyPair(std::string_view name, Algorithm algorithm)
-    : AppleKeyPairBase{name, algorithm, /* hardware_backed */ true, storage_description}
+AppleSEKeyPair::AppleSEKeyPair(std::string_view name, Algorithm algorithm, std::uint64_t generation)
+    : AppleKeyPairBase{name, algorithm, /* hardware_backed */ true, storage_description, generation}
 {
 }
 
@@ -78,7 +78,7 @@ std::size_t AppleSEKeyPair::do_extract_key(std::span<std::byte> public_key) cons
 
 void AppleSEKeyPair::do_release_key()
 {
-    MPSS_SE_CloseKey(name().c_str());
+    MPSS_SE_CloseKey(name().c_str(), generation());
 }
 
 } // namespace mpss::impl::os
