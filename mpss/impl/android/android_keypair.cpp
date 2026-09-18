@@ -280,23 +280,13 @@ std::size_t AndroidKeyPair::do_extract_key(std::span<std::byte> public_key) cons
     return key_size;
 }
 
-void AndroidKeyPair::release_key()
+void AndroidKeyPair::do_release_key()
 {
     close_key();
 }
 
 void AndroidKeyPair::close_key()
 {
-    // The cache entry is reference counted, so a second close would drop a hold this handle does
-    // not own. Callers may release explicitly, and the destructor closes again. The latch is set
-    // before the work below rather than after it, so a close that fails part way is not retried:
-    // stranding a hold costs a cached entry, while releasing twice takes one from another handle.
-    if (released_)
-    {
-        return;
-    }
-    released_ = true;
-
     JNIEnvGuard guard;
     if (!guard.valid())
     {

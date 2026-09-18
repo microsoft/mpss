@@ -13,17 +13,4 @@ AppleKeyPairBase::AppleKeyPairBase(std::string_view name, Algorithm algorithm, b
 {
 }
 
-void AppleKeyPairBase::release_key()
-{
-    // The cache entry is reference counted, so a second release would drop a hold this handle does
-    // not own. Callers may release explicitly, and the destructor releases again.
-    if (released_)
-    {
-        return;
-    }
-    released_ = true;
-
-    do_release_key();
-}
-
 } // namespace mpss::impl::os

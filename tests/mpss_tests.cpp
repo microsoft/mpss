@@ -277,6 +277,52 @@ void ReleaseDoesNotDisturbAnotherHandle(Algorithm algorithm, std::string_view su
     ASSERT_TRUE(second->delete_key());
 }
 
+// A released handle is documented as no longer valid. Every operation on it must fail, on every
+// backend, and releasing it again must be harmless.
+void ReleasedHandleRefusesOperations(Algorithm algorithm, std::string_view suffix, std::size_t hash_size)
+{
+    if (!mpss::is_algorithm_available(algorithm))
+    {
+        GTEST_SKIP() << "Algorithm not supported by current backend";
+    }
+
+    const std::string key_name = test_key_name("released_test_"s + suffix.data());
+    MPSS::DeleteKey(key_name);
+
+    std::unique_ptr<mpss::KeyPair> handle = MPSS::CreateKey(key_name, algorithm);
+    ASSERT_NE(nullptr, handle);
+
+    const std::vector<std::byte> hash(hash_size, std::byte{0x2A});
+    const std::size_t sig_size = handle->sign_hash(hash, {});
+    ASSERT_NE(0, sig_size);
+    std::vector<std::byte> signature(sig_size);
+    const std::size_t written = handle->sign_hash(hash, signature);
+    ASSERT_NE(0, written);
+    signature.resize(written);
+    ASSERT_TRUE(handle->verify(hash, signature));
+
+    EXPECT_FALSE(handle->released());
+    handle->release_key();
+    EXPECT_TRUE(handle->released());
+
+    // Releasing again is a no-op rather than a second release of whatever was held.
+    handle->release_key();
+
+    std::vector<std::byte> second_signature(sig_size);
+    EXPECT_EQ(0, handle->sign_hash(hash, second_signature));
+    EXPECT_FALSE(handle->verify(hash, signature));
+    std::vector<std::byte> public_key(handle->extract_key_size());
+    EXPECT_EQ(0, handle->extract_key(public_key));
+    EXPECT_FALSE(handle->delete_key());
+
+    // The handle still answers what it recorded when it was opened.
+    EXPECT_EQ(algorithm, handle->algorithm());
+    EXPECT_NE(nullptr, handle->key_info().storage_description);
+
+    handle.reset();
+    MPSS::DeleteKey(key_name);
+}
+
 TEST_F(MPSS, SignAndVerify256)
 {
     SignAndVerify(ecdsa_secp256r1_sha256, "256", 32);
@@ -320,6 +366,21 @@ TEST_F(MPSS, ReleaseDoesNotDisturbAnotherHandle384)
 TEST_F(MPSS, ReleaseDoesNotDisturbAnotherHandle521)
 {
     ReleaseDoesNotDisturbAnotherHandle(ecdsa_secp521r1_sha512, "521", 64);
+}
+
+TEST_F(MPSS, ReleasedHandleRefusesOperations256)
+{
+    ReleasedHandleRefusesOperations(ecdsa_secp256r1_sha256, "256", 32);
+}
+
+TEST_F(MPSS, ReleasedHandleRefusesOperations384)
+{
+    ReleasedHandleRefusesOperations(ecdsa_secp384r1_sha384, "384", 48);
+}
+
+TEST_F(MPSS, ReleasedHandleRefusesOperations521)
+{
+    ReleasedHandleRefusesOperations(ecdsa_secp521r1_sha512, "521", 64);
 }
 
 TEST_F(MPSS, DoubleCreation256)
@@ -714,11 +775,11 @@ class RecoveringKeyPair : public KeyPair
     {
     }
 
-    void release_key() override
+  protected:
+    void do_release_key() override
     {
     }
 
-  protected:
     bool do_delete_key() override
     {
         utils::set_error(internal_error);

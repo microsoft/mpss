@@ -244,7 +244,7 @@ std::size_t WindowsKeyPair::do_extract_key(std::span<std::byte> public_key) cons
     return pk_size;
 }
 
-void WindowsKeyPair::release_key() noexcept
+void WindowsKeyPair::do_release_key() noexcept
 {
     win_release();
 }

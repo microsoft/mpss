@@ -173,7 +173,7 @@ std::size_t YubiKeyKeyPair::do_extract_key(std::span<std::byte> public_key) cons
     return pk_size;
 }
 
-void YubiKeyKeyPair::release_key()
+void YubiKeyKeyPair::do_release_key()
 {
     // Nothing to do here. Connections are managed per operation.
 }

@@ -20,8 +20,6 @@ class AppleKeyPairBase : public mpss::KeyPair
   public:
     ~AppleKeyPairBase() override = default;
 
-    void release_key() override;
-
   protected:
     AppleKeyPairBase(std::string_view name, Algorithm algorithm, bool hardware_backed, const char *storage_description);
 
@@ -31,12 +29,8 @@ class AppleKeyPairBase : public mpss::KeyPair
         return name_;
     }
 
-    virtual void do_release_key() = 0;
-
   private:
     std::string name_;
-
-    bool released_{false};
 };
 
 } // namespace mpss::impl::os

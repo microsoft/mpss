@@ -338,9 +338,21 @@ class MPSS_DECOR KeyPair
      *
      * This function provides control to the user as to when to release the key pair handle. It is not necessary to
      * call this function directly, they key pair handle will be released automatically when the @ref KeyPair
-     * instance is destroyed. After calling this function, the key pair handle is no longer valid.
+     * instance is destroyed. After calling this function, the key pair handle is no longer valid: every operation
+     * on it fails, and releasing it again does nothing. Querying the algorithm, the key information and the
+     * buffer sizes still works, since those are answered from what the handle recorded when it was opened.
      */
-    virtual void release_key() = 0;
+    void release_key();
+
+    /**
+     * @brief Whether this handle has been released.
+     * @return True if the handle has been released and can no longer be used to operate on the key.
+     */
+    [[nodiscard]]
+    bool released() const noexcept
+    {
+        return released_;
+    }
 
   protected:
     // NOLINTBEGIN(*-non-private-member-variables-in-classes) - subclasses need direct access.
@@ -354,8 +366,13 @@ class MPSS_DECOR KeyPair
     KeyPair(Algorithm algorithm, bool hardware_backed, const char *storage_description);
 
     // Non-virtual interface: the public operations above clear the thread-local last-error on
-    // entry and validate inputs, then dispatch to these backend-specific implementations.
+    // entry, refuse a released handle and validate inputs, then dispatch to these backend-specific
+    // implementations.
     virtual bool do_delete_key() = 0;
+
+    // Releases whatever the handle holds. Called at most once per handle, so an implementation
+    // needs no guard of its own, and may do nothing where there is nothing to release.
+    virtual void do_release_key() = 0;
 
     [[nodiscard]]
     virtual std::size_t do_sign_hash(std::span<const std::byte> hash, std::span<std::byte> sig) const = 0;
@@ -365,6 +382,9 @@ class MPSS_DECOR KeyPair
 
     [[nodiscard]]
     virtual std::size_t do_extract_key(std::span<std::byte> public_key) const = 0;
+
+  private:
+    bool released_{false};
 };
 
 } // namespace mpss

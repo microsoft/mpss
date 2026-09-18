@@ -218,15 +218,39 @@ std::size_t KeyPair::extract_key_size() const
     return utils::get_public_key_size(algorithm());
 }
 
+void KeyPair::release_key()
+{
+    // A handle is released explicitly by the caller and again when it is destroyed. Doing the work
+    // once keeps a backend that reference counts a shared cache entry from giving up a hold that
+    // belongs to another handle.
+    if (released_)
+    {
+        return;
+    }
+    released_ = true;
+
+    do_release_key();
+}
+
 bool KeyPair::delete_key()
 {
     clear_error();
+    if (released_)
+    {
+        utils::log_and_set_error("The key pair handle has been released.");
+        return false;
+    }
     return clear_error_on_success(do_delete_key());
 }
 
 std::size_t KeyPair::sign_hash(std::span<const std::byte> hash, std::span<std::byte> sig) const
 {
     clear_error();
+    if (released_)
+    {
+        utils::log_and_set_error("The key pair handle has been released.");
+        return 0;
+    }
     if (sig.empty())
     {
         // An empty signature buffer is a request for the required signature size.
@@ -246,6 +270,11 @@ std::size_t KeyPair::sign_hash(std::span<const std::byte> hash, std::span<std::b
 bool KeyPair::verify(std::span<const std::byte> hash, std::span<const std::byte> sig) const
 {
     clear_error();
+    if (released_)
+    {
+        utils::log_and_set_error("The key pair handle has been released.");
+        return false;
+    }
     if (hash.empty() || sig.empty())
     {
         utils::log_and_set_error("Nothing to verify.");
@@ -261,6 +290,11 @@ bool KeyPair::verify(std::span<const std::byte> hash, std::span<const std::byte>
 std::size_t KeyPair::extract_key(std::span<std::byte> public_key) const
 {
     clear_error();
+    if (released_)
+    {
+        utils::log_and_set_error("The key pair handle has been released.");
+        return 0;
+    }
     if (public_key.empty())
     {
         // An empty output buffer is a request for the required public key size.

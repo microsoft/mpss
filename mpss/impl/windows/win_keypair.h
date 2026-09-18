@@ -21,6 +21,8 @@ class WindowsKeyPair : public mpss::KeyPair
 
     ~WindowsKeyPair() override
     {
+        // Not release_key(): that is the caller's entry point and the base class latches it, while
+        // win_release() is idempotent on its own, clearing the handle it frees.
         win_release();
     }
 
@@ -35,7 +37,7 @@ class WindowsKeyPair : public mpss::KeyPair
     [[nodiscard]]
     std::size_t do_extract_key(std::span<std::byte> public_key) const override;
 
-    void release_key() noexcept override;
+    void do_release_key() noexcept override;
 
   private:
     NCRYPT_KEY_HANDLE key_handle_ = 0;

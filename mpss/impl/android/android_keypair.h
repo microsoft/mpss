@@ -21,7 +21,7 @@ class AndroidKeyPair : public mpss::KeyPair
     {
         try
         {
-            close_key();
+            release_key();
         }
         // NOLINTNEXTLINE(bugprone-empty-catch) - a destructor must not propagate exceptions.
         catch (...)
@@ -29,9 +29,9 @@ class AndroidKeyPair : public mpss::KeyPair
         }
     }
 
-    void release_key() override;
-
   protected:
+    void do_release_key() override;
+
     bool do_delete_key() override;
 
     [[nodiscard]]
@@ -47,8 +47,6 @@ class AndroidKeyPair : public mpss::KeyPair
     void close_key();
 
     std::string key_name_;
-
-    bool released_{false};
 };
 
 } // namespace mpss::impl::os
