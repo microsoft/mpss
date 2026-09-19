@@ -301,9 +301,7 @@ void ReleasedHandleRefusesOperations(Algorithm algorithm, std::string_view suffi
     signature.resize(written);
     ASSERT_TRUE(handle->verify(hash, signature));
 
-    EXPECT_FALSE(handle->released());
     handle->release_key();
-    EXPECT_TRUE(handle->released());
 
     // Releasing again is a no-op rather than a second release of whatever was held.
     handle->release_key();
@@ -362,6 +360,46 @@ void StaleHandleDoesNotDisturbARecreatedKey(Algorithm algorithm, std::string_vie
     ASSERT_NE(0, written);
     signature.resize(written);
     EXPECT_TRUE(fresh->verify(hash, signature));
+
+    ASSERT_TRUE(fresh->delete_key());
+}
+
+// A handle that deleted its key is finished with it. It must refuse every operation afterwards,
+// and must not reach a key created later under the same name.
+void DeletingThroughAHandleInvalidatesIt(Algorithm algorithm, std::string_view suffix, std::size_t hash_size)
+{
+    if (!mpss::is_algorithm_available(algorithm))
+    {
+        GTEST_SKIP() << "Algorithm not supported by current backend";
+    }
+
+    const std::string key_name = test_key_name("deleted_test_"s + suffix.data());
+    MPSS::DeleteKey(key_name);
+
+    std::unique_ptr<mpss::KeyPair> handle = MPSS::CreateKey(key_name, algorithm);
+    ASSERT_NE(nullptr, handle);
+    ASSERT_TRUE(handle->delete_key());
+
+    const std::vector<std::byte> hash(hash_size, std::byte{0x2A});
+    std::vector<std::byte> signature(handle->sign_hash_size());
+    EXPECT_EQ(0, handle->sign_hash(hash, signature));
+    std::vector<std::byte> public_key(handle->extract_key_size());
+    EXPECT_EQ(0, handle->extract_key(public_key));
+    EXPECT_FALSE(handle->delete_key());
+
+    // A key created again under the same name is a different key, and the old handle must not
+    // reach it.
+    std::unique_ptr<mpss::KeyPair> fresh = MPSS::CreateKey(key_name, algorithm);
+    ASSERT_NE(nullptr, fresh);
+    EXPECT_EQ(0, handle->sign_hash(hash, signature));
+
+    const std::size_t sig_size = fresh->sign_hash(hash, {});
+    ASSERT_NE(0, sig_size);
+    std::vector<std::byte> fresh_signature(sig_size);
+    const std::size_t written = fresh->sign_hash(hash, fresh_signature);
+    ASSERT_NE(0, written);
+    fresh_signature.resize(written);
+    EXPECT_TRUE(fresh->verify(hash, fresh_signature));
 
     ASSERT_TRUE(fresh->delete_key());
 }
@@ -439,6 +477,21 @@ TEST_F(MPSS, StaleHandleDoesNotDisturbARecreatedKey384)
 TEST_F(MPSS, StaleHandleDoesNotDisturbARecreatedKey521)
 {
     StaleHandleDoesNotDisturbARecreatedKey(ecdsa_secp521r1_sha512, "521", 64);
+}
+
+TEST_F(MPSS, DeletingThroughAHandleInvalidatesIt256)
+{
+    DeletingThroughAHandleInvalidatesIt(ecdsa_secp256r1_sha256, "256", 32);
+}
+
+TEST_F(MPSS, DeletingThroughAHandleInvalidatesIt384)
+{
+    DeletingThroughAHandleInvalidatesIt(ecdsa_secp384r1_sha384, "384", 48);
+}
+
+TEST_F(MPSS, DeletingThroughAHandleInvalidatesIt521)
+{
+    DeletingThroughAHandleInvalidatesIt(ecdsa_secp521r1_sha512, "521", 64);
 }
 
 TEST_F(MPSS, DoubleCreation256)

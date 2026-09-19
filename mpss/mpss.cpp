@@ -240,7 +240,19 @@ bool KeyPair::delete_key()
         utils::log_and_set_error("The key pair handle has been released.");
         return false;
     }
-    return clear_error_on_success(do_delete_key());
+    if (!do_delete_key())
+    {
+        return false;
+    }
+
+    // The key is gone, so the name this handle carries no longer identifies anything it opened.
+    // Releasing gives up whatever it held and latches it, so a key created later under the same
+    // name cannot be reached through it. Whatever the release reports is not the caller's
+    // business: the deletion they asked for succeeded, and a release that could not tidy up has
+    // already said so in the log.
+    release_key();
+    clear_error();
+    return true;
 }
 
 std::size_t KeyPair::sign_hash(std::span<const std::byte> hash, std::span<std::byte> sig) const

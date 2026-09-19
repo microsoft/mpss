@@ -280,7 +280,9 @@ class MPSS_DECOR KeyPair
     /**
      * @brief Deletes the key pair with the given name from the safe storage.
      * @return true if the key pair was deleted successfully, false otherwise.
-     * @note After this function returns successfully, the key pair is no longer valid.
+     * @note After this function returns successfully, the key pair handle is no longer valid, in
+     * the same sense as @ref release_key: every operation on it fails, and it cannot reach a key
+     * created later under the same name.
      */
     bool delete_key();
 
@@ -345,16 +347,6 @@ class MPSS_DECOR KeyPair
      * opened rather than from the key itself.
      */
     void release_key();
-
-    /**
-     * @brief Whether this handle has been released.
-     * @return True if the handle has been released and can no longer be used to operate on the key.
-     */
-    [[nodiscard]]
-    bool released() const noexcept
-    {
-        return released_;
-    }
 
   protected:
     // NOLINTBEGIN(*-non-private-member-variables-in-classes) - subclasses need direct access.
