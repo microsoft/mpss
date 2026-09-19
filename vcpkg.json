@@ -1,6 +1,6 @@
 {
   "name": "mpss",
-  "version": "1.2.3",
+  "version": "2.0.0",
   "description": "A multi-platform C++ library for hardware-backed digital signature key storage and signing.",
   "license": "MIT",
   "dependencies": [],

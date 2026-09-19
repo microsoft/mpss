@@ -90,7 +90,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Android"
     endif()
 endif()
 
-project(mpss VERSION 1.2.3 LANGUAGES C CXX)
+project(mpss VERSION 2.0.0 LANGUAGES C CXX)
 
 if(MPSS_BACKEND_YUBIKEY)
     # The vcpkg port is named "yubico-piv-tool" but exports the CMake config
