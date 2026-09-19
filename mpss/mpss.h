@@ -339,8 +339,10 @@ class MPSS_DECOR KeyPair
      * This function provides control to the user as to when to release the key pair handle. It is not necessary to
      * call this function directly, they key pair handle will be released automatically when the @ref KeyPair
      * instance is destroyed. After calling this function, the key pair handle is no longer valid: every operation
-     * on it fails, and releasing it again does nothing. Querying the algorithm, the key information and the
-     * buffer sizes still works, since those are answered from what the handle recorded when it was opened.
+     * on it fails, including the size requests spelled as @ref sign_hash and @ref extract_key with an empty
+     * buffer, and releasing it again does nothing. The algorithm, the key information, @ref sign_hash_size and
+     * @ref extract_key_size still answer, since those are derived from what the handle recorded when it was
+     * opened rather than from the key itself.
      */
     void release_key();
 

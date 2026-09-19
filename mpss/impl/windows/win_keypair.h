@@ -26,6 +26,7 @@ class WindowsKeyPair : public mpss::KeyPair
         win_release();
     }
 
+  protected:
     bool do_delete_key() override;
 
     [[nodiscard]]

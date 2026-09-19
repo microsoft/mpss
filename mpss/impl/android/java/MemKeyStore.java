@@ -36,7 +36,8 @@ public class MemKeyStore {
      */
     public static long RetainKey(String keyName) {
         Holds.merge(keyName, 1, Integer::sum);
-        return Generations.getOrDefault(keyName, 0L);
+        final Long generation = Generations.get(keyName);
+        return (null == generation) ? 0L : generation;
     }
 
     public static KeyPair GetKey(String keyName) {
@@ -52,7 +53,10 @@ public class MemKeyStore {
      * @param generation The generation the hold was taken on.
      */
     public static void RemoveKey(String keyName, long generation) {
-        if (!Generations.getOrDefault(keyName, 0L).equals(generation)) {
+        // Compared against absence rather than against a default, so that a release carrying no
+        // generation cannot match a name that has none recorded and evict what is cached there.
+        final Long current = Generations.get(keyName);
+        if (null == current || current != generation) {
             return;
         }
         if (null == Holds.computeIfPresent(keyName, (name, holds) -> (holds > 1) ? (holds - 1) : null)) {

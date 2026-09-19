@@ -315,6 +315,13 @@ void ReleasedHandleRefusesOperations(Algorithm algorithm, std::string_view suffi
     EXPECT_EQ(0, handle->extract_key(public_key));
     EXPECT_FALSE(handle->delete_key());
 
+    // The size requests spelled as an operation are refused with everything else, while the
+    // accessors that derive a size from the algorithm alone still answer.
+    EXPECT_EQ(0, handle->sign_hash(hash, {}));
+    EXPECT_EQ(0, handle->extract_key({}));
+    EXPECT_NE(0, handle->sign_hash_size());
+    EXPECT_NE(0, handle->extract_key_size());
+
     // The handle still answers what it recorded when it was opened.
     EXPECT_EQ(algorithm, handle->algorithm());
     EXPECT_NE(nullptr, handle->key_info().storage_description);

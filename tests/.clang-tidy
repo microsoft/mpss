@@ -3,8 +3,6 @@ Checks: >
   -cppcoreguidelines-avoid-c-arrays,
   -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
   -cppcoreguidelines-pro-type-cstyle-cast,
-  -hicpp-avoid-c-arrays,
-  -hicpp-no-array-decay,
   -bugprone-signed-bitwise,
   -misc-non-private-member-variables-in-classes,
   -cppcoreguidelines-non-private-member-variables-in-classes,

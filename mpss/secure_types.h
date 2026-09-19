@@ -26,6 +26,8 @@ template <typename T> struct CleansingAllocator
     using value_type = T;
 
     CleansingAllocator() = default;
+
+    // NOLINTNEXTLINE(*-explicit-constructor) - the Allocator requirements make rebinding implicit.
     template <typename U> constexpr CleansingAllocator(const CleansingAllocator<U> &) noexcept
     {
     }

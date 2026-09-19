@@ -156,7 +156,8 @@ public class KeyManagement {
             Log.w("MPSS", "Key '" + keyName + "' does not report a signing purpose.");
         }
 
-        if (!Arrays.asList(keyInfo.getDigests()).contains(KeyProperties.DIGEST_NONE)) {
+        final String[] digests = keyInfo.getDigests();
+        if (null == digests || !Arrays.asList(digests).contains(KeyProperties.DIGEST_NONE)) {
             Log.w("MPSS", "Key '" + keyName + "' does not report accepting pre-hashed input.");
         }
 

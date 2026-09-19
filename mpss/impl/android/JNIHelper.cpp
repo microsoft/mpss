@@ -108,6 +108,10 @@ void JNIHelper::uninit(JavaVM *vm)
         {
             env->DeleteGlobalRef(boolean_class_);
         }
+        if (nullptr != long_class_)
+        {
+            env->DeleteGlobalRef(long_class_);
+        }
         if (nullptr != algorithm_class_)
         {
             env->DeleteGlobalRef(algorithm_class_);
@@ -130,7 +134,8 @@ void JNIHelper::uninit(JavaVM *vm)
 bool JNIHelper::initialized()
 {
     return nullptr != java_vm_ && nullptr != key_management_class_ && nullptr != algorithm_class_ &&
-           nullptr != boolean_class_ && nullptr != boolean_value_method_;
+           nullptr != boolean_class_ && nullptr != boolean_value_method_ && nullptr != long_class_ &&
+           nullptr != long_value_method_;
 }
 
 void JNIHelper::detach()

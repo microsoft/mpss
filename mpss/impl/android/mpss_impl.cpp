@@ -531,7 +531,7 @@ std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm, 
     }
 
     const std::optional<std::int64_t> created = utils::unbox_long(env, result.get());
-    if (!created.has_value())
+    if (!created.has_value() || 0 > created.value())
     {
         utils::report_java_error(env, "KeyManagement.CreateKey");
         return nullptr;

@@ -1434,7 +1434,7 @@ void remember_rejected_pin(std::uint32_t serial, std::string_view pin)
     }
 
     std::vector<PinDigest> &known = state.by_serial[serial];
-    if (std::none_of(known.begin(), known.end(), [&digest](const PinDigest &entry) {
+    if (std::ranges::none_of(known, [&digest](const PinDigest &entry) {
             return same_digest(entry, *digest); // NOLINT(bugprone-unchecked-optional-access) - guarded above.
         }))
     {

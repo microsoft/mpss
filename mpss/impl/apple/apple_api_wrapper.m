@@ -263,7 +263,7 @@ void MPSS_RemoveKey(const char *keyName, uint64_t generation) {
 int32_t MPSS_OpenExistingKey(const char *keyName, int *bitSize, uint64_t *generation) {
   ClearThreadLocalError();
   if (keyName == NULL || bitSize == NULL || generation == NULL) {
-    SetThreadLocalError(@"Invalid parameters (keyName or bitSize is NULL).");
+    SetThreadLocalError(@"Invalid parameters (keyName, bitSize or generation is NULL).");
     return MPSS_APPLE_RESULT_OPERATIONAL_ERROR;
   }
 
