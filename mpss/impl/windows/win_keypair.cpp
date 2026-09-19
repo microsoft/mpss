@@ -244,19 +244,28 @@ std::size_t WindowsKeyPair::do_extract_key(std::span<std::byte> public_key) cons
     return pk_size;
 }
 
-void WindowsKeyPair::do_release_key() noexcept
+bool WindowsKeyPair::do_release_key()
 {
-    win_release();
+    SECURITY_STATUS status = win_release();
+    if (ERROR_SUCCESS != status)
+    {
+        mpss::utils::log_and_set_error("NCryptFreeObject failed with error code {}.", mpss::utils::to_hex(status));
+        return false;
+    }
+
+    return true;
 }
 
-void WindowsKeyPair::win_release() noexcept
+SECURITY_STATUS WindowsKeyPair::win_release() noexcept
 {
+    SECURITY_STATUS status = ERROR_SUCCESS;
     if (0 != key_handle_)
     {
-        ::NCryptFreeObject(key_handle_);
+        status = ::NCryptFreeObject(key_handle_);
     }
 
     clear_handle();
+    return status;
 }
 
 void WindowsKeyPair::clear_handle() noexcept

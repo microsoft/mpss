@@ -301,9 +301,9 @@ void ReleasedHandleRefusesOperations(Algorithm algorithm, std::string_view suffi
     signature.resize(written);
     ASSERT_TRUE(handle->verify(hash, signature));
 
-    handle->release_key();
+    EXPECT_TRUE(handle->release_key());
 
-    handle->release_key();
+    EXPECT_TRUE(handle->release_key());
 
     std::vector<std::byte> second_signature(sig_size);
     EXPECT_EQ(0, handle->sign_hash(hash, second_signature));
@@ -960,8 +960,9 @@ class RecoveringKeyPair : public KeyPair
     }
 
   protected:
-    void do_release_key() override
+    bool do_release_key() override
     {
+        return true;
     }
 
     bool do_delete_key() override

@@ -88,9 +88,11 @@ std::size_t AppleKeychainKeyPair::do_extract_key(std::span<std::byte> public_key
     return pk_size;
 }
 
-void AppleKeychainKeyPair::do_release_key()
+bool AppleKeychainKeyPair::do_release_key()
 {
+    // Gives up a hold on an in-memory cache entry, which cannot fail.
     MPSS_RemoveKey(name().c_str(), generation());
+    return true;
 }
 
 } // namespace mpss::impl::os

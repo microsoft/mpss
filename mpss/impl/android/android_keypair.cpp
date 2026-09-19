@@ -282,18 +282,18 @@ std::size_t AndroidKeyPair::do_extract_key(std::span<std::byte> public_key) cons
     return key_size;
 }
 
-void AndroidKeyPair::do_release_key()
+bool AndroidKeyPair::do_release_key()
 {
-    close_key();
+    return close_key();
 }
 
-void AndroidKeyPair::close_key()
+bool AndroidKeyPair::close_key()
 {
     JNIEnvGuard guard;
     if (!guard.valid())
     {
         mpss::utils::log_and_set_error("Android JNI environment is unavailable.");
-        return;
+        return false;
     }
     JNIEnv *const env = guard.env();
 
@@ -301,33 +301,33 @@ void AndroidKeyPair::close_key()
     if (nullptr == key_management)
     {
         mpss::utils::log_and_set_error("Could not get KeyManagement Java class.");
-        return;
+        return false;
     }
 
     jmethodID method = env->GetStaticMethodID(key_management, "CloseKey", "(Ljava/lang/String;J)V");
     if (utils::check_and_clear_exception(env, "resolving KeyManagement.CloseKey"))
     {
-        return;
+        return false;
     }
     if (nullptr == method)
     {
         mpss::utils::log_and_set_error("Could not get KeyManagement.CloseKey method.");
-        return;
+        return false;
     }
 
     jni_string key_name(env, env->NewStringUTF(key_name_.c_str()));
     if (utils::check_and_clear_exception(env, "converting an Android key name to a Java string"))
     {
-        return;
+        return false;
     }
     if (key_name.is_null())
     {
         mpss::utils::log_and_set_error("Could not convert key name to Java string.");
-        return;
+        return false;
     }
 
     env->CallStaticVoidMethod(key_management, method, key_name.get(), static_cast<jlong>(generation_));
-    static_cast<void>(utils::check_and_clear_exception(env, "calling KeyManagement.CloseKey"));
+    return !utils::check_and_clear_exception(env, "calling KeyManagement.CloseKey");
 }
 
 } // namespace mpss::impl::os

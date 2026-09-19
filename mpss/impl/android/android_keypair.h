@@ -31,7 +31,7 @@ class AndroidKeyPair : public mpss::KeyPair
     }
 
   protected:
-    void do_release_key() override;
+    bool do_release_key() override;
 
     bool do_delete_key() override;
 
@@ -45,7 +45,7 @@ class AndroidKeyPair : public mpss::KeyPair
     std::size_t do_extract_key(std::span<std::byte> public_key) const override;
 
   private:
-    void close_key();
+    bool close_key();
 
     std::string key_name_;
 

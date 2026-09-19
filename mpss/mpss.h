@@ -345,8 +345,14 @@ class MPSS_DECOR KeyPair
      * buffer, and releasing it again does nothing. The algorithm, the key information, @ref sign_hash_size and
      * @ref extract_key_size still answer, since those are derived from what the handle recorded when it was
      * opened rather than from the key itself.
+     *
+     * The handle is invalidated whether or not the release succeeds, so a false return reports that something the
+     * handle held could not be given up rather than inviting another attempt. Releasing an already released handle
+     * reports success. Ignoring the answer is expected, which is why this is not [[nodiscard]].
+     * @return True if everything the handle held was released, false otherwise, in which case @ref get_error
+     * describes the failure.
      */
-    void release_key();
+    bool release_key();
 
   protected:
     // NOLINTBEGIN(*-non-private-member-variables-in-classes) - subclasses need direct access.
@@ -364,9 +370,10 @@ class MPSS_DECOR KeyPair
     // implementations.
     virtual bool do_delete_key() = 0;
 
-    // Releases whatever the handle holds. Called at most once per handle, so an implementation
-    // needs no guard of its own, and may do nothing where there is nothing to release.
-    virtual void do_release_key() = 0;
+    // Releases whatever the handle holds and reports whether it could. Called at most once per
+    // handle, so an implementation needs no guard of its own, and may report success without doing
+    // anything where there is nothing to release.
+    virtual bool do_release_key() = 0;
 
     [[nodiscard]]
     virtual std::size_t do_sign_hash(std::span<const std::byte> hash, std::span<std::byte> sig) const = 0;

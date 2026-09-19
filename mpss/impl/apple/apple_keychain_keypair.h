@@ -29,7 +29,7 @@ class AppleKeychainKeyPair : public AppleKeyPairBase
     bool do_verify(std::span<const std::byte> hash, std::span<const std::byte> sig) const override;
     [[nodiscard]]
     std::size_t do_extract_key(std::span<std::byte> public_key) const override;
-    void do_release_key() override;
+    bool do_release_key() override;
 };
 
 } // namespace mpss::impl::os

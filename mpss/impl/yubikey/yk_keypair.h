@@ -28,7 +28,7 @@ class YubiKeyKeyPair : public mpss::KeyPair
     ~YubiKeyKeyPair() override = default;
 
   protected:
-    void do_release_key() override;
+    bool do_release_key() override;
 
     bool do_delete_key() override;
 

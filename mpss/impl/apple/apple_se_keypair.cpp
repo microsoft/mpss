@@ -85,9 +85,11 @@ std::size_t AppleSEKeyPair::do_extract_key(std::span<std::byte> public_key) cons
     return pk_size;
 }
 
-void AppleSEKeyPair::do_release_key()
+bool AppleSEKeyPair::do_release_key()
 {
+    // Gives up a hold on an in-memory cache entry, which cannot fail.
     MPSS_SE_CloseKey(name().c_str(), generation());
+    return true;
 }
 
 } // namespace mpss::impl::os

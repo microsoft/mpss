@@ -51,9 +51,10 @@ NSString *GetKeyLabel(const char *keyName) {
   return keyNameWithPrefix;
 }
 
-// Taking the hold inside the block that finds or stores the entry keeps a concurrent close or
-// delete from evicting it in between, which would leave a hold recorded against a name with
-// nothing cached.
+// Call only while running on _keyStoreQueue, in the same block that found or stored the entry.
+// Given a block of its own, a close or delete could land in between and evict the entry, leaving
+// this to record a hold on a name with nothing cached and to hand back generation 0, which no
+// later release can match.
 static uint64_t RetainLocked(NSString *keyLabel) {
   NSNumber *holds = _keyStoreRefs[keyLabel];
   _keyStoreRefs[keyLabel] = @((holds != nil ? [holds integerValue] : 0) + 1);

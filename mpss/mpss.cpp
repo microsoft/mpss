@@ -218,18 +218,20 @@ std::size_t KeyPair::extract_key_size() const
     return utils::get_public_key_size(algorithm());
 }
 
-void KeyPair::release_key()
+bool KeyPair::release_key()
 {
     // A handle is released explicitly by the caller and again when it is destroyed. Doing the work
     // once keeps a backend that reference counts a shared cache entry from giving up a hold that
-    // belongs to another handle.
+    // belongs to another handle. Latching before the attempt rather than after a successful one
+    // keeps that true of a release that fails part way through, where how much was given up is not
+    // known.
     if (released_)
     {
-        return;
+        return true;
     }
     released_ = true;
 
-    do_release_key();
+    return do_release_key();
 }
 
 bool KeyPair::delete_key()
