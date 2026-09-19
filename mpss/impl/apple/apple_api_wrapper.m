@@ -61,7 +61,10 @@ static uint64_t RetainLocked(NSString *keyLabel) {
   return [_keyStoreGen[keyLabel] unsignedLongLongValue];
 }
 
-void StoreKey(NSString *keyLabel, SecKeyRef keyRef, BOOL takeHold, uint64_t *generation) {
+// A non-NULL generation means the key is being handed to a handle: a hold is taken and the
+// generation it was taken on is reported. NULL means the caller only needed to look at the entry,
+// so nothing is retained and there is nothing to release.
+void StoreKey(NSString *keyLabel, SecKeyRef keyRef, uint64_t *generation) {
   InitializeKeyStore();
 
   if (keyLabel && keyRef) {
@@ -73,15 +76,15 @@ void StoreKey(NSString *keyLabel, SecKeyRef keyRef, BOOL takeHold, uint64_t *gen
       if (_keyStoreGen[keyLabel] == nil) {
         _keyStoreGen[keyLabel] = @(++_nextGeneration);
       }
-      const uint64_t taken = takeHold ? RetainLocked(keyLabel) : 0;
       if (generation != NULL) {
-        *generation = taken;
+        *generation = RetainLocked(keyLabel);
       }
     });
   }
 }
 
-SecKeyRef CopyKey(NSString *keyLabel, BOOL takeHold, uint64_t *generation) {
+// A non-NULL generation means the key is being handed to a handle, as in StoreKey.
+SecKeyRef CopyKey(NSString *keyLabel, uint64_t *generation) {
   InitializeKeyStore();
 
   __block SecKeyRef result = NULL;
@@ -89,9 +92,8 @@ SecKeyRef CopyKey(NSString *keyLabel, BOOL takeHold, uint64_t *generation) {
     result = (__bridge SecKeyRef)(_keyStore[keyLabel]);
     if (result) {
       CFRetain(result);
-      const uint64_t taken = takeHold ? RetainLocked(keyLabel) : 0;
       if (generation != NULL) {
-        *generation = taken;
+        *generation = RetainLocked(keyLabel);
       }
     }
   });
@@ -232,8 +234,8 @@ static bool IsExpectedVerificationFailure(CFErrorRef error) {
          CFErrorGetCode(error) == errSecVerifyFailed;
 }
 
-static int32_t OpenExistingKeyInternal(NSString *keyLabel, int *bitSize, BOOL takeHold, uint64_t *generation) {
-  SecKeyRef keyRef = CopyKey(keyLabel, takeHold, generation);
+static int32_t OpenExistingKeyInternal(NSString *keyLabel, int *bitSize, uint64_t *generation) {
+  SecKeyRef keyRef = CopyKey(keyLabel, generation);
 
   if (keyRef) {
     mpss_log_debug("Found existing key in local dictionary.");
@@ -294,7 +296,7 @@ static int32_t OpenExistingKeyInternal(NSString *keyLabel, int *bitSize, BOOL ta
   CFRelease(items);
 
   mpss_log_debug("Retrieved key from OS.");
-  StoreKey(keyLabel, keyRef, takeHold, generation);
+  StoreKey(keyLabel, keyRef, generation);
   *bitSize = GetKeySize(keyRef);
   CFRelease(keyRef);
   return MPSS_APPLE_RESULT_SUCCESS;
@@ -320,7 +322,7 @@ int32_t MPSS_OpenExistingKey(const char *keyName, int *bitSize, uint64_t *genera
 
   @autoreleasepool {
     NSString *keyLabel = GetKeyLabel(keyName);
-    return OpenExistingKeyInternal(keyLabel, bitSize, YES, generation);
+    return OpenExistingKeyInternal(keyLabel, bitSize, generation);
   }
 }
 
@@ -391,7 +393,7 @@ bool MPSS_CreateKey(const char *keyName, int bitSize, uint64_t *generation) {
   @autoreleasepool {
     int existingBitSize = 0;
     NSString *keyLabel = GetKeyLabel(keyName);
-    const int32_t openResult = OpenExistingKeyInternal(keyLabel, &existingBitSize, NO, NULL);
+    const int32_t openResult = OpenExistingKeyInternal(keyLabel, &existingBitSize, NULL);
     if (openResult == MPSS_APPLE_RESULT_SUCCESS) {
       NSString *error = [NSString stringWithFormat:@"Key %s already exists.", keyName];
       SetThreadLocalError(error);
@@ -491,7 +493,7 @@ bool MPSS_CreateKey(const char *keyName, int bitSize, uint64_t *generation) {
       return false;
     }
 
-    StoreKey(keyLabel, keyRef, YES, generation);
+    StoreKey(keyLabel, keyRef, generation);
     CFRelease(keyRef);
 
     return true;

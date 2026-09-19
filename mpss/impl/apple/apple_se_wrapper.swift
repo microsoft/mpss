@@ -109,10 +109,11 @@ private func clearError() {
 /// - Parameters:
 ///     - keyName: Name of the key to store.
 ///     - key: The private key to store.
-///     - takeHold: Whether to record a hold on the entry, which the caller must later release.
+///     - generation: Non-nil means the key is being handed to a handle: a hold is taken and the
+///       generation it was taken on is reported here. Nil means nothing is retained.
 private func storeKeyInDict(
-    keyName: String, key: SecureEnclave.P256.Signing.PrivateKey, takeHold: Bool,
-    generation: UnsafeMutablePointer<UInt64>? = nil
+    keyName: String, key: SecureEnclave.P256.Signing.PrivateKey,
+    generation: UnsafeMutablePointer<UInt64>?
 ) {
     _keyStoreQueue.sync {
         _keyStore[keyName] = key
@@ -123,9 +124,9 @@ private func storeKeyInDict(
             _nextGeneration += 1
             _keyStoreGen[keyName] = _nextGeneration
         }
-        if takeHold {
+        if let generation = generation {
             _keyStoreRefs[keyName] = (_keyStoreRefs[keyName] ?? 0) + 1
-            generation?.pointee = _keyStoreGen[keyName] ?? 0
+            generation.pointee = _keyStoreGen[keyName] ?? 0
         }
     }
 }
@@ -133,10 +134,10 @@ private func storeKeyInDict(
 /// Get a private key from the in-memory dictionary.
 /// - Parameters:
 ///      - keyName: Name of the key to retrieve.
-///      - takeHold: Whether to record a hold on the entry, which the caller must later release.
+///      - generation: Non-nil means the key is being handed to a handle, as in storeKeyInDict.
 /// - Returns: Private key if found, nil otherwise.
 private func getKeyFromDict(
-    keyName: String, takeHold: Bool, generation: UnsafeMutablePointer<UInt64>? = nil
+    keyName: String, generation: UnsafeMutablePointer<UInt64>?
 ) -> SecureEnclave.P256.Signing.PrivateKey? {
     return _keyStoreQueue.sync(execute: {
         guard
@@ -144,9 +145,9 @@ private func getKeyFromDict(
         else {
             return nil
         }
-        if takeHold, nil != result {
+        if let generation = generation, nil != result {
             _keyStoreRefs[keyName] = (_keyStoreRefs[keyName] ?? 0) + 1
-            generation?.pointee = _keyStoreGen[keyName] ?? 0
+            generation.pointee = _keyStoreGen[keyName] ?? 0
         }
         return result
     })
@@ -227,17 +228,16 @@ func generationIsCurrent(_ keyName: UnsafePointer<CChar>, _ generation: UInt64) 
 /// Will try to get from in-memory dictionary, if not found will try to recreate from data in Keychain.
 ///  - Parameters:
 ///      - keyName: Name of the key to retrieve.
-///      - takeHold: Whether to record a hold on the cached entry, which the caller must later
-///        release. Taken inside the lookup so a concurrent close cannot evict the entry in
-///        between.
+///      - generation: Non-nil means the key is being handed to a handle: a hold is taken on the
+///        cached entry and the generation it was taken on is reported here. Taken inside the
+///        lookup so a concurrent close cannot evict the entry in between.
 /// - Returns: Private key, or nil if not found.
 private func getKey(
-    _ keyName: String, takeHold: Bool, generation: UnsafeMutablePointer<UInt64>? = nil
+    _ keyName: String, generation: UnsafeMutablePointer<UInt64>?
 ) -> KeyLookupResult {
     do {
         // Try first from dictionary.
-        if let result = getKeyFromDict(keyName: keyName, takeHold: takeHold, generation: generation)
-        {
+        if let result = getKeyFromDict(keyName: keyName, generation: generation) {
             return .found(result)
         }
 
@@ -248,7 +248,7 @@ private func getKey(
             let result = try SecureEnclave.P256.Signing.PrivateKey(
                 dataRepresentation: keyChainData)
             storeKeyInDict(
-                keyName: keyName, key: result, takeHold: takeHold, generation: generation)
+                keyName: keyName, key: result, generation: generation)
             return .found(result)
         case .notFound:
             logDebug("Key not found in Keychain.")
@@ -479,7 +479,7 @@ private func createKeyPriv(
             return nil
         }
 
-        storeKeyInDict(keyName: keyName, key: privateKey, takeHold: true, generation: generation)
+        storeKeyInDict(keyName: keyName, key: privateKey, generation: generation)
 
         return privateKey
     } catch {
@@ -524,7 +524,7 @@ private func openExistingKey(_ keyName: String, _ generation: UnsafeMutablePoint
     -> AppleOperationResult
 {
     let fullKeyName = getKeyName(keyName)
-    switch getKey(fullKeyName, takeHold: true, generation: generation) {
+    switch getKey(fullKeyName, generation: generation) {
     case .found:
         return .success
     case .notFound:
