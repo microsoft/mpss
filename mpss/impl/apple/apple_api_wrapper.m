@@ -97,6 +97,56 @@ SecKeyRef CopyKey(NSString *keyLabel, BOOL takeHold, uint64_t *generation) {
   return result;
 }
 
+// Fetch a cached key only while the caller's generation still names the entry. Handle operations
+// use this so that a name deleted and created again cannot be reached through a handle opened on
+// the key that used to hold it. There is deliberately no fall back to the Keychain: a handle whose
+// entry is gone is finished, not something to resolve again.
+static SecKeyRef CopyKeyForGeneration(NSString *keyLabel, uint64_t generation) {
+  InitializeKeyStore();
+
+  __block SecKeyRef result = NULL;
+  __block BOOL superseded = NO;
+  dispatch_sync(_keyStoreQueue, ^{
+    NSNumber *current = _keyStoreGen[keyLabel];
+    if (current != nil && [current unsignedLongLongValue] != generation) {
+      superseded = YES;
+      return;
+    }
+    if (current == nil) {
+      return;
+    }
+    result = (__bridge SecKeyRef)(_keyStore[keyLabel]);
+    if (result) {
+      CFRetain(result);
+    }
+  });
+
+  if (result == NULL) {
+    // Which of the two it is matters to the caller: a name that has moved on must not be reported
+    // as absent, or a caller told the key is missing will try to create it and be told it exists.
+    SetThreadLocalError(superseded ? @"Key is no longer the key this handle opened." : @"Key not found.");
+  }
+  return result;
+}
+
+// Whether the caller's generation still names what this name holds.
+bool MPSS_KeychainGenerationIsCurrent(const char *keyName, uint64_t generation) {
+  InitializeKeyStore();
+
+  @autoreleasepool {
+    NSString *keyLabel = GetKeyLabel(keyName);
+    __block bool superseded = false;
+    dispatch_sync(_keyStoreQueue, ^{
+      NSNumber *stored = _keyStoreGen[keyLabel];
+      superseded = (stored != nil && [stored unsignedLongLongValue] != generation);
+    });
+
+    // Absence is not a supersession. It is also what a delete leaves behind when it purged the
+    // cache and then failed to reach storage, and that has to stay retryable.
+    return !superseded;
+  }
+}
+
 void RemoveKey(NSString *keyLabel, uint64_t generation) {
   InitializeKeyStore();
 
@@ -447,8 +497,8 @@ bool MPSS_CreateKey(const char *keyName, int bitSize, uint64_t *generation) {
   }
 }
 
-bool MPSS_SignHash(const char *keyName, int signatureType, const uint8_t *hash, size_t hashSize, uint8_t *signature,
-                   size_t *signatureSize) {
+bool MPSS_SignHash(const char *keyName, int signatureType, uint64_t generation, const uint8_t *hash, size_t hashSize,
+                   uint8_t *signature, size_t *signatureSize) {
   ClearThreadLocalError();
   if (keyName == NULL || hash == NULL || signature == NULL || signatureSize == NULL) {
     SetThreadLocalError(@"Invalid parameters (keyName, hash, signature, or signatureSize is NULL).");
@@ -457,11 +507,9 @@ bool MPSS_SignHash(const char *keyName, int signatureType, const uint8_t *hash, 
 
   @autoreleasepool {
     NSString *keyLabel = GetKeyLabel(keyName);
-    SecKeyRef keyRef = CopyKey(keyLabel, NO, NULL);
+    SecKeyRef keyRef = CopyKeyForGeneration(keyLabel, generation);
 
     if (keyRef == NULL) {
-      mpss_log_debug("Key not found.");
-      SetThreadLocalError(@"Key not found.");
       return false;
     }
 
@@ -510,8 +558,8 @@ bool MPSS_SignHash(const char *keyName, int signatureType, const uint8_t *hash, 
   }
 }
 
-int32_t MPSS_VerifySignature(const char *keyName, int signatureType, const uint8_t *hash, size_t hashSize,
-                             const uint8_t *signature, size_t signatureSize) {
+int32_t MPSS_VerifySignature(const char *keyName, int signatureType, uint64_t generation, const uint8_t *hash,
+                             size_t hashSize, const uint8_t *signature, size_t signatureSize) {
   ClearThreadLocalError();
   if (keyName == NULL || hash == NULL || signature == NULL) {
     SetThreadLocalError(@"Invalid parameters (keyName, hash, or signature is NULL).");
@@ -520,11 +568,9 @@ int32_t MPSS_VerifySignature(const char *keyName, int signatureType, const uint8
 
   @autoreleasepool {
     NSString *keyLabel = GetKeyLabel(keyName);
-    SecKeyRef keyRef = CopyKey(keyLabel, NO, NULL);
+    SecKeyRef keyRef = CopyKeyForGeneration(keyLabel, generation);
 
     if (keyRef == NULL) {
-      NSString *error = @"Key not found.";
-      SetThreadLocalError(error);
       return MPSS_APPLE_RESULT_OPERATIONAL_ERROR;
     }
 
@@ -652,7 +698,7 @@ int32_t MPSS_VerifyStandaloneSignature(int signatureType, const uint8_t *hash, s
   }
 }
 
-bool MPSS_GetPublicKey(const char *keyName, uint8_t *pk, size_t *pkSize) {
+bool MPSS_GetPublicKey(const char *keyName, uint64_t generation, uint8_t *pk, size_t *pkSize) {
   ClearThreadLocalError();
   if (NULL == keyName || NULL == pk || NULL == pkSize) {
     SetThreadLocalError(@"Invalid parameters (keyName, pk, or pkSize is NULL).");
@@ -661,11 +707,9 @@ bool MPSS_GetPublicKey(const char *keyName, uint8_t *pk, size_t *pkSize) {
 
   @autoreleasepool {
     NSString *keyLabel = GetKeyLabel(keyName);
-    SecKeyRef keyRef = CopyKey(keyLabel, NO, NULL);
+    SecKeyRef keyRef = CopyKeyForGeneration(keyLabel, generation);
 
     if (keyRef == NULL) {
-      NSString *error = @"Key not found.";
-      SetThreadLocalError(error);
       return false;
     }
 

@@ -14,14 +14,17 @@ extern "C"
     // the same name.
     std::int32_t MPSS_OpenExistingKey(const char *keyName, int *bitSize, std::uint64_t *generation);
     bool MPSS_CreateKey(const char *keyName, int bitSize, std::uint64_t *generation);
-    bool MPSS_SignHash(const char *keyName, int signatureType, const std::uint8_t *hash, std::size_t hashSize,
-                       std::uint8_t *signature, std::size_t *signatureSize);
-    std::int32_t MPSS_VerifySignature(const char *keyName, int signatureType, const std::uint8_t *hash,
-                                      std::size_t hashSize, const std::uint8_t *signature, std::size_t signatureSize);
+    // The generation is the one the handle recorded when it opened. These refuse rather than
+    // resolving the name again, so a handle cannot reach a key created later under that name.
+    bool MPSS_SignHash(const char *keyName, int signatureType, std::uint64_t generation, const std::uint8_t *hash,
+                       std::size_t hashSize, std::uint8_t *signature, std::size_t *signatureSize);
+    std::int32_t MPSS_VerifySignature(const char *keyName, int signatureType, std::uint64_t generation,
+                                      const std::uint8_t *hash, std::size_t hashSize, const std::uint8_t *signature,
+                                      std::size_t signatureSize);
     std::int32_t MPSS_VerifyStandaloneSignature(int signatureType, const std::uint8_t *hash, std::size_t hashSize,
                                                 const std::uint8_t *publicKey, std::size_t publicKeySize,
                                                 const std::uint8_t *signature, std::size_t signatureSize);
-    bool MPSS_GetPublicKey(const char *keyName, std::uint8_t *pk, std::size_t *pkSize);
+    bool MPSS_GetPublicKey(const char *keyName, std::uint64_t generation, std::uint8_t *pk, std::size_t *pkSize);
 
     // Whether the Keychain tier holds this name, without loading the key or consulting the
     // in-process cache. Lets the caller detect a name held in more than one tier.
@@ -29,5 +32,8 @@ extern "C"
 
     bool MPSS_DeleteKey(const char *keyName);
     void MPSS_RemoveKey(const char *keyName, std::uint64_t generation);
+
+    // Whether the generation a handle recorded still names what this name holds.
+    bool MPSS_KeychainGenerationIsCurrent(const char *keyName, std::uint64_t generation);
     std::size_t MPSS_GetLastError(char *error, std::size_t errorSize);
 }

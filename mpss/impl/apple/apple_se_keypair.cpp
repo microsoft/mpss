@@ -27,6 +27,15 @@ AppleSEKeyPair::~AppleSEKeyPair()
 bool AppleSEKeyPair::do_delete_key()
 {
     mpss::utils::log_trace("Deleting Secure Enclave key '{}'.", name());
+
+    // Deleting reaches the name rather than the entry this handle opened, so refuse once the name
+    // has moved on. Otherwise a handle to a deleted key would delete the key that replaced it.
+    if (!MPSS_SE_GenerationIsCurrent(name().c_str(), generation()))
+    {
+        mpss::utils::log_and_set_error("Key '{}' is no longer the key this handle opened.", name());
+        return false;
+    }
+
     if (!utils::delete_key_from_all_tiers(name()))
     {
         return false;
@@ -41,7 +50,7 @@ std::size_t AppleSEKeyPair::do_sign_hash(std::span<const std::byte> hash, std::s
     std::size_t signature_size = sig.size();
 
     if (!MPSS_SE_Sign(name().c_str(), reinterpret_cast<const std::uint8_t *>(hash.data()), hash.size(),
-                      reinterpret_cast<std::uint8_t *>(sig.data()), &signature_size))
+                      reinterpret_cast<std::uint8_t *>(sig.data()), &signature_size, generation()))
     {
         utils::report_secure_enclave_error("sign hash");
         return 0;
@@ -55,7 +64,7 @@ bool AppleSEKeyPair::do_verify(std::span<const std::byte> hash, std::span<const 
 {
     const std::int32_t raw_result =
         MPSS_SE_VerifySignature(name().c_str(), reinterpret_cast<const std::uint8_t *>(hash.data()), hash.size(),
-                                reinterpret_cast<const std::uint8_t *>(sig.data()), sig.size());
+                                reinterpret_cast<const std::uint8_t *>(sig.data()), sig.size(), generation());
     return utils::handle_secure_enclave_verification_result(raw_result, "verify signature");
 }
 
@@ -64,8 +73,8 @@ std::size_t AppleSEKeyPair::do_extract_key(std::span<std::byte> public_key) cons
     mpss::utils::log_trace("Extracting public key from Secure Enclave key '{}'.", name());
     std::size_t pk_size = public_key.size();
 
-    const bool result =
-        MPSS_SE_GetPublicKey(name().c_str(), reinterpret_cast<std::uint8_t *>(public_key.data()), &pk_size);
+    const bool result = MPSS_SE_GetPublicKey(name().c_str(), reinterpret_cast<std::uint8_t *>(public_key.data()),
+                                             &pk_size, generation());
     if (!result)
     {
         utils::report_secure_enclave_error("retrieve public key");

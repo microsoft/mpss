@@ -404,6 +404,58 @@ void DeletingThroughAHandleInvalidatesIt(Algorithm algorithm, std::string_view s
     ASSERT_TRUE(fresh->delete_key());
 }
 
+// A handle opened on one key must not reach a different key that later takes its name. The stale
+// handle here is used rather than destroyed: it must refuse to sign, to extract and above all to
+// delete, since deleting through it would destroy the key that replaced the one it opened.
+void StaleHandleCannotReachAReplacementKey(Algorithm algorithm, std::string_view suffix, std::size_t hash_size)
+{
+    if (!mpss::is_algorithm_available(algorithm))
+    {
+        GTEST_SKIP() << "Algorithm not supported by current backend";
+    }
+
+    const std::string key_name = test_key_name("reach_test_"s + suffix.data());
+    MPSS::DeleteKey(key_name);
+
+    std::unique_ptr<mpss::KeyPair> original = MPSS::CreateKey(key_name, algorithm);
+    ASSERT_NE(nullptr, original);
+
+    std::unique_ptr<mpss::KeyPair> stale = mpss::KeyPair::Open(key_name);
+    ASSERT_NE(nullptr, stale);
+
+    ASSERT_TRUE(original->delete_key());
+    original.reset();
+
+    std::unique_ptr<mpss::KeyPair> fresh = MPSS::CreateKey(key_name, algorithm);
+    ASSERT_NE(nullptr, fresh);
+
+    const std::size_t pk_size = fresh->extract_key_size();
+    std::vector<std::byte> fresh_public_key(pk_size);
+    ASSERT_EQ(pk_size, fresh->extract_key(fresh_public_key));
+
+    const std::vector<std::byte> hash(hash_size, std::byte{0x2A});
+    std::vector<std::byte> signature(stale->sign_hash_size());
+    EXPECT_EQ(0, stale->sign_hash(hash, signature));
+    std::vector<std::byte> stale_public_key(pk_size);
+    EXPECT_EQ(0, stale->extract_key(stale_public_key));
+    EXPECT_FALSE(stale->delete_key());
+
+    // The replacement is untouched by any of that.
+    std::vector<std::byte> after(pk_size);
+    ASSERT_EQ(pk_size, fresh->extract_key(after));
+    EXPECT_EQ(fresh_public_key, after);
+
+    const std::size_t sig_size = fresh->sign_hash(hash, {});
+    ASSERT_NE(0, sig_size);
+    std::vector<std::byte> fresh_signature(sig_size);
+    const std::size_t written = fresh->sign_hash(hash, fresh_signature);
+    ASSERT_NE(0, written);
+    fresh_signature.resize(written);
+    EXPECT_TRUE(fresh->verify(hash, fresh_signature));
+
+    ASSERT_TRUE(fresh->delete_key());
+}
+
 TEST_F(MPSS, SignAndVerify256)
 {
     SignAndVerify(ecdsa_secp256r1_sha256, "256", 32);
@@ -492,6 +544,21 @@ TEST_F(MPSS, DeletingThroughAHandleInvalidatesIt384)
 TEST_F(MPSS, DeletingThroughAHandleInvalidatesIt521)
 {
     DeletingThroughAHandleInvalidatesIt(ecdsa_secp521r1_sha512, "521", 64);
+}
+
+TEST_F(MPSS, StaleHandleCannotReachAReplacementKey256)
+{
+    StaleHandleCannotReachAReplacementKey(ecdsa_secp256r1_sha256, "256", 32);
+}
+
+TEST_F(MPSS, StaleHandleCannotReachAReplacementKey384)
+{
+    StaleHandleCannotReachAReplacementKey(ecdsa_secp384r1_sha384, "384", 48);
+}
+
+TEST_F(MPSS, StaleHandleCannotReachAReplacementKey521)
+{
+    StaleHandleCannotReachAReplacementKey(ecdsa_secp521r1_sha512, "521", 64);
 }
 
 TEST_F(MPSS, DoubleCreation256)
@@ -1011,7 +1078,8 @@ TEST(AppleErrorPropagation, WrapperErrorsAreConsumedOnce)
     const char unicode_key_name[] = {static_cast<char>(0xC3), static_cast<char>(0xA9), '\0'};
     std::array<std::uint8_t, 72> signature{};
     std::size_t signature_size = signature.size();
-    EXPECT_FALSE(MPSS_SE_Sign(unicode_key_name, hash.data(), hash.size(), signature.data(), &signature_size));
+    EXPECT_FALSE(
+        MPSS_SE_Sign(unicode_key_name, hash.data(), hash.size(), signature.data(), &signature_size, generation));
     const std::string unicode_error = mpss::impl::os::utils::take_secure_enclave_error();
     EXPECT_NE(std::string::npos, unicode_error.find(unicode_key_name));
 }

@@ -27,6 +27,15 @@ AppleKeychainKeyPair::~AppleKeychainKeyPair()
 bool AppleKeychainKeyPair::do_delete_key()
 {
     mpss::utils::log_trace("Deleting Keychain key '{}'.", name());
+
+    // Deleting reaches the name rather than the entry this handle opened, so refuse once the name
+    // has moved on. Otherwise a handle to a deleted key would delete the key that replaced it.
+    if (!MPSS_KeychainGenerationIsCurrent(name().c_str(), generation()))
+    {
+        mpss::utils::log_and_set_error("Key '{}' is no longer the key this handle opened.", name());
+        return false;
+    }
+
     const bool result = utils::delete_key_from_all_tiers(name());
     if (result)
     {
@@ -41,7 +50,7 @@ std::size_t AppleKeychainKeyPair::do_sign_hash(std::span<const std::byte> hash, 
     mpss::utils::log_trace("Signing hash with Keychain key '{}', hash size {}.", name(), hash.size());
     std::size_t signature_size = sig.size();
 
-    if (!MPSS_SignHash(name().c_str(), static_cast<int>(algorithm()),
+    if (!MPSS_SignHash(name().c_str(), static_cast<int>(algorithm()), generation(),
                        reinterpret_cast<const std::uint8_t *>(hash.data()), hash.size(),
                        reinterpret_cast<std::uint8_t *>(sig.data()), &signature_size))
     {
@@ -56,9 +65,10 @@ std::size_t AppleKeychainKeyPair::do_sign_hash(std::span<const std::byte> hash, 
 
 bool AppleKeychainKeyPair::do_verify(std::span<const std::byte> hash, std::span<const std::byte> sig) const
 {
-    const std::int32_t raw_result = MPSS_VerifySignature(
-        name().c_str(), static_cast<int>(algorithm()), reinterpret_cast<const std::uint8_t *>(hash.data()), hash.size(),
-        reinterpret_cast<const std::uint8_t *>(sig.data()), sig.size());
+    const std::int32_t raw_result =
+        MPSS_VerifySignature(name().c_str(), static_cast<int>(algorithm()), generation(),
+                             reinterpret_cast<const std::uint8_t *>(hash.data()), hash.size(),
+                             reinterpret_cast<const std::uint8_t *>(sig.data()), sig.size());
     return utils::handle_keychain_verification_result(raw_result, "verify signature");
 }
 
@@ -67,7 +77,7 @@ std::size_t AppleKeychainKeyPair::do_extract_key(std::span<std::byte> public_key
     mpss::utils::log_trace("Extracting public key from Keychain key '{}'.", name());
     std::size_t pk_size = public_key.size();
 
-    if (!MPSS_GetPublicKey(name().c_str(), reinterpret_cast<std::uint8_t *>(public_key.data()), &pk_size))
+    if (!MPSS_GetPublicKey(name().c_str(), generation(), reinterpret_cast<std::uint8_t *>(public_key.data()), &pk_size))
     {
         // This should not fail at this point. The caller already validated inputs.
         utils::report_keychain_error("retrieve public key");

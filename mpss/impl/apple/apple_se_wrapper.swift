@@ -188,6 +188,41 @@ private func purgeKeyFromDict(_ keyName: String) {
     }
 }
 
+/// Fetch a cached key only while the caller's generation still names the entry. Handle operations
+/// use this so that a name deleted and created again cannot be reached through a handle opened on
+/// the key that used to hold it. There is deliberately no fall back to the Keychain: a handle whose
+/// entry is gone is finished, not something to resolve again.
+/// - Parameters:
+///     - keyName: Name of the key to retrieve.
+///     - generation: The generation the handle recorded when it opened.
+/// - Returns: Private key if the generation still names the entry, nil otherwise.
+private func getKeyForGeneration(_ keyName: String, _ generation: UInt64)
+    -> SecureEnclave.P256.Signing.PrivateKey?
+{
+    return _keyStoreQueue.sync {
+        guard _keyStoreGen[keyName] == generation else {
+            return nil
+        }
+        return _keyStore.value(forKey: keyName) as? SecureEnclave.P256.Signing.PrivateKey
+    }
+}
+
+/// Whether the generation a handle recorded still names what this name holds.
+@_cdecl("MPSS_SE_GenerationIsCurrent")
+func generationIsCurrent(_ keyName: UnsafePointer<CChar>, _ generation: UInt64) -> Bool {
+    let fullKeyName = getKeyName(String(cString: keyName))
+    let superseded = _keyStoreQueue.sync {
+        if let stored = _keyStoreGen[fullKeyName] {
+            return stored != generation
+        }
+        return false
+    }
+
+    // Absence is not a supersession. It is also what a delete leaves behind when it purged the
+    // cache and then failed to reach storage, and that has to stay retryable.
+    return !superseded
+}
+
 /// Get a private key.
 /// Will try to get from in-memory dictionary, if not found will try to recreate from data in Keychain.
 ///  - Parameters:
@@ -576,7 +611,7 @@ private func createKey(
 @_cdecl("MPSS_SE_Sign")
 func sign(
     _ keyName: UnsafePointer<CChar>, hash: UnsafePointer<UInt8>, hashLength: UInt,
-    sig: UnsafeMutablePointer<UInt8>, sigLength: UnsafeMutablePointer<UInt>
+    sig: UnsafeMutablePointer<UInt8>, sigLength: UnsafeMutablePointer<UInt>, generation: UInt64
 ) -> Bool {
     clearError()
     let keyNameString = String(cString: keyName)
@@ -587,7 +622,8 @@ func sign(
         return false
     }
 
-    guard let signature = sign(keyName: keyNameString, hash: hashDigest) else {
+    guard let signature = sign(keyName: keyNameString, hash: hashDigest, generation: generation)
+    else {
         return false
     }
 
@@ -610,19 +646,12 @@ func sign(
 ///     - keyName: Name that identifies the private key to use.
 ///     - hash: The hash to sign.
 /// - Returns: Data that contains the signature, or nil if failed to sign.
-private func sign(keyName: String, hash: any Digest) -> Data? {
+private func sign(keyName: String, hash: any Digest, generation: UInt64) -> Data? {
     do {
         let fullKeyName = getKeyName(keyName)
 
-        // Try to get existing key.
-        let privateKey: SecureEnclave.P256.Signing.PrivateKey
-        switch getKey(fullKeyName, takeHold: false) {
-        case .found(let foundKey):
-            privateKey = foundKey
-        case .notFound:
-            setError("Could not get key: \(keyName)")
-            return nil
-        case .failure:
+        guard let privateKey = getKeyForGeneration(fullKeyName, generation) else {
+            setError("Key '\(keyName)' is no longer the key this handle opened.")
             return nil
         }
 
@@ -646,7 +675,7 @@ private func sign(keyName: String, hash: any Digest) -> Data? {
 @_cdecl("MPSS_SE_VerifySignature")
 func verifySignature(
     keyName: UnsafePointer<CChar>, hash: UnsafePointer<UInt8>, hashLength: UInt,
-    signature: UnsafePointer<UInt8>, signatureLength: UInt
+    signature: UnsafePointer<UInt8>, signatureLength: UInt, generation: UInt64
 ) -> Int32 {
     clearError()
     let keyNameString = String(cString: keyName)
@@ -659,7 +688,8 @@ func verifySignature(
     }
 
     return verifySignature(
-        keyName: keyNameString, hash: hashDigest, signature: signatureData
+        keyName: keyNameString, hash: hashDigest, signature: signatureData,
+        generation: generation
     ).rawValue
 }
 
@@ -670,18 +700,13 @@ func verifySignature(
 ///     - signature: Signature to verify.
 /// - Returns: Success, expected-negative if invalid, or operational-error.
 private func verifySignature(
-    keyName: String, hash: any Digest, signature: Data
+    keyName: String, hash: any Digest, signature: Data, generation: UInt64
 ) -> AppleOperationResult {
     do {
         let fullKeyName = getKeyName(keyName)
-        let privateKey: SecureEnclave.P256.Signing.PrivateKey
-        switch getKey(fullKeyName, takeHold: false) {
-        case .found(let foundKey):
-            privateKey = foundKey
-        case .notFound:
-            setError("Could not get key: \(keyName)")
-            return .operationalError
-        case .failure:
+
+        guard let privateKey = getKeyForGeneration(fullKeyName, generation) else {
+            setError("Key '\(keyName)' is no longer the key this handle opened.")
             return .operationalError
         }
 
@@ -754,12 +779,12 @@ private func verifyStandaloneSignature(
 @_cdecl("MPSS_SE_GetPublicKey")
 func getPublicKey(
     keyName: UnsafePointer<CChar>, pk: UnsafeMutablePointer<UInt8>,
-    pkLength: UnsafeMutablePointer<UInt>
+    pkLength: UnsafeMutablePointer<UInt>, generation: UInt64
 ) -> Bool {
     clearError()
     let keyNameString = String(cString: keyName)
 
-    guard let publicKey = getPublicKey(keyName: keyNameString) else {
+    guard let publicKey = getPublicKey(keyName: keyNameString, generation: generation) else {
         return false
     }
 
@@ -781,16 +806,11 @@ func getPublicKey(
 /// - Parameters:
 ///     - keyName: Name of the private key.
 /// - Returns: x9.63 representation of the public key, nil if not able to get representation.
-private func getPublicKey(keyName: String) -> Data? {
+private func getPublicKey(keyName: String, generation: UInt64) -> Data? {
     let fullKeyName = getKeyName(keyName)
-    let privateKey: SecureEnclave.P256.Signing.PrivateKey
-    switch getKey(fullKeyName, takeHold: false) {
-    case .found(let foundKey):
-        privateKey = foundKey
-    case .notFound:
-        setError("Could not get private key: \(keyName)")
-        return nil
-    case .failure:
+
+    guard let privateKey = getKeyForGeneration(fullKeyName, generation) else {
+        setError("Key '\(keyName)' is no longer the key this handle opened.")
         return nil
     }
 
