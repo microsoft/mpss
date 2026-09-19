@@ -45,6 +45,34 @@ public class MemKeyStore {
     }
 
     /**
+     * Fetch a cached key only while the caller's generation still names the entry. Handle
+     * operations use this so that a name deleted and created again cannot be reached through a
+     * handle opened on the key that used to hold it. There is deliberately no fall back to the key
+     * store: a handle whose entry is gone is finished, not a name to resolve again. Callers hold
+     * the key lock, which is what makes reading the two maps one answer.
+     * @param keyName Name of the key to retrieve.
+     * @param generation The generation the handle recorded when it opened.
+     * @return The cached key if the generation still names the entry, null otherwise.
+     */
+    public static KeyPair GetKeyForGeneration(String keyName, long generation) {
+        if (!GenerationIsCurrent(keyName, generation)) {
+            return null;
+        }
+        return KeyPairs.get(keyName);
+    }
+
+    /**
+     * Whether the generation a handle recorded still names what this name holds.
+     * @param keyName Name of the key.
+     * @param generation The generation the handle recorded when it opened.
+     * @return True if the generation is still current for this name.
+     */
+    public static boolean GenerationIsCurrent(String keyName, long generation) {
+        final Long current = Generations.get(keyName);
+        return null != current && current == generation;
+    }
+
+    /**
      * Release one hold on a key, evicting it once none are left. A name with no recorded hold is
      * evicted directly, so a key cached without a handle behind it is not kept alive. A release for
      * a generation this name has moved past does nothing: whatever holds the name now belongs to

@@ -30,6 +30,42 @@ using jni_bytearray = mpss::impl::os::utils::JNIObj<jbyteArray>;
 using jni_object = mpss::impl::os::utils::JNIObj<jobject>;
 using jni_string = mpss::impl::os::utils::JNIObj<jstring>;
 
+// Defined below; signing through Java needs the generation an open reports.
+std::optional<std::int64_t> java_open_key(std::string_view key_name);
+
+void java_close_key(std::string_view key_name, std::int64_t generation)
+{
+    mpss::impl::os::JNIEnvGuard guard;
+    if (!guard.valid())
+    {
+        return;
+    }
+    JNIEnv *const env = guard.env();
+
+    jclass key_management = mpss::impl::os::JNIHelper::key_management_class();
+    if (nullptr == key_management)
+    {
+        return;
+    }
+
+    jmethodID method = env->GetStaticMethodID(key_management, "CloseKey", "(Ljava/lang/String;J)V");
+    if (mpss::impl::os::utils::check_and_clear_exception(env, "resolving KeyManagement.CloseKey") || nullptr == method)
+    {
+        return;
+    }
+
+    const std::string key_name_string{key_name};
+    jni_string java_key_name(env, env->NewStringUTF(key_name_string.c_str()));
+    if (mpss::impl::os::utils::check_and_clear_exception(env, "converting an Android key name to a Java string") ||
+        java_key_name.is_null())
+    {
+        return;
+    }
+
+    env->CallStaticVoidMethod(key_management, method, java_key_name.get(), static_cast<jlong>(generation));
+    static_cast<void>(mpss::impl::os::utils::check_and_clear_exception(env, "calling KeyManagement.CloseKey"));
+}
+
 std::vector<std::byte> java_sign_hash(std::string_view key_name, std::span<const std::byte> hash)
 {
     mpss::impl::os::JNIEnvGuard guard;
@@ -47,7 +83,15 @@ std::vector<std::byte> java_sign_hash(std::string_view key_name, std::span<const
         return {};
     }
 
-    jmethodID method = env->GetStaticMethodID(key_management, "SignHash", "(Ljava/lang/String;[B)[B");
+    const std::optional<std::int64_t> generation = java_open_key(key_name);
+    if (!generation.has_value() || 0 > generation.value())
+    {
+        mpss::GetLogger()->error("Could not open the key to sign with it.");
+        return {};
+    }
+    SCOPE_GUARD(java_close_key(key_name, generation.value()));
+
+    jmethodID method = env->GetStaticMethodID(key_management, "SignHash", "(Ljava/lang/String;[BJ)[B");
     if (mpss::impl::os::utils::check_and_clear_exception(env, "resolving KeyManagement.SignHash"))
     {
         return {};
@@ -72,7 +116,8 @@ std::vector<std::byte> java_sign_hash(std::string_view key_name, std::span<const
     }
 
     jni_bytearray java_signature(env, reinterpret_cast<jbyteArray>(env->CallStaticObjectMethod(
-                                          key_management, method, java_key_name.get(), java_hash.get())));
+                                          key_management, method, java_key_name.get(), java_hash.get(),
+                                          static_cast<jlong>(generation.value()))));
     if (mpss::impl::os::utils::check_and_clear_exception(env, "calling KeyManagement.SignHash"))
     {
         return {};

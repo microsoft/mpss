@@ -331,15 +331,18 @@ public class KeyManagement {
      * @param hash Hash to sign.
      * @return Signature, or null if signature could not be created.
      */
-    public static byte[] SignHash(String keyName, byte[] hash) {
+    public static byte[] SignHash(String keyName, byte[] hash, long generation) {
         ClearError();
         try {
             if (null == keyName) throw new IllegalArgumentException("keyName is null.");
             if (null == hash) throw new IllegalArgumentException("hash is null.");
 
-            KeyPair kp = GetExistingKeyPair(keyName);
+            KeyPair kp;
+            synchronized (_keyLock) {
+                kp = MemKeyStore.GetKeyForGeneration(keyName, generation);
+            }
             if (null == kp) {
-                String msg = "Could not get key: " + keyName;
+                String msg = "Key '" + keyName + "' is no longer the key this handle opened.";
                 Log.e("MPSS", msg);
                 SetError(msg);
                 return null;
@@ -370,16 +373,19 @@ public class KeyManagement {
      * @param sig Signature to verify.
      * @return True if signature verifies correctly, False otherwise.
      */
-    public static Boolean VerifySignature(String keyName, byte[] hash, byte[] sig) {
+    public static Boolean VerifySignature(String keyName, byte[] hash, byte[] sig, long generation) {
         ClearError();
         try {
             if (null == keyName) throw new IllegalArgumentException("keyName is null.");
             if (null == hash) throw new IllegalArgumentException("hash is null.");
             if (null == sig) throw new IllegalArgumentException("sig is null.");
 
-            KeyPair kp = GetExistingKeyPair(keyName);
+            KeyPair kp;
+            synchronized (_keyLock) {
+                kp = MemKeyStore.GetKeyForGeneration(keyName, generation);
+            }
             if (null == kp) {
-                String msg = "Could not get key: " + keyName;
+                String msg = "Key '" + keyName + "' is no longer the key this handle opened.";
                 Log.e("MPSS", msg);
                 SetError(msg);
                 return null;
@@ -444,19 +450,30 @@ public class KeyManagement {
      * @param keyName Name of the key pair whose public key we need to get.
      * @return Representation of the public key.
      */
-    public static byte[] GetPublicKey(String keyName) {
+    public static byte[] GetPublicKey(String keyName, long generation) {
         ClearError();
+        if (null == keyName) throw new IllegalArgumentException("keyName is null.");
+
+        KeyPair kp;
+        synchronized (_keyLock) {
+            kp = MemKeyStore.GetKeyForGeneration(keyName, generation);
+        }
+        if (null == kp) {
+            String msg = "Key '" + keyName + "' is no longer the key this handle opened.";
+            Log.e("MPSS", msg);
+            SetError(msg);
+            return null;
+        }
+        return EncodePublicKey(kp);
+    }
+
+    /**
+     * Encode a key pair's public key as an uncompressed point.
+     * @param kp The key pair whose public key to encode.
+     * @return The uncompressed point, or null on failure.
+     */
+    private static byte[] EncodePublicKey(KeyPair kp) {
         try {
-            if (null == keyName) throw new IllegalArgumentException("keyName is null.");
-
-            KeyPair kp = GetExistingKeyPair(keyName);
-            if (null == kp) {
-                String msg = "Could not get key: " + keyName;
-                Log.e("MPSS", msg);
-                SetError(msg);
-                return null;
-            }
-
             // Parse X509.
             KeyFactory kf = KeyFactory.getInstance("EC");
             X509EncodedKeySpec keySpec = new X509EncodedKeySpec(kp.getPublic().getEncoded());
@@ -511,6 +528,29 @@ public class KeyManagement {
      * @param keyName Name of the key to delete.
      * @return True if the key was deleted successfully, False otherwise.
      */
+    /**
+     * Delete the key a handle opened, refusing once the name has moved on.
+     *
+     * Deleting addresses the alias rather than the cached entry, so a handle whose key is gone
+     * would otherwise delete whatever key now holds its name.
+     * @param keyName Name of the key to delete.
+     * @param generation The generation the handle recorded when it opened.
+     * @return True if the key was deleted, False otherwise.
+     */
+    public static Boolean DeleteKey(String keyName, long generation) {
+        ClearError();
+        synchronized (_keyLock) {
+            if (null == keyName) throw new IllegalArgumentException("keyName is null.");
+            if (!MemKeyStore.GenerationIsCurrent(keyName, generation)) {
+                String msg = "Key '" + keyName + "' is no longer the key this handle opened.";
+                Log.e("MPSS", msg);
+                SetError(msg);
+                return false;
+            }
+        }
+        return DeleteKey(keyName);
+    }
+
     public static Boolean DeleteKey(String keyName) {
         ClearError();
         synchronized (_keyLock) {
@@ -591,7 +631,11 @@ public class KeyManagement {
             if (null == keyName) throw new IllegalArgumentException("keyName is null.");
 
             // Deduce the type from the length of the public key.
-            byte[] pk = GetPublicKey(keyName);
+            KeyPair kp = GetExistingKeyPair(keyName);
+            if (null == kp) {
+                return Algorithm.undefined;
+            }
+            byte[] pk = EncodePublicKey(kp);
             if (null == pk) {
                 return Algorithm.undefined;
             }

@@ -303,7 +303,6 @@ void ReleasedHandleRefusesOperations(Algorithm algorithm, std::string_view suffi
 
     handle->release_key();
 
-    // Releasing again is a no-op rather than a second release of whatever was held.
     handle->release_key();
 
     std::vector<std::byte> second_signature(sig_size);
@@ -387,11 +386,18 @@ void DeletingThroughAHandleInvalidatesIt(Algorithm algorithm, std::string_view s
     EXPECT_EQ(0, handle->extract_key(public_key));
     EXPECT_FALSE(handle->delete_key());
 
+    // The size requests never reach a backend, so they answer from the algorithm alone unless the
+    // handle itself refuses. They are what makes this test speak for a backend whose operations
+    // would fail after a deletion anyway.
+    EXPECT_EQ(0, handle->sign_hash(hash, {}));
+    EXPECT_EQ(0, handle->extract_key({}));
+
     // A key created again under the same name is a different key, and the old handle must not
-    // reach it.
+    // reach it, least of all to delete it.
     std::unique_ptr<mpss::KeyPair> fresh = MPSS::CreateKey(key_name, algorithm);
     ASSERT_NE(nullptr, fresh);
     EXPECT_EQ(0, handle->sign_hash(hash, signature));
+    EXPECT_FALSE(handle->delete_key());
 
     const std::size_t sig_size = fresh->sign_hash(hash, {});
     ASSERT_NE(0, sig_size);

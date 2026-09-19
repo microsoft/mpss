@@ -33,7 +33,7 @@ bool AndroidKeyPair::do_delete_key()
         return false;
     }
 
-    jmethodID method = env->GetStaticMethodID(key_management, "DeleteKey", "(Ljava/lang/String;)Ljava/lang/Boolean;");
+    jmethodID method = env->GetStaticMethodID(key_management, "DeleteKey", "(Ljava/lang/String;J)Ljava/lang/Boolean;");
     if (utils::check_and_clear_exception(env, "resolving KeyManagement.DeleteKey"))
     {
         return false;
@@ -55,7 +55,8 @@ bool AndroidKeyPair::do_delete_key()
         return false;
     }
 
-    jni_object result(env, env->CallStaticObjectMethod(key_management, method, key_name.get()));
+    jni_object result(
+        env, env->CallStaticObjectMethod(key_management, method, key_name.get(), static_cast<jlong>(generation_)));
     if (utils::check_and_clear_exception(env, "calling KeyManagement.DeleteKey"))
     {
         return false;
@@ -100,7 +101,7 @@ std::size_t AndroidKeyPair::do_sign_hash(std::span<const std::byte> hash, std::s
         return 0;
     }
 
-    jmethodID method = env->GetStaticMethodID(key_management, "SignHash", "(Ljava/lang/String;[B)[B");
+    jmethodID method = env->GetStaticMethodID(key_management, "SignHash", "(Ljava/lang/String;[BJ)[B");
     if (utils::check_and_clear_exception(env, "resolving KeyManagement.SignHash"))
     {
         return 0;
@@ -128,8 +129,9 @@ std::size_t AndroidKeyPair::do_sign_hash(std::span<const std::byte> hash, std::s
         return 0;
     }
 
-    jni_bytearray result(env, reinterpret_cast<jbyteArray>(
-                                  env->CallStaticObjectMethod(key_management, method, key_name.get(), hash_arr.get())));
+    jni_bytearray result(env,
+                         reinterpret_cast<jbyteArray>(env->CallStaticObjectMethod(
+                             key_management, method, key_name.get(), hash_arr.get(), static_cast<jlong>(generation_))));
     if (utils::check_and_clear_exception(env, "calling KeyManagement.SignHash"))
     {
         return 0;
@@ -167,7 +169,7 @@ bool AndroidKeyPair::do_verify(std::span<const std::byte> hash, std::span<const 
     }
 
     jmethodID method =
-        env->GetStaticMethodID(key_management, "VerifySignature", "(Ljava/lang/String;[B[B)Ljava/lang/Boolean;");
+        env->GetStaticMethodID(key_management, "VerifySignature", "(Ljava/lang/String;[B[BJ)Ljava/lang/Boolean;");
     if (utils::check_and_clear_exception(env, "resolving KeyManagement.VerifySignature"))
     {
         return false;
@@ -201,8 +203,8 @@ bool AndroidKeyPair::do_verify(std::span<const std::byte> hash, std::span<const 
         return false;
     }
 
-    jni_object result(
-        env, env->CallStaticObjectMethod(key_management, method, key_name.get(), hash_arr.get(), sig_arr.get()));
+    jni_object result(env, env->CallStaticObjectMethod(key_management, method, key_name.get(), hash_arr.get(),
+                                                       sig_arr.get(), static_cast<jlong>(generation_)));
     if (utils::check_and_clear_exception(env, "calling KeyManagement.VerifySignature"))
     {
         return false;
@@ -242,7 +244,7 @@ std::size_t AndroidKeyPair::do_extract_key(std::span<std::byte> public_key) cons
         return 0;
     }
 
-    jmethodID method = env->GetStaticMethodID(key_management, "GetPublicKey", "(Ljava/lang/String;)[B");
+    jmethodID method = env->GetStaticMethodID(key_management, "GetPublicKey", "(Ljava/lang/String;J)[B");
     if (utils::check_and_clear_exception(env, "resolving KeyManagement.GetPublicKey"))
     {
         return 0;
@@ -264,8 +266,8 @@ std::size_t AndroidKeyPair::do_extract_key(std::span<std::byte> public_key) cons
         return 0;
     }
 
-    jni_bytearray result(
-        env, reinterpret_cast<jbyteArray>(env->CallStaticObjectMethod(key_management, method, key_name.get())));
+    jni_bytearray result(env, reinterpret_cast<jbyteArray>(env->CallStaticObjectMethod(
+                                  key_management, method, key_name.get(), static_cast<jlong>(generation_))));
     if (utils::check_and_clear_exception(env, "calling KeyManagement.GetPublicKey"))
     {
         return 0;
