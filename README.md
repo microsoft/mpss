@@ -681,6 +681,36 @@ The two channels are independent and thread-local. Clear the OpenSSL queue befor
 whose errors you want to isolate. A non-empty queue alone does not indicate failure: it may
 contain entries from recovered internal steps.
 
+### Thread Safety
+
+A `mpss::KeyPair` handle is safe to use from several threads at once. `sign_hash`, `verify` and
+`extract_key` may run concurrently with each other on one handle, while `release_key` and
+`delete_key` exclude everything else, so an operation either completes before a release or is
+refused by it. Releasing is one decision however many threads ask at once: the backend release runs
+exactly once between them, and the rest are told the handle is released.
+
+`KeyPair::Create`, `KeyPair::Open` and `KeyPair::Delete` may be called concurrently, and distinct
+handles are independent of each other.
+
+Destroying a handle is not an operation. Like any other object, a `KeyPair` must not be destroyed
+while another thread is still inside it.
+
+The last-error channel is per-thread, so concurrent calls do not overwrite each other's
+diagnostics. See [Error Handling](#error-handling). An interaction handler may be called on
+whichever thread performs the operation; see [Custom Interaction Handlers](#custom-interaction-handlers).
+
+**YubiKey.** One device serves one operation at a time. A PIV session is stateful, since verifying
+a PIN and then signing are separate exchanges carried on one connection, so MPSS serializes by
+device serial across every handle and thread in the process. A key whose touch policy requires a
+touch holds the device while it waits, and other threads addressing that device wait with it.
+Different YubiKeys proceed in parallel. Listing devices reaches every reader and discards whatever
+security state a connection had established there, so it runs alone, excluding connections to all
+devices while it scans.
+
+**Other backends.** Apple and Android resolve a key through caches that are internally
+synchronized, and Windows hands the key handle the process owns straight to CNG. None of them
+serializes by device, so operations on distinct handles proceed in parallel.
+
 ### Logging
 
 MPSS logs to `std::cout` and `std::cerr` at `mpss::LogLevel::info` by default.

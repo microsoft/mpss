@@ -12,6 +12,7 @@
 #include <cstring>
 #include <format>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <openssl/core_names.h>
 #include <openssl/crypto.h>
@@ -31,6 +32,50 @@ namespace
 
 // Set when device enumeration reached a reader but could not identify the device on it.
 thread_local bool skipped_device = false;
+
+// One device serves one connection at a time. A PIV session is stateful, since verifying a PIN and
+// then signing are separate exchanges carried on the same connection, so two threads addressing one
+// device would interleave exchanges that each assume they are alone. The device lock is taken per
+// serial and held for the life of the connection, a wait for a touch included, which is why a
+// second thread waits rather than racing.
+//
+// Enumeration is the reason for the second lock. Listing serials reaches every reader and selects
+// the PIV applet on each, which discards whatever security state a connection had established
+// there, so it cannot run beside any connection at all. Connections take the bus in shared mode and
+// enumeration takes it exclusively. Acquiring the bus before the device is the only order used, so
+// the two cannot deadlock against each other.
+struct DeviceLocks
+{
+    std::shared_mutex bus;
+    std::mutex registry;
+    std::map<std::uint32_t, std::unique_ptr<std::mutex>> by_serial;
+};
+
+[[nodiscard]]
+DeviceLocks &device_locks()
+{
+    // Immortal singleton state, for the same reason as the rejected PIN registry: a connection
+    // destroyed after this one would otherwise unlock a destroyed mutex. The one-time allocation is
+    // reclaimed by the OS at process exit.
+    static DeviceLocks &locks = []() -> DeviceLocks & {
+        auto *fresh = new DeviceLocks{}; // NOLINT(cppcoreguidelines-owning-memory) - intentional immortal singleton.
+        return *fresh;
+    }();
+    return locks;
+}
+
+[[nodiscard]]
+std::mutex &device_mutex(std::uint32_t serial)
+{
+    DeviceLocks &locks = device_locks();
+    const std::scoped_lock lock{locks.registry};
+    std::unique_ptr<std::mutex> &device = locks.by_serial[serial];
+    if (nullptr == device)
+    {
+        device = std::make_unique<std::mutex>();
+    }
+    return *device;
+}
 
 /**
  * @brief Enumerate all reachable YubiKeys and call a visitor for each one.
@@ -185,7 +230,7 @@ EVP_PKEY *make_ec_public_key(const char *group_name, std::span<const std::byte> 
 }
 } // namespace
 
-YubiKeyPIV::YubiKeyPIV(std::uint32_t serial)
+YubiKeyPIV::YubiKeyPIV(std::uint32_t serial) : bus_lock_{device_locks().bus}, device_lock_{device_mutex(serial)}
 {
     connect(serial);
 }
@@ -1304,6 +1349,10 @@ std::uint8_t YubiKeyPIV::find_free_slot()
 
 std::vector<std::uint32_t> YubiKeyPIV::available_serials(bool *device_skipped)
 {
+    // Reaching every reader discards whatever security state a connection had established there, so
+    // this runs alone.
+    const std::unique_lock bus{device_locks().bus};
+
     if (nullptr != device_skipped)
     {
         *device_skipped = false;

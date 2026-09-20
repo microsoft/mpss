@@ -9,6 +9,8 @@
 #include "mpss/key_policy.h"
 #include <cstddef>
 #include <cstdint>
+#include <mutex>
+#include <shared_mutex>
 #include <span>
 #include <string>
 #include <string_view>
@@ -317,6 +319,14 @@ class YubiKeyPIV
     static MPSS_DECOR std::vector<std::uint32_t> available_serials(bool *device_skipped = nullptr);
 
   private:
+    // Held for the life of the connection, so that one device serves one connection at a time and
+    // no enumeration runs beside it. Declared before the connection state, so they are acquired
+    // before it is established and released only after it has been torn down. A caller holding one
+    // of these must not enumerate, which is why nothing constructed here reaches back into
+    // available_serials.
+    std::shared_lock<std::shared_mutex> bus_lock_;
+    std::unique_lock<std::mutex> device_lock_;
+
     ykpiv_state *state_{nullptr};
     std::uint32_t serial_{0};
 

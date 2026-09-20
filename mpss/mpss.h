@@ -9,6 +9,7 @@
 #include "mpss/key_policy.h"
 #include <cstddef>
 #include <memory>
+#include <shared_mutex>
 #include <span>
 #include <string>
 #include <string_view>
@@ -150,6 +151,11 @@ MPSS_DECOR const char *get_default_backend_name();
 
 /**
  * @brief Represents a handle to a key pair in the safe storage system.
+ *
+ * A handle is safe to use from several threads at once. Signing, verifying and extracting may run
+ * concurrently with each other, while releasing and deleting exclude everything else, so an
+ * operation either runs wholly before a release or is refused by it. Destroying a handle is not an
+ * operation: like any other object, it must not be destroyed while another thread is using it.
  */
 class MPSS_DECOR KeyPair
 {
@@ -387,6 +393,15 @@ class MPSS_DECOR KeyPair
     virtual std::size_t do_extract_key(std::span<std::byte> public_key) const = 0;
 
   private:
+    // Releases the handle, with mtx_ already held exclusively. Deleting releases the handle it
+    // deleted through, and cannot reach release_key() to do it without deadlocking.
+    bool release_locked();
+
+    // Operations take this in shared mode and run concurrently; releasing and deleting take it
+    // exclusively, which is what keeps the latch below a single decision rather than a check and a
+    // set that another thread can land between.
+    mutable std::shared_mutex mtx_;
+
     bool released_{false};
 };
 

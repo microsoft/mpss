@@ -7,6 +7,7 @@
 #include <array>
 #include <mutex>
 #include <optional>
+#include <shared_mutex>
 
 namespace mpss
 {
@@ -218,7 +219,7 @@ std::size_t KeyPair::extract_key_size() const
     return utils::get_public_key_size(algorithm());
 }
 
-bool KeyPair::release_key()
+bool KeyPair::release_locked()
 {
     // A handle is released explicitly by the caller and again when it is destroyed. Doing the work
     // once keeps a backend that reference counts a shared cache entry from giving up a hold that
@@ -234,8 +235,15 @@ bool KeyPair::release_key()
     return do_release_key();
 }
 
+bool KeyPair::release_key()
+{
+    const std::unique_lock lock{mtx_};
+    return release_locked();
+}
+
 bool KeyPair::delete_key()
 {
+    const std::unique_lock lock{mtx_};
     clear_error();
     if (released_)
     {
@@ -252,13 +260,14 @@ bool KeyPair::delete_key()
     // name cannot be reached through it. Whatever the release reports is not the caller's
     // business: the deletion they asked for succeeded, and a release that could not tidy up has
     // already said so in the log.
-    release_key();
+    static_cast<void>(release_locked());
     clear_error();
     return true;
 }
 
 std::size_t KeyPair::sign_hash(std::span<const std::byte> hash, std::span<std::byte> sig) const
 {
+    const std::shared_lock lock{mtx_};
     clear_error();
     if (released_)
     {
@@ -283,6 +292,7 @@ std::size_t KeyPair::sign_hash(std::span<const std::byte> hash, std::span<std::b
 
 bool KeyPair::verify(std::span<const std::byte> hash, std::span<const std::byte> sig) const
 {
+    const std::shared_lock lock{mtx_};
     clear_error();
     if (released_)
     {
@@ -303,6 +313,7 @@ bool KeyPair::verify(std::span<const std::byte> hash, std::span<const std::byte>
 
 std::size_t KeyPair::extract_key(std::span<std::byte> public_key) const
 {
+    const std::shared_lock lock{mtx_};
     clear_error();
     if (released_)
     {

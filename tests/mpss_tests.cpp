@@ -16,6 +16,7 @@
 #include "mpss/impl/apple/apple_utils.h"
 #endif
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -26,6 +27,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -995,6 +997,48 @@ class RecoveringKeyPair : public KeyPair
   private:
     bool succeed_;
 };
+
+// Counts how many times the backend release ran, so that a release racing itself can be held to
+// running it once.
+class CountingReleaseKeyPair : public KeyPair
+{
+  public:
+    CountingReleaseKeyPair() : KeyPair(ecdsa_secp256r1_sha256, false, "test")
+    {
+    }
+
+    std::atomic<int> releases{0};
+
+  protected:
+    bool do_release_key() override
+    {
+        releases.fetch_add(1, std::memory_order_relaxed);
+        return true;
+    }
+
+    bool do_delete_key() override
+    {
+        return true;
+    }
+
+    [[nodiscard]]
+    std::size_t do_sign_hash(std::span<const std::byte> /*hash*/, std::span<std::byte> sig) const override
+    {
+        return sig.size();
+    }
+
+    [[nodiscard]]
+    bool do_verify(std::span<const std::byte> /*hash*/, std::span<const std::byte> /*sig*/) const override
+    {
+        return true;
+    }
+
+    [[nodiscard]]
+    std::size_t do_extract_key(std::span<std::byte> public_key) const override
+    {
+        return public_key.size();
+    }
+};
 } // namespace
 
 TEST(ErrorContract, SuccessDiscardsRecoveredInternalError)
@@ -1036,7 +1080,101 @@ TEST(ErrorContract, FailureKeepsInternalError)
     EXPECT_FALSE(key_pair.delete_key());
     EXPECT_EQ(RecoveringKeyPair::internal_error, mpss::get_error());
 }
+
+// Releasing is a single decision rather than a test the caller makes and a set it performs later,
+// so a crowd of threads asking at once reaches the backend once between them.
+TEST(HandleThreadSafety, ConcurrentReleaseReachesTheBackendOnce)
+{
+    constexpr int thread_count = 16;
+
+    CountingReleaseKeyPair handle;
+    std::atomic<bool> go{false};
+
+    std::vector<std::thread> threads;
+    threads.reserve(thread_count);
+    for (int index = 0; index < thread_count; ++index)
+    {
+        threads.emplace_back([&handle, &go] {
+            while (!go.load(std::memory_order_acquire))
+            {
+                std::this_thread::yield();
+            }
+            EXPECT_TRUE(handle.release_key());
+        });
+    }
+
+    go.store(true, std::memory_order_release);
+    for (std::thread &thread : threads)
+    {
+        thread.join();
+    }
+
+    EXPECT_EQ(1, handle.releases.load(std::memory_order_relaxed));
+}
 #endif
+
+// Signing, verifying and extracting take the handle in shared mode, so several threads may be
+// inside one handle at once and every one of them must come out with a usable answer.
+TEST_F(MPSS, ConcurrentSigningOnOneHandle)
+{
+    constexpr int thread_count = 8;
+    constexpr int per_thread = 10;
+    constexpr Algorithm algorithm = ecdsa_secp256r1_sha256;
+
+    if (!mpss::is_algorithm_available(algorithm))
+    {
+        GTEST_SKIP() << "Algorithm not supported by current backend";
+    }
+
+    const std::string key_name = test_key_name("concurrent_sign");
+    MPSS::DeleteKey(key_name);
+
+    std::unique_ptr<mpss::KeyPair> handle = MPSS::CreateKey(key_name, algorithm);
+    ASSERT_NE(nullptr, handle);
+
+    std::atomic<int> signed_count{0};
+    std::atomic<int> verified_count{0};
+    std::atomic<bool> go{false};
+
+    std::vector<std::thread> threads;
+    threads.reserve(thread_count);
+    for (int index = 0; index < thread_count; ++index)
+    {
+        threads.emplace_back([&handle, &signed_count, &verified_count, &go, index] {
+            while (!go.load(std::memory_order_acquire))
+            {
+                std::this_thread::yield();
+            }
+
+            const std::vector<std::byte> hash(32, static_cast<std::byte>(index));
+            std::vector<std::byte> signature(handle->sign_hash_size());
+            for (int round = 0; round < per_thread; ++round)
+            {
+                const std::size_t written = handle->sign_hash(hash, signature);
+                if (0 == written)
+                {
+                    continue;
+                }
+                signed_count.fetch_add(1, std::memory_order_relaxed);
+                if (handle->verify(hash, std::span{signature}.first(written)))
+                {
+                    verified_count.fetch_add(1, std::memory_order_relaxed);
+                }
+            }
+        });
+    }
+
+    go.store(true, std::memory_order_release);
+    for (std::thread &thread : threads)
+    {
+        thread.join();
+    }
+
+    EXPECT_EQ(thread_count * per_thread, signed_count.load(std::memory_order_relaxed));
+    EXPECT_EQ(thread_count * per_thread, verified_count.load(std::memory_order_relaxed));
+
+    MPSS::DeleteKey(key_name);
+}
 
 #if defined(__APPLE__) && !defined(MPSS_CORE_IS_SHARED)
 TEST(AppleErrorPropagation, MissingOpenHasNoErrorDetail)
