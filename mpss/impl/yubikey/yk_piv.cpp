@@ -31,7 +31,7 @@
 namespace
 {
 
-// Set when device enumeration reached a reader but could not identify the device on it.
+// Set when a scan connected to a reader but could not read the serial of the device on it.
 thread_local bool skipped_device = false;
 
 // One device serves one connection at a time. A PIV session is stateful, since verifying a PIN and
@@ -40,11 +40,11 @@ thread_local bool skipped_device = false;
 // serial and held for the life of the connection, a wait for a touch included, which is why a
 // second thread waits rather than racing.
 //
-// Reaching a reader selects the PIV applet there, which discards whatever security state a
-// connection had established, so scanning readers cannot run beside any connection at all. That is
-// what the bus is for: scanning takes it exclusively while a connection takes it shared. Which
-// reader answers for a serial is remembered, so opening a connection addresses that reader alone
-// rather than scanning towards it and disturbing every device it passes.
+// Connecting to a device disturbs what a session has established on it, a verified PIN among that.
+// A scan connects to every reader in turn, so it cannot run beside any connection at all: a scan
+// takes the bus exclusively and a connection takes it shared. Which reader answers for a serial is
+// remembered, so opening a connection addresses that reader alone rather than scanning towards it
+// and disturbing every device it passes on the way.
 //
 // The bus is acquired before a device and never while one is held, so the two cannot deadlock
 // against each other, and a scan is never needed while the bus is held shared.
@@ -265,8 +265,8 @@ constexpr std::size_t max_public_key_bytes = 133;
 /**
  * @brief Report a failure through the last error, or through the trace log only when speculative.
  *
- * A slot scan reads keys it has no reason to expect are there, so a failure is an expected outcome
- * rather than a failure of whatever operation the caller actually asked for.
+ * Reading the slots of a device looks at keys it has no reason to expect are there, so a failure is
+ * an expected outcome rather than a failure of whatever operation the caller actually asked for.
  */
 template <typename... Args> void report_failure(bool probe, std::format_string<Args...> fmt, Args &&...args)
 {
