@@ -365,9 +365,11 @@ class MPSS_DECOR KeyPair
 
     KeyPair(Algorithm algorithm, bool hardware_backed, const char *storage_description);
 
-    // Non-virtual interface: the public operations above clear the thread-local last-error on
-    // entry, refuse a released handle and validate inputs, then dispatch to these backend-specific
-    // implementations.
+    // Non-virtual interface. Each public operation above clears the last error, validates its
+    // inputs and refuses a released handle before dispatching to one of the implementations
+    // below. Releasing is the exception: it latches rather than refusing, and leaves the last
+    // error alone.
+
     virtual bool do_delete_key() = 0;
 
     // Releases whatever the handle holds and reports whether it could. Called at most once per
