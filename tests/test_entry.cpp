@@ -86,7 +86,15 @@ class LogcatEventListener : public ::testing::EmptyTestEventListener
         const ::testing::TestResult *result = test_info.result();
         const bool skipped = result->Skipped();
         const bool passed = result->Passed();
-        const char *status = skipped ? "SKIPPED" : (passed ? "PASSED" : "FAILED");
+        const char *status = "FAILED";
+        if (skipped)
+        {
+            status = "SKIPPED";
+        }
+        else if (passed)
+        {
+            status = "PASSED";
+        }
         log_to_logcat(passed || skipped ? ANDROID_LOG_INFO : ANDROID_LOG_ERROR, test_logcat_tag,
                       std::format("[ {} ] {}.{} ({} ms)", status, test_info.test_suite_name(), test_info.name(),
                                   result->elapsed_time()));

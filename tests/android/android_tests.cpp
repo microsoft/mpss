@@ -518,7 +518,7 @@ TEST(AndroidJNITest, KeyPairCanMoveBetweenNativeThreads)
     std::promise<std::unique_ptr<mpss::KeyPair>> key_promise;
     std::future<std::unique_ptr<mpss::KeyPair>> key_future = key_promise.get_future();
     std::string create_error;
-    std::thread creator([&key_promise, &create_error, &key_name]() {
+    std::thread creator([&key_promise, &create_error, &key_name] {
         std::unique_ptr<mpss::KeyPair> key = mpss::KeyPair::Create(key_name, ecdsa_secp256r1_sha256);
         if (nullptr == key)
         {
@@ -609,7 +609,7 @@ TEST(AndroidJNITest, ConcurrentNativeThreadsUseIndependentJNIState)
     std::array<std::thread, 2> workers;
     for (std::size_t worker_index = 0; worker_index < workers.size(); ++worker_index)
     {
-        workers[worker_index] = std::thread([&, worker_index]() {
+        workers[worker_index] = std::thread([&, worker_index] {
             JavaVM *java_vm = nullptr;
             {
                 mpss::impl::os::JNIEnvGuard overlap_guard;
@@ -719,7 +719,7 @@ TEST(AndroidJNITest, ConcurrentKeyCacheAccessIsSafe)
     std::array<std::thread, 4> workers;
     for (std::size_t worker_index = 0; worker_index < workers.size(); ++worker_index)
     {
-        workers[worker_index] = std::thread([&, worker_index]() {
+        workers[worker_index] = std::thread([&, worker_index] {
             ready.count_down();
             start.wait();
 
@@ -791,7 +791,7 @@ TEST(AndroidJNITest, ConcurrentOpenAndDeleteLeaveCacheConsistent)
     std::array<std::thread, opener_count> openers;
     for (std::size_t opener_index = 0; opener_index < openers.size(); ++opener_index)
     {
-        openers[opener_index] = std::thread([&, opener_index]() {
+        openers[opener_index] = std::thread([&, opener_index] {
             ready.count_down();
             start.wait();
             open_results[opener_index] = java_open_key(key_name);
@@ -804,7 +804,7 @@ TEST(AndroidJNITest, ConcurrentOpenAndDeleteLeaveCacheConsistent)
 
     std::optional<bool> delete_result;
     std::string delete_error;
-    std::thread deleter([&]() {
+    std::thread deleter([&] {
         ready.count_down();
         start.wait();
         delete_result = java_key_operation("DeleteKey", key_name);
@@ -823,6 +823,7 @@ TEST(AndroidJNITest, ConcurrentOpenAndDeleteLeaveCacheConsistent)
     deleter.join();
 
     ASSERT_TRUE(delete_result.has_value()) << delete_error;
+    // NOLINTNEXTLINE(bugprone-unchecked-optional-access) - the assertion above returns on absence.
     ASSERT_TRUE(*delete_result);
     for (std::size_t opener_index = 0; opener_index < open_results.size(); ++opener_index)
     {
@@ -831,6 +832,7 @@ TEST(AndroidJNITest, ConcurrentOpenAndDeleteLeaveCacheConsistent)
 
     const std::optional<std::int64_t> final_open_result = java_open_key(key_name);
     ASSERT_TRUE(final_open_result.has_value()) << mpss::get_error();
+    // NOLINTNEXTLINE(bugprone-unchecked-optional-access) - the assertion above returns on absence.
     ASSERT_GT(0, *final_open_result);
 
     std::unique_ptr<mpss::KeyPair> replacement = mpss::KeyPair::Create(key_name, ecdsa_secp256r1_sha256);
