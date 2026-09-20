@@ -194,11 +194,11 @@ std::shared_ptr<InteractionHandler> GetOrSetInteractionHandler(std::shared_ptr<I
     static std::shared_ptr<InteractionHandler> handler = NewDefaultInteractionHandler();
     if (nullptr != new_handler)
     {
-        std::unique_lock lock{mtx};
+        const std::unique_lock lock{mtx};
         handler = std::move(new_handler);
         return handler;
     }
-    std::shared_lock lock{mtx};
+    const std::shared_lock lock{mtx};
     return handler;
 }
 

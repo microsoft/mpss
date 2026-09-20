@@ -159,7 +159,7 @@ bool is_algorithm_available(Algorithm algorithm)
 
     const int idx = static_cast<int>(algorithm);
     {
-        std::scoped_lock lock{cache_mutex};
+        const std::scoped_lock lock{cache_mutex};
         if (cache[idx])
         {
             // NOLINTBEGIN(bugprone-unchecked-optional-access) - guarded by the if above.
@@ -182,7 +182,7 @@ bool is_algorithm_available(Algorithm algorithm)
     // persisting a key), so negatives are simply not cached.
     if (available)
     {
-        std::scoped_lock lock{cache_mutex};
+        const std::scoped_lock lock{cache_mutex};
         cache[idx] = true;
     }
     utils::log_trace("Algorithm '{}' is {}.", info.type_str, available ? "available" : "unavailable");

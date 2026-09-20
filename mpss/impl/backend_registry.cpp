@@ -170,7 +170,7 @@ class BackendRegistry
             return;
         }
 
-        std::scoped_lock lock{init_mutex_};
+        const std::scoped_lock lock{init_mutex_};
         if (init_attempted_.load(std::memory_order_relaxed))
         {
             return;

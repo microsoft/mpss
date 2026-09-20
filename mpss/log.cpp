@@ -29,11 +29,11 @@ std::shared_ptr<Logger> GetOrSetLogger(std::shared_ptr<Logger> new_logger)
 
     if (nullptr != new_logger)
     {
-        std::unique_lock lock{state.mtx};
+        const std::unique_lock lock{state.mtx};
         state.logger = std::move(new_logger);
         return state.logger;
     }
-    std::shared_lock lock{state.mtx};
+    const std::shared_lock lock{state.mtx};
     return state.logger;
 }
 
@@ -47,7 +47,7 @@ void Logger::log(LogLevel level, const std::string &msg) const
         return;
     }
 
-    std::scoped_lock lock{mtx_};
+    const std::scoped_lock lock{mtx_};
     if (log_handlers_[level_index])
     {
         log_handlers_[level_index](msg);
