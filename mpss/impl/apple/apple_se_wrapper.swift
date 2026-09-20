@@ -34,17 +34,28 @@ private func logWarning(_ message: String) {
 // The dispatch queue is used to serialize access to the key store in order to make it thread-safe.
 private let _keyStoreQueue = DispatchQueue(label: "com.microsoft.mpss.KeyStore")
 
+// What a name holds while it is cached: the key itself, how many open handles depend on it so that
+// one handle's close does not evict an entry another is still using, and which entry those holds
+// were taken on. A name can be deleted and created again while a handle to the old key is still
+// alive, and that handle's release must not be charged against the new key, so a release for a
+// generation the cache has moved past does nothing. Generations are never reused.
+//
+// The three travel together in one entry rather than in parallel dictionaries, so a hold on a name
+// with no key, or a key with no generation, cannot be written by forgetting one of them.
+private final class CacheEntry {
+    let key: SecureEnclave.P256.Signing.PrivateKey
+    let generation: UInt64
+    var holds: Int
+
+    init(key: SecureEnclave.P256.Signing.PrivateKey, generation: UInt64) {
+        self.key = key
+        self.generation = generation
+        self.holds = 0
+    }
+}
+
 // In-memory dictionary that will contain currently open keys.
-nonisolated(unsafe) private let _keyStore = NSMutableDictionary()
-
-// How many open handles depend on each cached key. See removeKeyFromDict.
-nonisolated(unsafe) private var _keyStoreRefs: [String: Int] = [:]
-
-// Which entry each hold was taken on. A name can be deleted and created again while a handle to the
-// old key is still alive, and that handle's release must not be charged against the new key. A
-// release for a generation the cache has moved past therefore does nothing. Generations are never
-// reused.
-nonisolated(unsafe) private var _keyStoreGen: [String: UInt64] = [:]
+nonisolated(unsafe) private var _keyStore: [String: CacheEntry] = [:]
 nonisolated(unsafe) private var _nextGeneration: UInt64 = 0
 
 let keyChainAccountName = "P256Key"
@@ -116,17 +127,21 @@ private func storeKeyInDict(
     generation: UnsafeMutablePointer<UInt64>?
 ) {
     _keyStoreQueue.sync {
-        _keyStore[keyName] = key
         // A generation is established when the name starts being cached and kept while it stays
         // cached, so that two lookups which both miss and both store do not orphan the first one's
-        // hold. Deleting removes the generation, which is what makes the next create a new one.
-        if nil == _keyStoreGen[keyName] {
+        // hold. Deleting drops the entry, which is what makes the next create a new generation.
+        let entry: CacheEntry
+        if let existing = _keyStore[keyName] {
+            entry = CacheEntry(key: key, generation: existing.generation)
+            entry.holds = existing.holds
+        } else {
             _nextGeneration += 1
-            _keyStoreGen[keyName] = _nextGeneration
+            entry = CacheEntry(key: key, generation: _nextGeneration)
         }
+        _keyStore[keyName] = entry
         if let generation = generation {
-            _keyStoreRefs[keyName] = (_keyStoreRefs[keyName] ?? 0) + 1
-            generation.pointee = _keyStoreGen[keyName] ?? 0
+            entry.holds += 1
+            generation.pointee = entry.generation
         }
     }
 }
@@ -140,16 +155,14 @@ private func getKeyFromDict(
     keyName: String, generation: UnsafeMutablePointer<UInt64>?
 ) -> SecureEnclave.P256.Signing.PrivateKey? {
     return _keyStoreQueue.sync(execute: {
-        guard
-            let result = _keyStore.value(forKey: keyName) as? SecureEnclave.P256.Signing.PrivateKey?
-        else {
+        guard let entry = _keyStore[keyName] else {
             return nil
         }
-        if let generation = generation, nil != result {
-            _keyStoreRefs[keyName] = (_keyStoreRefs[keyName] ?? 0) + 1
-            generation.pointee = _keyStoreGen[keyName] ?? 0
+        if let generation = generation {
+            entry.holds += 1
+            generation.pointee = entry.generation
         }
-        return result
+        return entry.key
     })
 }
 
@@ -161,19 +174,15 @@ private func getKeyFromDict(
 ///     - keyName: Name of the key to release.
 private func removeKeyFromDict(_ keyName: String, _ generation: UInt64) {
     _keyStoreQueue.sync {
-        guard _keyStoreGen[keyName] == generation else {
+        guard let entry = _keyStore[keyName], entry.generation == generation else {
             // The hold was taken on an entry this name has since moved past, so there is nothing of
             // this handle's left to give up and whatever holds the name now belongs to someone else.
             return
         }
-        let holds = _keyStoreRefs[keyName] ?? 0
-        if holds > 1 {
-            _keyStoreRefs[keyName] = holds - 1
-            return
+        entry.holds -= 1
+        if entry.holds <= 0 {
+            _keyStore.removeValue(forKey: keyName)
         }
-        _keyStoreRefs.removeValue(forKey: keyName)
-        _keyStoreGen.removeValue(forKey: keyName)
-        _keyStore.removeObject(forKey: keyName)
     }
 }
 
@@ -183,9 +192,7 @@ private func removeKeyFromDict(_ keyName: String, _ generation: UInt64) {
 ///     - keyName: Name of the key to drop.
 private func purgeKeyFromDict(_ keyName: String) {
     _keyStoreQueue.sync {
-        _keyStoreRefs.removeValue(forKey: keyName)
-        _keyStoreGen.removeValue(forKey: keyName)
-        _keyStore.removeObject(forKey: keyName)
+        _keyStore.removeValue(forKey: keyName)
     }
 }
 
@@ -201,10 +208,10 @@ private func getKeyForGeneration(_ keyName: String, _ generation: UInt64)
     -> SecureEnclave.P256.Signing.PrivateKey?
 {
     return _keyStoreQueue.sync {
-        guard _keyStoreGen[keyName] == generation else {
+        guard let entry = _keyStore[keyName], entry.generation == generation else {
             return nil
         }
-        return _keyStore.value(forKey: keyName) as? SecureEnclave.P256.Signing.PrivateKey
+        return entry.key
     }
 }
 
@@ -213,8 +220,8 @@ private func getKeyForGeneration(_ keyName: String, _ generation: UInt64)
 func generationIsCurrent(_ keyName: UnsafePointer<CChar>, _ generation: UInt64) -> Bool {
     let fullKeyName = getKeyName(String(cString: keyName))
     let superseded = _keyStoreQueue.sync {
-        if let stored = _keyStoreGen[fullKeyName] {
-            return stored != generation
+        if let entry = _keyStore[fullKeyName] {
+            return entry.generation != generation
         }
         return false
     }

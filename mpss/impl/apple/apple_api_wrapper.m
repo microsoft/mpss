@@ -8,28 +8,33 @@
 #include "mpss/impl/apple/apple_result.h"
 #include "mpss/log_c.h"
 
-// Global dictionary to store SecKeyRef instances.
-static dispatch_queue_t _keyStoreQueue;                 // NOLINT(bugprone-reserved-identifier)
-static NSMutableDictionary<NSString *, id> *_keyStore;  // NOLINT(bugprone-reserved-identifier)
+// What a name holds while it is cached: the key itself, how many open handles depend on it so that
+// one handle's close does not evict an entry another is still using, and which entry those holds
+// were taken on. A name can be deleted and created again while a handle to the old key is still
+// alive, and that handle's release must not be charged against the new key, so a release for a
+// generation the cache has moved past does nothing. Generations are never reused.
+//
+// The three travel together in one entry rather than in parallel dictionaries, so a hold on a name
+// with no key, or a key with no generation, cannot be written by forgetting one of them.
+@interface MPSSCacheEntry : NSObject
+@property(nonatomic, strong) id key;
+@property(nonatomic, assign) NSInteger holds;
+@property(nonatomic, assign) uint64_t generation;
+@end
 
-// How many open handles depend on each cached key, so that one handle's close does not evict an
-// entry another handle is still using.
-static NSMutableDictionary<NSString *, NSNumber *> *_keyStoreRefs;  // NOLINT(bugprone-reserved-identifier)
+@implementation MPSSCacheEntry
+@end
 
-// Which entry each hold was taken on. A name can be deleted and created again while a handle to the
-// old key is still alive, and that handle's release must not be charged against the new key. Holds
-// therefore name a generation, and a release for a generation the cache has moved past does
-// nothing. Generations are never reused.
-static NSMutableDictionary<NSString *, NSNumber *> *_keyStoreGen;  // NOLINT(bugprone-reserved-identifier)
-static uint64_t _nextGeneration;                                   // NOLINT(bugprone-reserved-identifier)
+// Global dictionary to store cached keys.
+static dispatch_queue_t _keyStoreQueue;                               // NOLINT(bugprone-reserved-identifier)
+static NSMutableDictionary<NSString *, MPSSCacheEntry *> *_keyStore;  // NOLINT(bugprone-reserved-identifier)
+static uint64_t _nextGeneration;                                      // NOLINT(bugprone-reserved-identifier)
 
 void InitializeKeyStore() {
   static dispatch_once_t onceToken;
   dispatch_once(&onceToken, ^{
     _keyStoreQueue = dispatch_queue_create("com.microsoft.mpss.KeyStore", DISPATCH_QUEUE_SERIAL);
     _keyStore = [[NSMutableDictionary alloc] init];
-    _keyStoreRefs = [[NSMutableDictionary alloc] init];
-    _keyStoreGen = [[NSMutableDictionary alloc] init];
   });
 }
 
@@ -51,14 +56,12 @@ NSString *GetKeyLabel(const char *keyName) {
   return keyNameWithPrefix;
 }
 
-// Call only while running on _keyStoreQueue, in the same block that found or stored the entry.
-// Given a block of its own, a close or delete could land in between and evict the entry, leaving
-// this to record a hold on a name with nothing cached and to hand back generation 0, which no
-// later release can match.
-static uint64_t RetainLocked(NSString *keyLabel) {
-  NSNumber *holds = _keyStoreRefs[keyLabel];
-  _keyStoreRefs[keyLabel] = @((holds != nil ? [holds integerValue] : 0) + 1);
-  return [_keyStoreGen[keyLabel] unsignedLongLongValue];
+// Call only while running on _keyStoreQueue, on an entry found or stored in the same block. Given a
+// block of its own, a close or delete could land in between and evict the entry, leaving this to
+// record a hold on something no longer cached.
+static uint64_t RetainLocked(MPSSCacheEntry *entry) {
+  entry.holds += 1;
+  return entry.generation;
 }
 
 // A non-NULL generation means the key is being handed to a handle: a hold is taken and the
@@ -69,15 +72,18 @@ void StoreKey(NSString *keyLabel, SecKeyRef keyRef, uint64_t *generation) {
 
   if (keyLabel && keyRef) {
     dispatch_sync(_keyStoreQueue, ^{
-      _keyStore[keyLabel] = (__bridge id)keyRef;
       // A generation is established when the name starts being cached and kept while it stays
       // cached, so that two lookups which both miss and both store do not orphan the first one's
-      // hold. Deleting removes the generation, which is what makes the next create a new one.
-      if (_keyStoreGen[keyLabel] == nil) {
-        _keyStoreGen[keyLabel] = @(++_nextGeneration);
+      // hold. Deleting drops the entry, which is what makes the next create a new generation.
+      MPSSCacheEntry *entry = _keyStore[keyLabel];
+      if (entry == nil) {
+        entry = [[MPSSCacheEntry alloc] init];
+        entry.generation = ++_nextGeneration;
+        _keyStore[keyLabel] = entry;
       }
+      entry.key = (__bridge id)keyRef;
       if (generation != NULL) {
-        *generation = RetainLocked(keyLabel);
+        *generation = RetainLocked(entry);
       }
     });
   }
@@ -89,11 +95,12 @@ SecKeyRef CopyKey(NSString *keyLabel, uint64_t *generation) {
 
   __block SecKeyRef result = NULL;
   dispatch_sync(_keyStoreQueue, ^{
-    result = (__bridge SecKeyRef)(_keyStore[keyLabel]);
+    MPSSCacheEntry *entry = _keyStore[keyLabel];
+    result = (__bridge SecKeyRef)(entry.key);
     if (result) {
       CFRetain(result);
       if (generation != NULL) {
-        *generation = RetainLocked(keyLabel);
+        *generation = RetainLocked(entry);
       }
     }
   });
@@ -110,15 +117,15 @@ static SecKeyRef CopyKeyForGeneration(NSString *keyLabel, uint64_t generation) {
   __block SecKeyRef result = NULL;
   __block BOOL superseded = NO;
   dispatch_sync(_keyStoreQueue, ^{
-    NSNumber *current = _keyStoreGen[keyLabel];
-    if (current != nil && [current unsignedLongLongValue] != generation) {
+    MPSSCacheEntry *entry = _keyStore[keyLabel];
+    if (entry == nil) {
+      return;
+    }
+    if (entry.generation != generation) {
       superseded = YES;
       return;
     }
-    if (current == nil) {
-      return;
-    }
-    result = (__bridge SecKeyRef)(_keyStore[keyLabel]);
+    result = (__bridge SecKeyRef)(entry.key);
     if (result) {
       CFRetain(result);
     }
@@ -140,8 +147,8 @@ bool MPSS_KeychainGenerationIsCurrent(const char *keyName, uint64_t generation) 
     NSString *keyLabel = GetKeyLabel(keyName);
     __block bool superseded = false;
     dispatch_sync(_keyStoreQueue, ^{
-      NSNumber *stored = _keyStoreGen[keyLabel];
-      superseded = (stored != nil && [stored unsignedLongLongValue] != generation);
+      MPSSCacheEntry *entry = _keyStore[keyLabel];
+      superseded = (entry != nil && entry.generation != generation);
     });
 
     // Absence is not a supersession. It is also what a delete leaves behind when it purged the
@@ -154,20 +161,16 @@ void RemoveKey(NSString *keyLabel, uint64_t generation) {
   InitializeKeyStore();
 
   dispatch_sync(_keyStoreQueue, ^{
-    NSNumber *current = _keyStoreGen[keyLabel];
-    if (current == nil || [current unsignedLongLongValue] != generation) {
+    MPSSCacheEntry *entry = _keyStore[keyLabel];
+    if (entry == nil || entry.generation != generation) {
       // The hold was taken on an entry this name has since moved past, so there is nothing of this
       // handle's left to give up and the entry now under the name belongs to someone else.
       return;
     }
-    NSNumber *holds = _keyStoreRefs[keyLabel];
-    if (holds != nil && [holds integerValue] > 1) {
-      _keyStoreRefs[keyLabel] = @([holds integerValue] - 1);
-      return;
+    entry.holds -= 1;
+    if (entry.holds <= 0) {
+      [_keyStore removeObjectForKey:keyLabel];
     }
-    [_keyStoreRefs removeObjectForKey:keyLabel];
-    [_keyStoreGen removeObjectForKey:keyLabel];
-    [_keyStore removeObjectForKey:keyLabel];
   });
 }
 
@@ -177,8 +180,6 @@ void PurgeKey(NSString *keyLabel) {
   InitializeKeyStore();
 
   dispatch_sync(_keyStoreQueue, ^{
-    [_keyStoreRefs removeObjectForKey:keyLabel];
-    [_keyStoreGen removeObjectForKey:keyLabel];
     [_keyStore removeObjectForKey:keyLabel];
   });
 }
