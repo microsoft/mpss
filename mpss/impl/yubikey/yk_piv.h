@@ -320,10 +320,13 @@ class YubiKeyPIV
 
   private:
     // Held for the life of the connection, so that one device serves one connection at a time and
-    // no enumeration runs beside it. Declared before the connection state, so they are acquired
-    // before it is established and released only after it has been torn down. A caller holding one
-    // of these must not enumerate, which is why nothing constructed here reaches back into
-    // available_serials.
+    // no reader scan runs beside one. Taken in take_locks_and_connect once the reader is known. The
+    // bus is declared first so that destruction releases the device lock before it, reversing the
+    // order they were taken in.
+    //
+    // A scan wants the bus exclusively, so a thread holding these must not start one: the
+    // constructor settles which reader answers before taking them, and nothing reached from here
+    // calls available_serials.
     std::shared_lock<std::shared_mutex> bus_lock_;
     std::unique_lock<std::mutex> device_lock_;
 
