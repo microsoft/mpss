@@ -102,6 +102,11 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
     enable_language(OBJC)
     enable_language(OBJCXX)
     enable_language(Swift)
+
+    # Objective-C sources use automatic reference counting. Without it, a class holding an object
+    # needs a hand-written dealloc to give back what its property retained, which is a rule nothing
+    # checks until something leaks.
+    add_compile_options($<$<COMPILE_LANGUAGE:OBJC,OBJCXX>:-fobjc-arc>)
 endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Android")
