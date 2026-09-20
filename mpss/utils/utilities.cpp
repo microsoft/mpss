@@ -2,6 +2,9 @@
 // Licensed under the MIT license.
 
 #include "mpss/utils/utilities.h"
+#include <array>
+#include <functional>
+#include <mutex>
 #include <new>
 
 namespace
@@ -187,6 +190,22 @@ namespace
 // Depth rather than a flag, so a handler reached from another handler still reads as inside one.
 thread_local int interaction_handler_depth = 0;
 } // namespace
+
+std::mutex &name_mutex(std::string_view name)
+{
+    constexpr std::size_t stripe_count = 64;
+    using Stripes = std::array<std::mutex, stripe_count>;
+
+    // Immortal singleton state, for the same reason as the backend registry: a lifecycle operation
+    // running after this one was destroyed would otherwise lock a destroyed mutex. The one-time
+    // allocation is reclaimed by the OS at process exit.
+    static Stripes &stripes = []() -> Stripes & {
+        auto *fresh = new Stripes{}; // NOLINT(cppcoreguidelines-owning-memory) - intentional immortal singleton.
+        return *fresh;
+    }();
+
+    return stripes.at(std::hash<std::string_view>{}(name) % stripe_count);
+}
 
 bool in_interaction_handler() noexcept
 {

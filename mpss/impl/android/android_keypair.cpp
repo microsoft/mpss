@@ -6,6 +6,7 @@
 #include "mpss/impl/android/JNIObject.h"
 #include "mpss/impl/android/android_utils.h"
 #include "mpss/utils/utilities.h"
+#include <mutex>
 
 namespace mpss::impl::os
 {
@@ -16,6 +17,10 @@ using jni_bytearray = utils::JNIObj<jbyteArray>;
 
 bool AndroidKeyPair::do_delete_key()
 {
+    // Held for the same reason the lifecycle entry points hold it: checking that the name still
+    // holds what this handle opened, and then deleting it, must be one decision.
+    const std::scoped_lock lifecycle{mpss::utils::name_mutex(key_name_)};
+
     mpss::utils::log_trace("Deleting Android key '{}'.", key_name_);
 
     JNIEnvGuard guard;

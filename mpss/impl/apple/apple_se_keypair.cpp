@@ -5,6 +5,7 @@
 #include "mpss/impl/apple/apple_se_wrapper.h"
 #include "mpss/impl/apple/apple_utils.h"
 #include "mpss/utils/utilities.h"
+#include <mutex>
 
 namespace
 {
@@ -26,6 +27,10 @@ AppleSEKeyPair::~AppleSEKeyPair()
 
 bool AppleSEKeyPair::do_delete_key()
 {
+    // Held for the same reason the lifecycle entry points hold it: checking that the name still
+    // holds what this handle opened, and then deleting it, must be one decision.
+    const std::scoped_lock lifecycle{mpss::utils::name_mutex(name())};
+
     mpss::utils::log_trace("Deleting Secure Enclave key '{}'.", name());
 
     // Deleting reaches the name rather than the entry this handle opened, so refuse once the name

@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <format>
+#include <mutex>
 #include <optional>
 #include <span>
 #include <string>
@@ -303,6 +304,20 @@ bool check_sufficient_signature_buffer_size(std::span<const std::byte> sig, Algo
  * otherwise.
  */
 bool check_sufficient_public_key_buffer_size(std::span<const std::byte> public_key, Algorithm algorithm);
+
+/**
+ * @brief The lock guarding lifecycle operations on one key name.
+ *
+ * Creating, opening and deleting a name each look before they act, and a name is the only identity
+ * the library has: two creates of one absent name can both find it absent, and a delete can land
+ * between a handle checking that its key is still its own and deleting it. Holding this across a
+ * lifecycle operation makes each of them one decision.
+ *
+ * Chosen from a fixed set by hashing the name, so what this costs is bounded. Two unrelated names
+ * can share one and serialize needlessly, which is cheaper than a lock per name ever used.
+ */
+[[nodiscard]]
+std::mutex &name_mutex(std::string_view name);
 
 /**
  * @brief Whether this thread is currently inside an interaction handler.

@@ -23,6 +23,7 @@
 #include <gtest/gtest.h>
 #include <memory>
 #include <optional>
+#include <ranges>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -1223,6 +1224,58 @@ TEST_F(MPSS, ConcurrentSigningOnOneHandle)
     EXPECT_EQ(thread_count * per_thread, signed_count.load(std::memory_order_relaxed));
     EXPECT_EQ(thread_count * per_thread, verified_count.load(std::memory_order_relaxed));
 
+    MPSS::DeleteKey(key_name);
+}
+
+// A name is the only identity the library has, so creating one is a decision made once. Threads
+// racing to create the same absent name must not all find it absent and all create it, which on a
+// backend with two storage tiers leaves the name ambiguous and unopenable.
+TEST_F(MPSS, ConcurrentCreateOfOneNameProducesOneKey)
+{
+    constexpr int thread_count = 8;
+
+    // Two algorithms, because a backend may keep them in different places: one name created twice
+    // at once could otherwise land in two tiers at once and afterwards open from neither.
+    constexpr std::array<Algorithm, 2> algorithms{ecdsa_secp256r1_sha256, ecdsa_secp384r1_sha384};
+    if (!std::ranges::all_of(algorithms, [](Algorithm value) { return mpss::is_algorithm_available(value); }))
+    {
+        GTEST_SKIP() << "Algorithm not supported by current backend";
+    }
+
+    const std::string key_name = test_key_name("concurrent_create");
+    MPSS::DeleteKey(key_name);
+
+    std::atomic<int> created{0};
+    std::atomic<bool> go{false};
+    std::vector<std::unique_ptr<mpss::KeyPair>> handles(thread_count);
+    std::vector<std::thread> threads;
+    threads.reserve(thread_count);
+
+    for (int index = 0; index < thread_count; ++index)
+    {
+        threads.emplace_back([&handles, &created, &go, &key_name, &algorithms, index] {
+            while (!go.load(std::memory_order_acquire))
+            {
+                std::this_thread::yield();
+            }
+            handles[index] =
+                mpss::KeyPair::Create(key_name, algorithms.at(static_cast<std::size_t>(index) % algorithms.size()));
+            if (nullptr != handles[index])
+            {
+                created.fetch_add(1, std::memory_order_relaxed);
+            }
+        });
+    }
+
+    go.store(true, std::memory_order_release);
+    for (std::thread &thread : threads)
+    {
+        thread.join();
+    }
+
+    EXPECT_EQ(1, created.load(std::memory_order_relaxed));
+
+    handles.clear();
     MPSS::DeleteKey(key_name);
 }
 

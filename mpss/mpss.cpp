@@ -42,6 +42,10 @@ std::unique_ptr<KeyPair> KeyPair::Create(std::string_view name, Algorithm algori
         utils::log_and_set_error("MPSS cannot be called from an interaction handler.");
         return nullptr;
     }
+
+    // Held across the whole operation, so that looking for the name and acting on what was found
+    // are one decision rather than two another thread can land between.
+    const std::scoped_lock lifecycle{utils::name_mutex(name)};
     utils::log_trace("KeyPair::Create called for key '{}' with algorithm '{}'.", name,
                      get_algorithm_info(algorithm).type_str);
     return clear_error_on_success(impl::create_key(name, algorithm, policy));
@@ -56,6 +60,10 @@ std::unique_ptr<KeyPair> KeyPair::Create(std::string_view name, Algorithm algori
         utils::log_and_set_error("MPSS cannot be called from an interaction handler.");
         return nullptr;
     }
+
+    // Held across the whole operation, so that looking for the name and acting on what was found
+    // are one decision rather than two another thread can land between.
+    const std::scoped_lock lifecycle{utils::name_mutex(name)};
     utils::log_trace("KeyPair::Create called for key '{}' with algorithm '{}' on backend '{}'.", name,
                      get_algorithm_info(algorithm).type_str, backend_name);
     return clear_error_on_success(impl::create_key(backend_name, name, algorithm, policy));
@@ -69,6 +77,10 @@ std::unique_ptr<KeyPair> KeyPair::Open(std::string_view name)
         utils::log_and_set_error("MPSS cannot be called from an interaction handler.");
         return nullptr;
     }
+
+    // Held across the whole operation, so that looking for the name and acting on what was found
+    // are one decision rather than two another thread can land between.
+    const std::scoped_lock lifecycle{utils::name_mutex(name)};
     utils::log_trace("KeyPair::Open called for key '{}'.", name);
     return clear_error_on_success(impl::open_key(name));
 }
@@ -81,6 +93,10 @@ std::unique_ptr<KeyPair> KeyPair::Open(std::string_view name, std::string_view b
         utils::log_and_set_error("MPSS cannot be called from an interaction handler.");
         return nullptr;
     }
+
+    // Held across the whole operation, so that looking for the name and acting on what was found
+    // are one decision rather than two another thread can land between.
+    const std::scoped_lock lifecycle{utils::name_mutex(name)};
     utils::log_trace("KeyPair::Open called for key '{}' on backend '{}'.", name, backend_name);
     return clear_error_on_success(impl::open_key(backend_name, name));
 }
@@ -93,6 +109,10 @@ bool KeyPair::Delete(std::string_view name)
         utils::log_and_set_error("MPSS cannot be called from an interaction handler.");
         return false;
     }
+
+    // Held across the whole operation, so that looking for the name and acting on what was found
+    // are one decision rather than two another thread can land between.
+    const std::scoped_lock lifecycle{utils::name_mutex(name)};
     utils::log_trace("KeyPair::Delete called for key '{}'.", name);
     const bool deleted = impl::delete_key(name);
     if (deleted)
@@ -110,6 +130,10 @@ bool KeyPair::Delete(std::string_view name, std::string_view backend_name)
         utils::log_and_set_error("MPSS cannot be called from an interaction handler.");
         return false;
     }
+
+    // Held across the whole operation, so that looking for the name and acting on what was found
+    // are one decision rather than two another thread can land between.
+    const std::scoped_lock lifecycle{utils::name_mutex(name)};
     utils::log_trace("KeyPair::Delete called for key '{}' on backend '{}'.", name, backend_name);
     const bool deleted = impl::delete_key(backend_name, name);
     if (deleted)

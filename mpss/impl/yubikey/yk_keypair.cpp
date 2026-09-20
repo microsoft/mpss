@@ -6,6 +6,7 @@
 #include "mpss/impl/yubikey/yk_utils.h"
 #include "mpss/interaction_handler.h"
 #include "mpss/utils/utilities.h"
+#include <mutex>
 #include <ykpiv/ykpiv.h>
 
 namespace mpss::impl::yubikey
@@ -18,6 +19,10 @@ YubiKeyKeyPair::YubiKeyKeyPair(std::string_view name, Algorithm algorithm, std::
 
 bool YubiKeyKeyPair::do_delete_key()
 {
+    // Held for the same reason the lifecycle entry points hold it: checking that the name still
+    // holds what this handle opened, and then deleting it, must be one decision.
+    const std::scoped_lock lifecycle{mpss::utils::name_mutex(name_)};
+
     mpss::utils::log_trace("Deleting YubiKey key '{}' in slot {}.", name_, utils::get_slot_name(slot_));
     YubiKeyPIV piv{serial_};
     if (!piv.is_connected())
