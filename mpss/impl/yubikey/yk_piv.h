@@ -346,7 +346,8 @@ class YubiKeyPIV
      */
     std::string describe_default_credentials();
 
-    bool connect(std::uint32_t target_serial);
+    bool connect_to_reader(const std::string &reader, std::uint32_t target_serial);
+    bool take_locks_and_connect(std::uint32_t serial, const std::string &reader);
     void disconnect();
 
     /**

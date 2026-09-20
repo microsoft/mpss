@@ -23,6 +23,7 @@
 #include <openssl/x509.h>
 #include <optional>
 #include <span>
+#include <string>
 #include <utility>
 #include <vector>
 #include <ykpiv/ykpiv.h>
@@ -39,16 +40,20 @@ thread_local bool skipped_device = false;
 // serial and held for the life of the connection, a wait for a touch included, which is why a
 // second thread waits rather than racing.
 //
-// Enumeration is the reason for the second lock. Listing serials reaches every reader and selects
-// the PIV applet on each, which discards whatever security state a connection had established
-// there, so it cannot run beside any connection at all. Connections take the bus in shared mode and
-// enumeration takes it exclusively. Acquiring the bus before the device is the only order used, so
-// the two cannot deadlock against each other.
+// Reaching a reader selects the PIV applet there, which discards whatever security state a
+// connection had established, so scanning readers cannot run beside any connection at all. That is
+// what the bus is for: scanning takes it exclusively while a connection takes it shared. Which
+// reader answers for a serial is remembered, so opening a connection addresses that reader alone
+// rather than scanning towards it and disturbing every device it passes.
+//
+// The bus is acquired before a device and never while one is held, so the two cannot deadlock
+// against each other, and a scan is never needed while the bus is held shared.
 struct DeviceLocks
 {
     std::shared_mutex bus;
     std::mutex registry;
     std::map<std::uint32_t, std::unique_ptr<std::mutex>> by_serial;
+    std::map<std::uint32_t, std::string> reader_by_serial;
 };
 
 [[nodiscard]]
@@ -148,6 +153,84 @@ template <typename Visitor> bool for_each_yubikey(ykpiv_state *&state_out, Visit
     return false;
 }
 
+// Records which reader answers for each serial and reports the serials found. Reaching every reader
+// selects the PIV applet on each, which discards whatever security state a connection had
+// established there, so the caller must hold the bus exclusively.
+std::vector<std::uint32_t> scan_readers_locked(bool *device_skipped)
+{
+    if (nullptr != device_skipped)
+    {
+        *device_skipped = false;
+    }
+
+    std::vector<std::uint32_t> serials;
+    std::map<std::uint32_t, std::string> discovered;
+    ykpiv_state *state = nullptr;
+    skipped_device = false;
+
+    for_each_yubikey(state, [&](ykpiv_state *, std::uint32_t serial, const char *reader) {
+        if (std::ranges::find(serials, serial) != serials.end())
+        {
+            mpss::utils::log_warning("Duplicate serial {} found on reader '{}'.", serial, reader);
+        }
+        else
+        {
+            mpss::utils::log_trace("Found YubiKey with serial {} on reader '{}'.", serial, reader);
+            serials.push_back(serial);
+            discovered.emplace(serial, reader);
+        }
+        return false; // Continue to next reader.
+    });
+
+    // Replaced rather than merged, so a serial that no longer answers stops being remembered.
+    DeviceLocks &locks = device_locks();
+    {
+        const std::scoped_lock lock{locks.registry};
+        locks.reader_by_serial = std::move(discovered);
+    }
+
+    if (nullptr != device_skipped)
+    {
+        // A device that answered the reader but not its own serial was left out of the list, so a
+        // caller that has to speak for every attached device cannot rely on this being complete.
+        *device_skipped = skipped_device;
+    }
+
+    return serials;
+}
+
+// Which reader answers for a serial. Scanning is what discovers that, and it needs the bus
+// exclusively, so this holds no lock on return and must be called before a connection takes the bus
+// shared. Passing rescan is how a caller says that what was remembered no longer answers.
+[[nodiscard]]
+std::optional<std::string> resolve_reader(std::uint32_t serial, bool rescan)
+{
+    DeviceLocks &locks = device_locks();
+
+    if (!rescan)
+    {
+        const std::scoped_lock lock{locks.registry};
+        const auto entry = locks.reader_by_serial.find(serial);
+        if (locks.reader_by_serial.end() != entry)
+        {
+            return entry->second;
+        }
+    }
+
+    {
+        const std::unique_lock bus{locks.bus};
+        static_cast<void>(scan_readers_locked(nullptr));
+    }
+
+    const std::scoped_lock lock{locks.registry};
+    const auto entry = locks.reader_by_serial.find(serial);
+    if (locks.reader_by_serial.end() == entry)
+    {
+        return std::nullopt;
+    }
+    return entry->second;
+}
+
 } // namespace
 
 namespace mpss::impl::yubikey
@@ -230,9 +313,42 @@ EVP_PKEY *make_ec_public_key(const char *group_name, std::span<const std::byte> 
 }
 } // namespace
 
-YubiKeyPIV::YubiKeyPIV(std::uint32_t serial) : bus_lock_{device_locks().bus}, device_lock_{device_mutex(serial)}
+YubiKeyPIV::YubiKeyPIV(std::uint32_t serial)
 {
-    connect(serial);
+    // Which reader answers for this serial is settled before any lock is taken, because settling it
+    // may have to scan, and scanning needs the bus exclusively. Addressing that reader alone is
+    // what keeps opening one device from selecting the PIV applet on another that a second thread
+    // is in the middle of using.
+    std::optional<std::string> reader = resolve_reader(serial, /* rescan */ false);
+    if (reader.has_value() && take_locks_and_connect(serial, reader.value()))
+    {
+        return;
+    }
+
+    // Either nothing was remembered for this serial, or what was remembered no longer answers for
+    // it. A scan settles both. One retry is enough: a device still absent after a fresh scan is
+    // absent.
+    reader = resolve_reader(serial, /* rescan */ true);
+    if (!reader.has_value() || !take_locks_and_connect(serial, reader.value()))
+    {
+        mpss::utils::log_and_set_error("No YubiKey found with serial number {}.", serial);
+    }
+}
+
+bool YubiKeyPIV::take_locks_and_connect(std::uint32_t serial, const std::string &reader)
+{
+    bus_lock_ = std::shared_lock{device_locks().bus};
+    device_lock_ = std::unique_lock{device_mutex(serial)};
+    if (connect_to_reader(reader, serial))
+    {
+        return true;
+    }
+
+    // Nothing is held while the caller decides what to do next, so a rescan can take the bus
+    // exclusively without waiting on this.
+    device_lock_ = std::unique_lock<std::mutex>{};
+    bus_lock_ = std::shared_lock<std::shared_mutex>{};
+    return false;
 }
 
 YubiKeyPIV::~YubiKeyPIV()
@@ -240,25 +356,41 @@ YubiKeyPIV::~YubiKeyPIV()
     disconnect();
 }
 
-bool YubiKeyPIV::connect(std::uint32_t target_serial)
+bool YubiKeyPIV::connect_to_reader(const std::string &reader, std::uint32_t target_serial)
 {
-    const bool found = for_each_yubikey(state_, [&](ykpiv_state *, std::uint32_t serial, const char *reader) {
-        if (serial != target_serial)
-        {
-            mpss::utils::log_debug("Reader '{}': YubiKey serial {} does not match target {}.", reader, serial,
-                                   target_serial);
-            return false;
-        }
-        mpss::utils::log_trace("Connected to YubiKey with serial {} on reader '{}'.", serial, reader);
-        serial_ = serial;
-        return true;
-    });
-
-    if (!found)
+    ykpiv_state *state = nullptr;
+    ykpiv_rc rc = ykpiv_init(&state, 0);
+    if (YKPIV_OK != rc)
     {
-        mpss::utils::log_and_set_error("No YubiKey found with serial number {}.", target_serial);
+        mpss::utils::log_and_set_error("Failed to initialize ykpiv: {}", ykpiv_strerror(rc));
+        return false;
     }
-    return found;
+
+    const std::string exact_reader = std::string("@") + reader;
+    rc = ykpiv_connect(state, exact_reader.c_str());
+    if (YKPIV_OK != rc)
+    {
+        mpss::utils::log_trace("Reader '{}': connection failed ({}).", reader, ykpiv_strerror(rc));
+        ykpiv_done(state);
+        return false;
+    }
+
+    std::uint32_t serial = 0;
+    rc = ykpiv_get_serial(state, &serial);
+    if (YKPIV_OK != rc || serial != target_serial)
+    {
+        // Whatever answers this reader is not what the caller asked for, so what was remembered has
+        // gone stale.
+        mpss::utils::log_debug("Reader '{}' no longer answers for serial {}.", reader, target_serial);
+        ykpiv_disconnect(state);
+        ykpiv_done(state);
+        return false;
+    }
+
+    mpss::utils::log_trace("Connected to YubiKey with serial {} on reader '{}'.", serial, reader);
+    state_ = state;
+    serial_ = serial;
+    return true;
 }
 
 void YubiKeyPIV::disconnect()
@@ -1352,36 +1484,7 @@ std::vector<std::uint32_t> YubiKeyPIV::available_serials(bool *device_skipped)
     // Reaching every reader discards whatever security state a connection had established there, so
     // this runs alone.
     const std::unique_lock bus{device_locks().bus};
-
-    if (nullptr != device_skipped)
-    {
-        *device_skipped = false;
-    }
-    std::vector<std::uint32_t> serials;
-    ykpiv_state *state = nullptr;
-    skipped_device = false;
-
-    for_each_yubikey(state, [&](ykpiv_state *, std::uint32_t serial, const char *reader) {
-        if (std::ranges::find(serials, serial) != serials.end())
-        {
-            mpss::utils::log_warning("Duplicate serial {} found on reader '{}'.", serial, reader);
-        }
-        else
-        {
-            mpss::utils::log_trace("Found YubiKey with serial {} on reader '{}'.", serial, reader);
-            serials.push_back(serial);
-        }
-        return false; // Continue to next reader.
-    });
-
-    if (nullptr != device_skipped)
-    {
-        // A device that answered the reader but not its own serial was left out of the list, so a
-        // caller that has to speak for every attached device cannot rely on this being complete.
-        *device_skipped = skipped_device;
-    }
-
-    return serials;
+    return scan_readers_locked(device_skipped);
 }
 
 namespace
