@@ -8,6 +8,12 @@
 #include "mpss/impl/apple/apple_result.h"
 #include "mpss/log_c.h"
 
+// Memory here is managed by the compiler. Without this the file still builds, and a class holding
+// an object silently stops giving it back.
+#if !__has_feature(objc_arc)
+#error "This file requires automatic reference counting; build with -fobjc-arc."
+#endif
+
 // What a name holds while it is cached: the key itself, how many open handles depend on it so that
 // one handle's close does not evict an entry another is still using, and which entry those holds
 // were taken on. A name can be deleted and created again while a handle to the old key is still
