@@ -23,6 +23,12 @@
 @end
 
 @implementation MPSSCacheEntry
+// This file is compiled without ARC, so the retain the key property's setter takes has to be given
+// back here.
+- (void)dealloc {
+  [_key release];
+  [super dealloc];
+}
 @end
 
 // Global dictionary to store cached keys.
@@ -80,6 +86,8 @@ void StoreKey(NSString *keyLabel, SecKeyRef keyRef, uint64_t *generation) {
         entry = [[MPSSCacheEntry alloc] init];
         entry.generation = ++_nextGeneration;
         _keyStore[keyLabel] = entry;
+        // The dictionary holds it from here; this gives back the retain that alloc took.
+        [entry release];
       }
       entry.key = (__bridge id)keyRef;
       if (generation != NULL) {

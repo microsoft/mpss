@@ -1008,7 +1008,8 @@ class RecoveringKeyPair : public KeyPair
 class CountingReleaseKeyPair : public KeyPair
 {
   public:
-    CountingReleaseKeyPair() : KeyPair(ecdsa_secp256r1_sha256, false, "test")
+    explicit CountingReleaseKeyPair(bool succeed = true)
+        : KeyPair(ecdsa_secp256r1_sha256, false, "test"), succeed_(succeed)
     {
     }
 
@@ -1023,7 +1024,7 @@ class CountingReleaseKeyPair : public KeyPair
     bool do_release_key() override
     {
         releases.fetch_add(1, std::memory_order_relaxed);
-        return true;
+        return succeed_;
     }
 
     bool do_delete_key() override
@@ -1048,6 +1049,9 @@ class CountingReleaseKeyPair : public KeyPair
     {
         return public_key.size();
     }
+
+  private:
+    bool succeed_;
 };
 } // namespace
 
@@ -1119,6 +1123,17 @@ TEST(HandleThreadSafety, ConcurrentReleaseReachesTheBackendOnce)
         thread.join();
     }
 
+    EXPECT_EQ(1, handle.releases.load(std::memory_order_relaxed));
+}
+
+// A release runs once, so what that one attempt reported is what every later caller is told. A
+// handle that could not give up what it held must not report success to the next asker.
+TEST(HandleThreadSafety, AFailedReleaseIsReportedToEveryCaller)
+{
+    CountingReleaseKeyPair handle{false};
+
+    EXPECT_FALSE(handle.release_key());
+    EXPECT_FALSE(handle.release_key());
     EXPECT_EQ(1, handle.releases.load(std::memory_order_relaxed));
 }
 #endif

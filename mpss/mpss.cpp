@@ -225,14 +225,16 @@ bool KeyPair::release_locked()
     // once keeps a backend that reference counts a shared cache entry from giving up a hold that
     // belongs to another handle. Latching before the attempt rather than after a successful one
     // keeps that true of a release that fails part way through, where how much was given up is not
-    // known.
+    // known. What that one attempt reported is remembered, so a later caller is told what actually
+    // happened rather than that a release it never made succeeded.
     if (released_)
     {
-        return true;
+        return release_result_;
     }
     released_ = true;
+    release_result_ = do_release_key();
 
-    return do_release_key();
+    return release_result_;
 }
 
 bool KeyPair::release_key()

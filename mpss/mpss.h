@@ -354,7 +354,8 @@ class MPSS_DECOR KeyPair
      *
      * The handle is invalidated whether or not the release succeeds, so a false return reports that something the
      * handle held could not be given up rather than inviting another attempt. Releasing an already released handle
-     * reports success. Ignoring the answer is expected, which is why this is not [[nodiscard]].
+     * repeats what the one attempt reported, and describes it through @ref get_error only on the thread that made
+     * it. Ignoring the answer is expected, which is why this is not [[nodiscard]].
      * @return True if everything the handle held was released, false otherwise, in which case @ref get_error
      * describes the failure.
      */
@@ -409,6 +410,7 @@ class MPSS_DECOR KeyPair
     mutable std::shared_mutex mtx_;
 
     bool released_{false};
+    bool release_result_{true};
 };
 
 } // namespace mpss

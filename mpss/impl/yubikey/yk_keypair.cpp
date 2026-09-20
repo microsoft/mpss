@@ -131,7 +131,9 @@ bool YubiKeyKeyPair::do_verify(std::span<const std::byte> hash, std::span<const 
     // Extract public key and do software verification.
     const std::size_t expected_public_key_size = mpss::utils::get_public_key_size(algorithm());
     std::vector<std::byte> public_key(expected_public_key_size);
-    const std::size_t pk_len = extract_key(public_key);
+    // do_extract_key rather than extract_key: the public entry point takes the handle lock that
+    // verifying already holds, and that lock is not recursive.
+    const std::size_t pk_len = do_extract_key(public_key);
     if (0 == pk_len)
     {
         mpss::utils::log_and_set_error("Cannot verify with key '{}': public key extraction failed.", name_);
