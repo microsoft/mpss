@@ -186,6 +186,13 @@ OpenKeyResult try_open_key(std::string_view name)
     {
         return {.status = KeyProbeStatus::not_found, .value = nullptr};
     }
+    if (0 == opened.value())
+    {
+        // Zero is what the cache reports when it has no generation to give, and no cached entry
+        // ever carries it, so a handle built on one could reach nothing it had just opened.
+        mpss::utils::log_and_set_error("KeyManagement.OpenKey reported no generation for key '{}'.", name);
+        return {.status = KeyProbeStatus::operational_error, .value = nullptr};
+    }
     const std::uint64_t generation = static_cast<std::uint64_t>(opened.value());
 
     // The open took a hold on the cached key so that another handle's close cannot evict it. Every
@@ -505,8 +512,10 @@ std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm, 
     }
 
     const std::optional<std::int64_t> created = utils::unbox_long(env, result.get());
-    if (!created.has_value() || 0 > created.value())
+    if (!created.has_value() || 0 >= created.value())
     {
+        // Zero carries the same meaning here as on the open path: the cache had no generation to
+        // report, which leaves nothing for the handle to address.
         utils::report_java_error(env, "KeyManagement.CreateKey");
         return nullptr;
     }
