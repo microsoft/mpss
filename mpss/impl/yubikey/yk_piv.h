@@ -40,7 +40,10 @@ class YubiKeyPIV
     /**
      * @brief Constructs a YubiKeyPIV object and connects to the YubiKey with the specified serial number.
      *
-     * Iterates through available smart card readers and connects to the YubiKey whose serial number matches.
+     * Connects to the one reader that last answered for this serial rather than trying readers in
+     * turn, so that opening one device does not disturb a session another thread has on a different
+     * one. The serial is verified after connecting; a mapping that has gone stale costs one scan
+     * and one retry.
      *
      * If connection fails, the object is left in a disconnected state. All subsequent
      * operations will fail gracefully and return error values.
@@ -309,8 +312,9 @@ class YubiKeyPIV
     /**
      * @brief List the serial numbers of all currently available YubiKeys.
      *
-     * Briefly connects to each smart card reader, reads the serial number, and disconnects.
-     * This is a discovery method - it does not leave any connections open.
+     * Briefly connects to each smart card reader, reads the serial number, and disconnects. This is
+     * a discovery method: it leaves no connection open, and it records which reader answered for
+     * each serial, which is what lets a later connection address one reader directly.
      *
      * @param[out] device_skipped Optional. Set when a reader answered but the device on it could not
      * be identified, so the returned list is not a complete account of what is attached.
