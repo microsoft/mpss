@@ -274,6 +274,14 @@ P-256 key creation first requests StrongBox and falls back to AndroidKeyStore wh
 unavailable. Before API level 31, hardware-backed storage is reported as `Unknown Secure`; API
 level 31 and later report the specific Android security level.
 
+MPSS opens only keys the key store generated itself. A key imported into AndroidKeyStore really
+does reside in secure hardware and reports hardware backing accordingly, yet whoever imported it
+still holds the private material, which is the one thing a report of hardware backing is meant to
+rule out. Origin is stamped by the secure hardware at generation and cannot be supplied when
+generating, so it answers where the key came from rather than where it now lives. Anything not
+generated in the key store is refused by both `Open` and `Create`, including a securely imported
+key. Such a key can still be deleted, since deletion addresses the alias without loading the key.
+
 Use devices receiving current security updates; API compatibility alone does not establish security.
 
 The Android presets enable the shared OpenSSL provider and the test suite. Pass
@@ -544,8 +552,9 @@ if (!deleted) {
 }
 ```
 
-The member `delete_key()` requires an open handle. Use static `KeyPair::Delete` to clear a
-name without opening it, including an ambiguous name:
+The member `delete_key()` requires an open handle, and finishes that handle: once it succeeds the
+handle is released, and every operation on it fails from then on. Use static `KeyPair::Delete` to
+clear a name without opening it, including an ambiguous name:
 
 ```cpp
 // Clear a name outright, including one that Open refuses as ambiguous.
@@ -562,7 +571,41 @@ do not reuse the name until a later call succeeds.
 
 Windows skips providers it cannot open, so success does not establish absence there.
 YubiKey deletion by name requires a valid [slot label](#yubikey-backend-limitations-and-considerations).
-After either deletion API succeeds, do not use handles to the deleted keys.
+Handles to a deleted key refuse every operation afterwards, whichever API deleted it.
+
+### Releasing a Handle
+
+A handle holds something for as long as it lives: an OS key handle on Windows, a hold on a cached
+key on Apple and Android. Destroying it gives that back, so most callers never release explicitly.
+
+```cpp
+// Give up what the handle holds before it goes out of scope.
+bool released = handle->release_key();
+```
+
+Releasing is optional, and it is final. Afterwards every operation on the handle fails, including
+the size requests spelled as `sign_hash` and `extract_key` with an empty buffer. What the handle
+recorded when it was opened still answers: `algorithm`, `key_info`, `sign_hash_size` and
+`extract_key_size` never reach the key.
+
+The return value reports whether everything the handle held was given up. It is not
+`[[nodiscard]]`, because a caller with nothing to do with the answer may ignore it, and the
+destructor does. A `false` return does not invite another attempt: the handle is finished either
+way, and releasing an already released handle repeats what the one attempt reported.
+
+### Handles and a Name That Has Moved On
+
+A key can be deleted and created again under the same name while a handle to the old key is still
+open. That handle does not silently follow the name to the new key. Every operation on it fails
+with an error naming the reason:
+
+```text
+Key 'my-key' is no longer the key this handle opened.
+```
+
+That is deliberately different from reporting the key as missing, since a caller told a key is
+absent will reasonably try to create it. Open the name again to get a handle to whatever holds it
+now.
 
 ### Key Policies
 
