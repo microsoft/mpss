@@ -21,8 +21,6 @@ class WindowsKeyPair : public mpss::KeyPair
 
     ~WindowsKeyPair() override
     {
-        // Not release_key(): that is the caller's entry point and the base class latches it, while
-        // win_release() is idempotent on its own, clearing the handle it frees.
         static_cast<void>(win_release());
     }
 
