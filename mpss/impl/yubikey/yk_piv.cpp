@@ -153,9 +153,9 @@ template <typename Visitor> bool for_each_yubikey(ykpiv_state *&state_out, Visit
     return false;
 }
 
-// Records which reader answers for each serial and reports the serials found. Reaching every reader
-// selects the PIV applet on each, which discards whatever security state a connection had
-// established there, so the caller must hold the bus exclusively.
+// Records which reader answers for each serial and reports the serials found. Connects to every
+// reader in turn, which disturbs what a session has established on those devices, so the caller
+// must already hold the bus exclusively.
 std::vector<std::uint32_t> scan_readers_locked(bool *device_skipped)
 {
     if (nullptr != device_skipped)
@@ -1481,8 +1481,9 @@ std::uint8_t YubiKeyPIV::find_free_slot()
 
 std::vector<std::uint32_t> YubiKeyPIV::available_serials(bool *device_skipped)
 {
-    // Reaching every reader discards whatever security state a connection had established there, so
-    // this runs alone.
+    // Listing serials connects to every reader in turn, and connecting to a device disturbs what a
+    // session has established on it, a verified PIN among that. Connections take the bus shared and
+    // this takes it exclusively, so no session is open anywhere while this scans.
     const std::unique_lock bus{device_locks().bus};
     return scan_readers_locked(device_skipped);
 }
