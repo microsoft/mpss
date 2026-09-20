@@ -47,7 +47,10 @@ public class MemKeyStore {
     /**
      * Record that one more handle depends on this name's cached key.
      * @param keyName Name of the key being handed to a caller.
-     * @return The generation the hold was taken on, to be handed back to RemoveKey.
+     * @return The generation the hold was taken on. The handle keeps it and presents it with every
+     *         operation it makes, the release that gives the hold back included, so that a name
+     *         deleted and created again can be neither reached nor released through a handle opened
+     *         on the key that used to hold it.
      */
     public static long RetainKey(String keyName) {
         final CacheEntry entry = Entries.get(keyName);
