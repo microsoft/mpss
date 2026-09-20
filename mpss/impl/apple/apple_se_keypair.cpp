@@ -21,7 +21,7 @@ AppleSEKeyPair::AppleSEKeyPair(std::string_view name, Algorithm algorithm, std::
 
 AppleSEKeyPair::~AppleSEKeyPair()
 {
-    release_key();
+    release_from_destructor();
 }
 
 bool AppleSEKeyPair::do_delete_key()

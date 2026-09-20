@@ -241,6 +241,41 @@ bool KeyPair::release_key()
     return release_locked();
 }
 
+void KeyPair::release_from_destructor() noexcept
+{
+    try
+    {
+        static_cast<void>(release_key());
+    }
+    // NOLINTNEXTLINE(bugprone-empty-catch) - a destructor must not propagate exceptions.
+    catch (...)
+    {
+    }
+}
+
+KeyPair::~KeyPair()
+{
+    // Nothing can be released here: the backend has already been destroyed, so do_release_key no
+    // longer resolves to it. All this can do is say that a backend destructor did not release, and
+    // whatever that backend holds has been leaked.
+    if (released_)
+    {
+        return;
+    }
+
+    try
+    {
+        utils::log_warning("Key pair handle destroyed without a release. The '{}' backend's destructor must call "
+                           "release_from_destructor().",
+                           backend_name_);
+    }
+    // Formatting the message allocates, and a destructor must not propagate exceptions.
+    // NOLINTNEXTLINE(bugprone-empty-catch)
+    catch (...)
+    {
+    }
+}
+
 bool KeyPair::delete_key()
 {
     const std::unique_lock lock{mtx_};

@@ -25,7 +25,10 @@ class YubiKeyKeyPair : public mpss::KeyPair
      */
     YubiKeyKeyPair(std::string_view name, Algorithm algorithm, std::uint8_t slot, std::uint32_t serial);
 
-    ~YubiKeyKeyPair() override = default;
+    ~YubiKeyKeyPair() override
+    {
+        release_from_destructor();
+    }
 
   protected:
     bool do_release_key() override;

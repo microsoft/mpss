@@ -21,7 +21,7 @@ AppleKeychainKeyPair::AppleKeychainKeyPair(std::string_view name, Algorithm algo
 
 AppleKeychainKeyPair::~AppleKeychainKeyPair()
 {
-    release_key();
+    release_from_destructor();
 }
 
 bool AppleKeychainKeyPair::do_delete_key()

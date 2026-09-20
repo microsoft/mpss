@@ -20,14 +20,7 @@ class AndroidKeyPair : public mpss::KeyPair
 
     ~AndroidKeyPair() override
     {
-        try
-        {
-            release_key();
-        }
-        // NOLINTNEXTLINE(bugprone-empty-catch) - a destructor must not propagate exceptions.
-        catch (...)
-        {
-        }
+        release_from_destructor();
     }
 
   protected:

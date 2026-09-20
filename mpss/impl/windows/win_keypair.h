@@ -21,7 +21,7 @@ class WindowsKeyPair : public mpss::KeyPair
 
     ~WindowsKeyPair() override
     {
-        static_cast<void>(win_release());
+        release_from_destructor();
     }
 
   protected:

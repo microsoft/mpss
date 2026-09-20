@@ -961,6 +961,11 @@ class RecoveringKeyPair : public KeyPair
     {
     }
 
+    ~RecoveringKeyPair() override
+    {
+        release_from_destructor();
+    }
+
   protected:
     bool do_release_key() override
     {
@@ -1005,6 +1010,11 @@ class CountingReleaseKeyPair : public KeyPair
   public:
     CountingReleaseKeyPair() : KeyPair(ecdsa_secp256r1_sha256, false, "test")
     {
+    }
+
+    ~CountingReleaseKeyPair() override
+    {
+        release_from_destructor();
     }
 
     std::atomic<int> releases{0};

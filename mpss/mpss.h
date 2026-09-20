@@ -164,7 +164,7 @@ class MPSS_DECOR KeyPair
   public:
     KeyPair() = delete;
 
-    virtual ~KeyPair() = default;
+    virtual ~KeyPair();
 
     KeyPair(const KeyPair &) = delete;
     KeyPair &operator=(const KeyPair &) = delete;
@@ -370,6 +370,12 @@ class MPSS_DECOR KeyPair
     // NOLINTEND(*-non-private-member-variables-in-classes)
 
     KeyPair(Algorithm algorithm, bool hardware_backed, const char *storage_description);
+
+    // Releases the handle on the way out of a backend destructor, which is the only place it can
+    // happen: once ~KeyPair runs, the backend is gone and do_release_key no longer resolves to it.
+    // Every backend destructor must call this. Swallows what a release reports, since a destructor
+    // must not propagate an exception and there is nobody left to tell.
+    void release_from_destructor() noexcept;
 
     // Non-virtual interface. Each public operation above clears the last error, validates its
     // inputs and refuses a released handle before dispatching to one of the implementations
