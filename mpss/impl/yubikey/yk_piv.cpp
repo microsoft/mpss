@@ -1636,6 +1636,7 @@ bool authenticate_pin_interactive(YubiKeyPIV &piv, std::string_view context)
     const auto report_not_attempted = [&handler, &retries]() noexcept {
         try
         {
+            const mpss::utils::InteractionHandlerScope in_handler;
             handler->notify_pin_result(mpss::PinResult::not_attempted, retries);
         }
         catch (...) // NOLINT(bugprone-empty-catch) - see above; nothing useful remains to report.
@@ -1649,6 +1650,7 @@ bool authenticate_pin_interactive(YubiKeyPIV &piv, std::string_view context)
         std::optional<mpss::SecureString> pin_opt;
         try
         {
+            const mpss::utils::InteractionHandlerScope in_handler;
             pin_opt = handler->request_pin({.operation = context, .last_status = status, .retries_remaining = retries});
         }
         catch (const std::exception &e)
@@ -1691,7 +1693,10 @@ bool authenticate_pin_interactive(YubiKeyPIV &piv, std::string_view context)
             // able to lose the one fact that prevents the next operation spending another retry.
             remember_rejected_pin(serial, *pin_opt);
         }
-        handler->notify_pin_result(result, retries);
+        {
+            const mpss::utils::InteractionHandlerScope in_handler;
+            handler->notify_pin_result(result, retries);
+        }
 
         if (mpss::PinResult::ok == result)
         {

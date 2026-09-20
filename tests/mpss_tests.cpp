@@ -1126,6 +1126,31 @@ TEST(HandleThreadSafety, ConcurrentReleaseReachesTheBackendOnce)
     EXPECT_EQ(1, handle.releases.load(std::memory_order_relaxed));
 }
 
+// An interaction handler runs inside the locks the operation holding it already took, so a call
+// made from one would wait on its own caller. Entry points refuse instead.
+TEST(InteractionHandlerReentry, MpssRefusesWhileInsideAHandler)
+{
+    CountingReleaseKeyPair handle;
+    const std::vector<std::byte> hash(32, std::byte{'a'});
+    std::vector<std::byte> signature(handle.sign_hash_size());
+
+    EXPECT_NE(0, handle.sign_hash(hash, signature));
+
+    const mpss::utils::InteractionHandlerScope in_handler;
+    EXPECT_TRUE(mpss::utils::in_interaction_handler());
+
+    EXPECT_EQ(0, handle.sign_hash(hash, signature));
+    EXPECT_FALSE(handle.verify(hash, signature));
+    EXPECT_FALSE(handle.delete_key());
+    EXPECT_FALSE(handle.release_key());
+    EXPECT_EQ(nullptr, mpss::KeyPair::Open("mpss_reentry_test_key"));
+    EXPECT_EQ(nullptr, mpss::KeyPair::Create("mpss_reentry_test_key", ecdsa_secp256r1_sha256));
+    EXPECT_FALSE(mpss::KeyPair::Delete("mpss_reentry_test_key"));
+
+    // Refused rather than released, so the backend was never reached.
+    EXPECT_EQ(0, handle.releases.load(std::memory_order_relaxed));
+}
+
 // A release runs once, so what that one attempt reported is what every later caller is told. A
 // handle that could not give up what it held must not report success to the next asker.
 TEST(HandleThreadSafety, AFailedReleaseIsReportedToEveryCaller)

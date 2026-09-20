@@ -104,6 +104,7 @@ std::size_t YubiKeyKeyPair::do_sign_hash(std::span<const std::byte> hash, std::s
     // PIN is now authenticated (or wasn't needed). Sign may block waiting for touch if the key has a touch policy.
     if (needs_touch)
     {
+        const mpss::utils::InteractionHandlerScope in_handler;
         handler->notify_touch_needed();
     }
 
@@ -111,6 +112,7 @@ std::size_t YubiKeyKeyPair::do_sign_hash(std::span<const std::byte> hash, std::s
 
     if (needs_touch)
     {
+        const mpss::utils::InteractionHandlerScope in_handler;
         handler->notify_touch_complete(0 != written);
     }
 

@@ -182,4 +182,25 @@ bool check_sufficient_public_key_buffer_size(std::span<const std::byte> public_k
     return pk_size_ok;
 }
 
+namespace
+{
+// Depth rather than a flag, so a handler reached from another handler still reads as inside one.
+thread_local int interaction_handler_depth = 0;
+} // namespace
+
+bool in_interaction_handler() noexcept
+{
+    return 0 != interaction_handler_depth;
+}
+
+InteractionHandlerScope::InteractionHandlerScope() noexcept
+{
+    ++interaction_handler_depth;
+}
+
+InteractionHandlerScope::~InteractionHandlerScope() noexcept
+{
+    --interaction_handler_depth;
+}
+
 } // namespace mpss::utils

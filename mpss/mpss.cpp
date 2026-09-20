@@ -37,6 +37,11 @@ T clear_error_on_success(T result)
 std::unique_ptr<KeyPair> KeyPair::Create(std::string_view name, Algorithm algorithm, KeyPolicy policy)
 {
     clear_error();
+    if (utils::in_interaction_handler())
+    {
+        utils::log_and_set_error("MPSS cannot be called from an interaction handler.");
+        return nullptr;
+    }
     utils::log_trace("KeyPair::Create called for key '{}' with algorithm '{}'.", name,
                      get_algorithm_info(algorithm).type_str);
     return clear_error_on_success(impl::create_key(name, algorithm, policy));
@@ -46,6 +51,11 @@ std::unique_ptr<KeyPair> KeyPair::Create(std::string_view name, Algorithm algori
                                          KeyPolicy policy)
 {
     clear_error();
+    if (utils::in_interaction_handler())
+    {
+        utils::log_and_set_error("MPSS cannot be called from an interaction handler.");
+        return nullptr;
+    }
     utils::log_trace("KeyPair::Create called for key '{}' with algorithm '{}' on backend '{}'.", name,
                      get_algorithm_info(algorithm).type_str, backend_name);
     return clear_error_on_success(impl::create_key(backend_name, name, algorithm, policy));
@@ -54,6 +64,11 @@ std::unique_ptr<KeyPair> KeyPair::Create(std::string_view name, Algorithm algori
 std::unique_ptr<KeyPair> KeyPair::Open(std::string_view name)
 {
     clear_error();
+    if (utils::in_interaction_handler())
+    {
+        utils::log_and_set_error("MPSS cannot be called from an interaction handler.");
+        return nullptr;
+    }
     utils::log_trace("KeyPair::Open called for key '{}'.", name);
     return clear_error_on_success(impl::open_key(name));
 }
@@ -61,6 +76,11 @@ std::unique_ptr<KeyPair> KeyPair::Open(std::string_view name)
 std::unique_ptr<KeyPair> KeyPair::Open(std::string_view name, std::string_view backend_name)
 {
     clear_error();
+    if (utils::in_interaction_handler())
+    {
+        utils::log_and_set_error("MPSS cannot be called from an interaction handler.");
+        return nullptr;
+    }
     utils::log_trace("KeyPair::Open called for key '{}' on backend '{}'.", name, backend_name);
     return clear_error_on_success(impl::open_key(backend_name, name));
 }
@@ -68,6 +88,11 @@ std::unique_ptr<KeyPair> KeyPair::Open(std::string_view name, std::string_view b
 bool KeyPair::Delete(std::string_view name)
 {
     clear_error();
+    if (utils::in_interaction_handler())
+    {
+        utils::log_and_set_error("MPSS cannot be called from an interaction handler.");
+        return false;
+    }
     utils::log_trace("KeyPair::Delete called for key '{}'.", name);
     const bool deleted = impl::delete_key(name);
     if (deleted)
@@ -80,6 +105,11 @@ bool KeyPair::Delete(std::string_view name)
 bool KeyPair::Delete(std::string_view name, std::string_view backend_name)
 {
     clear_error();
+    if (utils::in_interaction_handler())
+    {
+        utils::log_and_set_error("MPSS cannot be called from an interaction handler.");
+        return false;
+    }
     utils::log_trace("KeyPair::Delete called for key '{}' on backend '{}'.", name, backend_name);
     const bool deleted = impl::delete_key(backend_name, name);
     if (deleted)
@@ -239,6 +269,12 @@ bool KeyPair::release_locked()
 
 bool KeyPair::release_key()
 {
+    // Refused rather than reported as released, since nothing was given up.
+    if (utils::in_interaction_handler())
+    {
+        utils::log_and_set_error("MPSS cannot be called from an interaction handler.");
+        return false;
+    }
     const std::unique_lock lock{mtx_};
     return release_locked();
 }
@@ -280,6 +316,11 @@ KeyPair::~KeyPair()
 
 bool KeyPair::delete_key()
 {
+    if (utils::in_interaction_handler())
+    {
+        utils::log_and_set_error("MPSS cannot be called from an interaction handler.");
+        return false;
+    }
     const std::unique_lock lock{mtx_};
     clear_error();
     if (released_)
@@ -304,6 +345,11 @@ bool KeyPair::delete_key()
 
 std::size_t KeyPair::sign_hash(std::span<const std::byte> hash, std::span<std::byte> sig) const
 {
+    if (utils::in_interaction_handler())
+    {
+        utils::log_and_set_error("MPSS cannot be called from an interaction handler.");
+        return 0;
+    }
     const std::shared_lock lock{mtx_};
     clear_error();
     if (released_)
@@ -329,6 +375,11 @@ std::size_t KeyPair::sign_hash(std::span<const std::byte> hash, std::span<std::b
 
 bool KeyPair::verify(std::span<const std::byte> hash, std::span<const std::byte> sig) const
 {
+    if (utils::in_interaction_handler())
+    {
+        utils::log_and_set_error("MPSS cannot be called from an interaction handler.");
+        return false;
+    }
     const std::shared_lock lock{mtx_};
     clear_error();
     if (released_)
@@ -350,6 +401,11 @@ bool KeyPair::verify(std::span<const std::byte> hash, std::span<const std::byte>
 
 std::size_t KeyPair::extract_key(std::span<std::byte> public_key) const
 {
+    if (utils::in_interaction_handler())
+    {
+        utils::log_and_set_error("MPSS cannot be called from an interaction handler.");
+        return 0;
+    }
     const std::shared_lock lock{mtx_};
     clear_error();
     if (released_)

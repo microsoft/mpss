@@ -304,4 +304,29 @@ bool check_sufficient_signature_buffer_size(std::span<const std::byte> sig, Algo
  */
 bool check_sufficient_public_key_buffer_size(std::span<const std::byte> public_key, Algorithm algorithm);
 
+/**
+ * @brief Whether this thread is currently inside an interaction handler.
+ *
+ * A handler is called from within the locks the operation that needs it already holds, a YubiKey
+ * session among them, so an MPSS call made from one would wait on locks held by its own caller.
+ * Entry points ask this and refuse rather than deadlock.
+ */
+[[nodiscard]]
+bool in_interaction_handler() noexcept;
+
+/**
+ * @brief Marks the calling thread as being inside an interaction handler for this scope.
+ */
+class InteractionHandlerScope
+{
+  public:
+    InteractionHandlerScope() noexcept;
+    ~InteractionHandlerScope() noexcept;
+
+    InteractionHandlerScope(const InteractionHandlerScope &) = delete;
+    InteractionHandlerScope &operator=(const InteractionHandlerScope &) = delete;
+    InteractionHandlerScope(InteractionHandlerScope &&) = delete;
+    InteractionHandlerScope &operator=(InteractionHandlerScope &&) = delete;
+};
+
 } // namespace mpss::utils
