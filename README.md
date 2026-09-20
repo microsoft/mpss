@@ -691,25 +691,31 @@ A `mpss::KeyPair` handle is safe to use from several threads at once. `sign_hash
 refused by it. Releasing is one decision however many threads ask at once: the backend release runs
 exactly once between them, and the rest are told the handle is released.
 
-`KeyPair::Create`, `KeyPair::Open` and `KeyPair::Delete` may be called concurrently. Each handle has
-its own lock, but that is all it owns: handles addressing the same key, or the same device, are
-still coupled through whatever they share. Deleting a key invalidates every handle to it, and a
-YubiKey serves one operation at a time whichever handle asks.
+`KeyPair::Create`, `KeyPair::Open` and `KeyPair::Delete` may be called concurrently, though two of
+them naming the same key run one after the other, so that each sees a settled answer rather than
+one another half finished. Each handle has its own lock, but that is all it owns: handles
+addressing the same key, or the same device, are still coupled through whatever they share.
+Deleting a key invalidates every handle to it, and a YubiKey serves one operation at a time
+whichever handle asks.
 
 Destroying a handle is not an operation. Like any other object, a `KeyPair` must not be destroyed
 while another thread is still inside it.
 
 The last-error channel is per-thread, so concurrent calls do not overwrite each other's
-diagnostics. See [Error Handling](#error-handling). An interaction handler may be called on
-whichever thread performs the operation; see [Custom Interaction Handlers](#custom-interaction-handlers).
+diagnostics. See [Error Handling](#error-handling).
+
+An interaction handler is called on whichever thread performs the operation, and from inside the
+locks that operation is holding, so **it must not call back into MPSS**. A call made from a handler
+is refused and reports an error rather than being allowed to wait on locks its own caller holds.
+See [Custom Interaction Handlers](#custom-interaction-handlers).
 
 **YubiKey.** One device serves one operation at a time. A PIV session is stateful, since verifying
 a PIN and then signing are separate exchanges carried on one connection, so MPSS serializes by
 device serial across every handle and thread in the process. A key whose touch policy requires a
 touch holds the device while it waits, and other threads addressing that device wait with it.
-Different YubiKeys proceed in parallel. Listing devices reaches every reader and discards whatever
-security state a connection had established there, so it runs alone, excluding connections to all
-devices while it scans.
+Different YubiKeys proceed in parallel. Listing devices connects to every reader in turn, and
+connecting to a device disturbs what a session has established on it, a verified PIN among that, so
+a listing runs only while no session is open on any device.
 
 **Other backends.** Apple and Android resolve a key through caches that are internally
 synchronized, and Windows hands the key handle the process owns straight to CNG. None of them
@@ -901,6 +907,12 @@ by delaying the dialog briefly and cancelling it if completion has already arriv
 
 Never log the PIN, and do not keep it after returning it. The handler is called on whichever thread
 performs the operation, so an implementation that drives UI must marshal to its own UI thread.
+
+A handler runs from inside the locks the operation is holding, the device's own among them, so it
+must not call back into MPSS. Creating, opening, deleting, signing or releasing from a handler is
+refused and reports an error, because the alternative is waiting on a lock the handler's own caller
+holds, which on a YubiKey means a device that stops answering with someone waiting to touch it. Do
+any MPSS work before the operation that needs the PIN, or after it returns.
 
 MPSS stops asking on cancellation, an empty PIN, success, lockout, authentication errors, or
 repetition of a PIN this device has already refused.
