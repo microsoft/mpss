@@ -320,13 +320,14 @@ class YubiKeyPIV
 
   private:
     // Held for the life of the connection, so that one device serves one connection at a time and
-    // no reader scan runs beside one. Taken in take_locks_and_connect once the reader is known. The
+    // no reader scan runs beside one. The bus is taken first and spans reading which reader answers
+    // for the serial as well as connecting to it, so a scan cannot replace that mapping in between. The
     // bus is declared first so that destruction releases the device lock before it, reversing the
     // order they were taken in.
     //
     // A scan wants the bus exclusively, so a thread holding these must not start one: the
-    // constructor settles which reader answers before taking them, and nothing reached from here
-    // calls available_serials.
+    // constructor releases both before rescanning, and nothing reached from here calls
+    // available_serials.
     std::shared_lock<std::shared_mutex> bus_lock_;
     std::unique_lock<std::mutex> device_lock_;
 
@@ -350,7 +351,7 @@ class YubiKeyPIV
     std::string describe_default_credentials();
 
     bool connect_to_reader(const std::string &reader, std::uint32_t target_serial);
-    bool take_locks_and_connect(std::uint32_t serial, const std::string &reader);
+    bool connect_to_remembered_reader(std::uint32_t serial);
     void disconnect();
 
     /**
