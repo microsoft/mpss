@@ -246,7 +246,8 @@ public class KeyManagement {
      * @param keyName Name of the key to create.
      * @param algorithm Algorithm for the key.
      * @return The generation the hold was taken on, or null if the key could not be created. The
-     *         generation must be handed back to CloseKey.
+     *         handle keeps it and presents it with every operation it makes, the release that gives
+     *         the hold back included.
      */
     public static Long CreateKey(String keyName, Algorithm algorithm) {
         ClearError();
@@ -524,11 +525,6 @@ public class KeyManagement {
     }
 
     /**
-     * Delete the given key.
-     * @param keyName Name of the key to delete.
-     * @return True if the key was deleted successfully, False otherwise.
-     */
-    /**
      * Delete the key a handle opened, refusing once the name has moved on.
      *
      * Deleting addresses the alias rather than the cached entry, so a handle whose key is gone
@@ -597,7 +593,8 @@ public class KeyManagement {
      * Open the key pair with the given name.
      * @param keyName Name of the key pair to open.
      * @return The generation the hold was taken on, -1 if no such key exists, or null on error. The
-     *         generation must be handed back to CloseKey.
+     *         handle keeps it and presents it with every operation it makes, the release that gives
+     *         the hold back included.
      */
     public static Long OpenKey(String keyName) {
         ClearError();

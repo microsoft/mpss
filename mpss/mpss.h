@@ -51,8 +51,8 @@ MPSS_DECOR bool has_error() noexcept;
 /**
  * @brief Clears the last error for this thread.
  *
- * Every fallible MPSS operation already clears the last error on entry, so this is not needed to
- * keep one call's error from leaking into the next.
+ * Every fallible MPSS operation clears the last error on entry, apart from @ref KeyPair::release_key,
+ * so this is not needed to keep one call's error from leaking into the next.
  *
  * It is for marking an error as handled. Since @ref get_error does not consume the error, an outer
  * layer that inspects it cannot tell an error an inner layer already reported from a fresh one.

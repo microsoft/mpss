@@ -510,8 +510,8 @@ func isSupported() -> Bool {
 /// Open an existing private key.
 /// - Parameters:
 ///     - keyName: Name of the private key to open.
-///     - generation: Receives the cache entry the hold was taken on, to be handed back to
-///       MPSS_SE_CloseKey.
+///     - generation: Receives the generation the hold was taken on. The handle keeps it and
+///       presents it with every operation it makes, the release that gives the hold back included.
 /// - Returns: Success, expected-negative if absent, or operational-error.
 @_cdecl("MPSS_SE_OpenExistingKey")
 func openExistingKey(_ keyName: UnsafePointer<CChar>, _ generation: UnsafeMutablePointer<UInt64>)

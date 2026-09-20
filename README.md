@@ -631,7 +631,9 @@ Read `mpss::get_error()` immediately after failure on the same thread.
 #### Last-error contract
 
 Fallible core operations clear the last error on entry; metadata, sizing, and backend-name
-accessors leave it untouched. For normal returns:
+accessors leave it untouched. `KeyPair::release_key` is the exception among the fallible ones: it
+leaves the last error alone, so that destroying a handle cannot discard what the caller was about
+to read. For normal returns:
 
 | Outcome | Return value | Last error |
 | --- | --- | --- |
@@ -689,8 +691,10 @@ A `mpss::KeyPair` handle is safe to use from several threads at once. `sign_hash
 refused by it. Releasing is one decision however many threads ask at once: the backend release runs
 exactly once between them, and the rest are told the handle is released.
 
-`KeyPair::Create`, `KeyPair::Open` and `KeyPair::Delete` may be called concurrently, and distinct
-handles are independent of each other.
+`KeyPair::Create`, `KeyPair::Open` and `KeyPair::Delete` may be called concurrently. Each handle has
+its own lock, but that is all it owns: handles addressing the same key, or the same device, are
+still coupled through whatever they share. Deleting a key invalidates every handle to it, and a
+YubiKey serves one operation at a time whichever handle asks.
 
 Destroying a handle is not an operation. Like any other object, a `KeyPair` must not be destroyed
 while another thread is still inside it.

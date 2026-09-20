@@ -27,7 +27,10 @@ template <typename T> struct CleansingAllocator
 
     CleansingAllocator() = default;
 
-    // NOLINTNEXTLINE(*-explicit-constructor) - the Allocator requirements make rebinding implicit.
+    // Rebinding is a conversion the standard library makes for you, and std::allocator's own is
+    // implicit too. Explicit would still satisfy the requirement table, which direct-initializes,
+    // but it breaks copy-initializing a rebound allocator.
+    // NOLINTNEXTLINE(*-explicit-constructor)
     template <typename U> constexpr CleansingAllocator(const CleansingAllocator<U> &) noexcept
     {
     }
