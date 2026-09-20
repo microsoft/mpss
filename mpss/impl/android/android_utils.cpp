@@ -188,7 +188,7 @@ std::optional<bool> unbox_boolean(JNIEnv *env, jobject boolean_obj)
     }
 
     jclass boolean_class = JNIHelper::boolean_class();
-    jmethodID method = JNIHelper::boolean_value_method();
+    jmethodID method = JNIHelper::method(JNIHelper::JavaMethod::boolean_value);
     if (nullptr == boolean_class || nullptr == method)
     {
         mpss::utils::log_and_set_error("Java Boolean metadata is unavailable.");
@@ -213,7 +213,7 @@ std::optional<std::int64_t> unbox_long(JNIEnv *env, jobject long_obj)
     }
 
     jclass long_class = JNIHelper::long_class();
-    jmethodID method = JNIHelper::long_value_method();
+    jmethodID method = JNIHelper::method(JNIHelper::JavaMethod::long_value);
     if (nullptr == long_class || nullptr == method)
     {
         mpss::utils::log_and_set_error("Java Long metadata is unavailable.");
@@ -245,12 +245,7 @@ void report_java_error(JNIEnv *env, std::string_view operation)
         return;
     }
 
-    jmethodID method = env->GetStaticMethodID(key_management, "TakeError", "()Ljava/lang/String;");
-    if (check_and_clear_exception(env, "resolving KeyManagement.TakeError"))
-    {
-        report_error_retrieval_failure(operation);
-        return;
-    }
+    jmethodID method = JNIHelper::method(JNIHelper::JavaMethod::take_error);
     if (nullptr == method)
     {
         mpss::utils::log_and_set_error("{} failed; KeyManagement.TakeError is unavailable.", operation);

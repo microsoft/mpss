@@ -3,6 +3,11 @@
 
 #include "mpss/impl/android/JNIHelper.h"
 #include "mpss/impl/android/android_utils.h"
+#include "mpss/utils/utilities.h"
+#include <algorithm>
+#include <array>
+#include <cstddef>
+#include <ranges>
 
 extern "C" JNIEXPORT jint JNI_OnLoad(JavaVM *vm, void * /*reserved*/)
 try
@@ -28,14 +33,114 @@ JavaVM *mpss::impl::os::JNIHelper::java_vm_ = nullptr;
 jclass mpss::impl::os::JNIHelper::key_management_class_ = nullptr;
 jclass mpss::impl::os::JNIHelper::algorithm_class_ = nullptr;
 jclass mpss::impl::os::JNIHelper::boolean_class_ = nullptr;
-jmethodID mpss::impl::os::JNIHelper::boolean_value_method_ = nullptr;
 jclass mpss::impl::os::JNIHelper::long_class_ = nullptr;
-jmethodID mpss::impl::os::JNIHelper::long_value_method_ = nullptr;
+std::array<jmethodID, static_cast<std::size_t>(mpss::impl::os::JNIHelper::JavaMethod::count)>
+    mpss::impl::os::JNIHelper::methods_{};
 thread_local bool mpss::impl::os::JNIEnvGuard::attached_ = false;
 thread_local int mpss::impl::os::JNIEnvGuard::ref_count_ = 0;
 
 namespace mpss::impl::os
 {
+
+namespace
+{
+enum class OwnerClass
+{
+    key_management,
+    algorithm,
+    boolean_box,
+    long_box
+};
+
+struct MethodSpec
+{
+    JNIHelper::JavaMethod id;
+    OwnerClass owner;
+    const char *name;
+    const char *descriptor;
+    bool is_static;
+};
+
+// The descriptors this backend depends on. Checked against what the built JAR exposes rather than
+// against the Java sources, since a method resolved by a string cannot fail to compile.
+constexpr std::array<MethodSpec, static_cast<std::size_t>(JNIHelper::JavaMethod::count)> method_table{{
+    {.id = JNIHelper::JavaMethod::open_key,
+     .owner = OwnerClass::key_management,
+     .name = "OpenKey",
+     .descriptor = "(Ljava/lang/String;)Ljava/lang/Long;",
+     .is_static = true},
+    {.id = JNIHelper::JavaMethod::create_key,
+     .owner = OwnerClass::key_management,
+     .name = "CreateKey",
+     .descriptor = "(Ljava/lang/String;Lcom/microsoft/mpss/Algorithm;)Ljava/lang/Long;",
+     .is_static = true},
+    {.id = JNIHelper::JavaMethod::close_key,
+     .owner = OwnerClass::key_management,
+     .name = "CloseKey",
+     .descriptor = "(Ljava/lang/String;J)V",
+     .is_static = true},
+    {.id = JNIHelper::JavaMethod::sign_hash,
+     .owner = OwnerClass::key_management,
+     .name = "SignHash",
+     .descriptor = "(Ljava/lang/String;[BJ)[B",
+     .is_static = true},
+    {.id = JNIHelper::JavaMethod::verify_signature,
+     .owner = OwnerClass::key_management,
+     .name = "VerifySignature",
+     .descriptor = "(Ljava/lang/String;[B[BJ)Ljava/lang/Boolean;",
+     .is_static = true},
+    {.id = JNIHelper::JavaMethod::verify_standalone_signature,
+     .owner = OwnerClass::key_management,
+     .name = "VerifySignature",
+     .descriptor = "([B[B[B)Ljava/lang/Boolean;",
+     .is_static = true},
+    {.id = JNIHelper::JavaMethod::get_public_key,
+     .owner = OwnerClass::key_management,
+     .name = "GetPublicKey",
+     .descriptor = "(Ljava/lang/String;J)[B",
+     .is_static = true},
+    {.id = JNIHelper::JavaMethod::delete_key_by_generation,
+     .owner = OwnerClass::key_management,
+     .name = "DeleteKey",
+     .descriptor = "(Ljava/lang/String;J)Ljava/lang/Boolean;",
+     .is_static = true},
+    {.id = JNIHelper::JavaMethod::delete_key_by_name,
+     .owner = OwnerClass::key_management,
+     .name = "DeleteKey",
+     .descriptor = "(Ljava/lang/String;)Ljava/lang/Boolean;",
+     .is_static = true},
+    {.id = JNIHelper::JavaMethod::get_key_algorithm,
+     .owner = OwnerClass::key_management,
+     .name = "GetKeyAlgorithm",
+     .descriptor = "(Ljava/lang/String;)Lcom/microsoft/mpss/Algorithm;",
+     .is_static = true},
+    {.id = JNIHelper::JavaMethod::get_key_security_level,
+     .owner = OwnerClass::key_management,
+     .name = "GetKeySecurityLevel",
+     .descriptor = "(Ljava/lang/String;)I",
+     .is_static = true},
+    {.id = JNIHelper::JavaMethod::take_error,
+     .owner = OwnerClass::key_management,
+     .name = "TakeError",
+     .descriptor = "()Ljava/lang/String;",
+     .is_static = true},
+    {.id = JNIHelper::JavaMethod::algorithm_name,
+     .owner = OwnerClass::algorithm,
+     .name = "name",
+     .descriptor = "()Ljava/lang/String;",
+     .is_static = false},
+    {.id = JNIHelper::JavaMethod::boolean_value,
+     .owner = OwnerClass::boolean_box,
+     .name = "booleanValue",
+     .descriptor = "()Z",
+     .is_static = false},
+    {.id = JNIHelper::JavaMethod::long_value,
+     .owner = OwnerClass::long_box,
+     .name = "longValue",
+     .descriptor = "()J",
+     .is_static = false},
+}};
+} // namespace
 
 bool JNIHelper::init(JavaVM *vm)
 {
@@ -77,15 +182,41 @@ bool JNIHelper::init(JavaVM *vm)
         return false;
     }
 
-    long_value_method_ = env->GetMethodID(long_class_, "longValue", "()J");
-    if (utils::check_and_clear_exception(env, "resolving Long.longValue") || nullptr == long_value_method_)
-    {
-        uninit(vm);
-        return false;
-    }
+    const auto owner_class = [](OwnerClass owner) -> jclass {
+        switch (owner)
+        {
+        case OwnerClass::key_management:
+            return key_management_class_;
+        case OwnerClass::algorithm:
+            return algorithm_class_;
+        case OwnerClass::boolean_box:
+            return boolean_class_;
+        case OwnerClass::long_box:
+            return long_class_;
+        }
+        return nullptr;
+    };
 
-    boolean_value_method_ = env->GetMethodID(boolean_class_, "booleanValue", "()Z");
-    if (utils::check_and_clear_exception(env, "resolving Boolean.booleanValue") || nullptr == boolean_value_method_)
+    const auto cache_method = [env, &owner_class](const MethodSpec &spec) {
+        jclass owner = owner_class(spec.owner);
+        if (nullptr == owner)
+        {
+            return false;
+        }
+
+        jmethodID resolved = spec.is_static ? env->GetStaticMethodID(owner, spec.name, spec.descriptor)
+                                            : env->GetMethodID(owner, spec.name, spec.descriptor);
+        if (utils::check_and_clear_exception(env, spec.name) || nullptr == resolved)
+        {
+            mpss::utils::log_and_set_error("Could not resolve Java method '{}{}'.", spec.name, spec.descriptor);
+            return false;
+        }
+
+        methods_.at(static_cast<std::size_t>(spec.id)) = resolved;
+        return true;
+    };
+
+    if (!std::ranges::all_of(method_table, cache_method))
     {
         uninit(vm);
         return false;
@@ -122,9 +253,8 @@ void JNIHelper::uninit(JavaVM *vm)
         }
     }
 
-    boolean_value_method_ = nullptr;
+    methods_.fill(nullptr);
     boolean_class_ = nullptr;
-    long_value_method_ = nullptr;
     long_class_ = nullptr;
     algorithm_class_ = nullptr;
     key_management_class_ = nullptr;
@@ -133,9 +263,13 @@ void JNIHelper::uninit(JavaVM *vm)
 
 bool JNIHelper::initialized()
 {
-    return nullptr != java_vm_ && nullptr != key_management_class_ && nullptr != algorithm_class_ &&
-           nullptr != boolean_class_ && nullptr != boolean_value_method_ && nullptr != long_class_ &&
-           nullptr != long_value_method_;
+    if (nullptr == java_vm_ || nullptr == key_management_class_ || nullptr == algorithm_class_ ||
+        nullptr == boolean_class_ || nullptr == long_class_)
+    {
+        return false;
+    }
+
+    return std::ranges::none_of(methods_, [](jmethodID resolved) { return nullptr == resolved; });
 }
 
 void JNIHelper::detach()
@@ -194,19 +328,14 @@ jclass JNIHelper::boolean_class()
     return boolean_class_;
 }
 
-jmethodID JNIHelper::boolean_value_method()
-{
-    return boolean_value_method_;
-}
-
 jclass JNIHelper::long_class()
 {
     return long_class_;
 }
 
-jmethodID JNIHelper::long_value_method()
+jmethodID JNIHelper::method(JavaMethod id)
 {
-    return long_value_method_;
+    return methods_.at(static_cast<std::size_t>(id));
 }
 
 // RAII Wrapper.
@@ -234,13 +363,10 @@ JNIEnvGuard::~JNIEnvGuard()
     }
 
     ref_count_--;
-    if (0 == ref_count_)
+    if (0 == ref_count_ && attached_)
     {
-        if (attached_)
-        {
-            JNIHelper::detach();
-            attached_ = false;
-        }
+        JNIHelper::detach();
+        attached_ = false;
     }
 }
 

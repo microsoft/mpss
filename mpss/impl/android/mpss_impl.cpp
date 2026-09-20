@@ -44,11 +44,7 @@ void get_key_properties(std::string_view name, bool &hardware_backed, const char
         return;
     }
 
-    jmethodID method = env->GetStaticMethodID(key_management, "GetKeySecurityLevel", "(Ljava/lang/String;)I");
-    if (mpss::impl::os::utils::check_and_clear_exception(env, "resolving KeyManagement.GetKeySecurityLevel"))
-    {
-        return;
-    }
+    jmethodID method = mpss::impl::os::JNIHelper::method(mpss::impl::os::JNIHelper::JavaMethod::get_key_security_level);
     if (nullptr == method)
     {
         mpss::utils::log_and_set_error("Could not get KeyManagement.GetKeySecurityLevel Java method");
@@ -122,8 +118,8 @@ using OpenKeyResult = KeyProbeResult<std::unique_ptr<KeyPair>>;
 // is released by the key pair's destructor, and on these paths no key pair is ever constructed.
 void release_cached_key(JNIEnv *env, jclass key_management, jstring key_name, std::uint64_t generation)
 {
-    jmethodID method = env->GetStaticMethodID(key_management, "CloseKey", "(Ljava/lang/String;J)V");
-    if (utils::check_and_clear_exception(env, "resolving KeyManagement.CloseKey") || nullptr == method)
+    jmethodID method = JNIHelper::method(JNIHelper::JavaMethod::close_key);
+    if (nullptr == method)
     {
         return;
     }
@@ -163,11 +159,7 @@ OpenKeyResult try_open_key(std::string_view name)
         return {.status = KeyProbeStatus::operational_error, .value = nullptr};
     }
 
-    jmethodID method = env->GetStaticMethodID(key_management, "OpenKey", "(Ljava/lang/String;)Ljava/lang/Long;");
-    if (utils::check_and_clear_exception(env, "resolving KeyManagement.OpenKey"))
-    {
-        return {.status = KeyProbeStatus::operational_error, .value = nullptr};
-    }
+    jmethodID method = JNIHelper::method(JNIHelper::JavaMethod::open_key);
     if (nullptr == method)
     {
         mpss::utils::log_and_set_error("Could not get KeyManagement.OpenKey Java method.");
@@ -208,12 +200,7 @@ OpenKeyResult try_open_key(std::string_view name)
     });
 
     // Now we need the Algorithm.
-    jmethodID mid_algo =
-        env->GetStaticMethodID(key_management, "GetKeyAlgorithm", "(Ljava/lang/String;)Lcom/microsoft/mpss/Algorithm;");
-    if (utils::check_and_clear_exception(env, "resolving KeyManagement.GetKeyAlgorithm"))
-    {
-        return {.status = KeyProbeStatus::operational_error, .value = nullptr};
-    }
+    jmethodID mid_algo = JNIHelper::method(JNIHelper::JavaMethod::get_key_algorithm);
     if (nullptr == mid_algo)
     {
         mpss::utils::log_and_set_error("Failed to get KeyManagement.GetKeyAlgorithm method.");
@@ -238,11 +225,7 @@ OpenKeyResult try_open_key(std::string_view name)
         return {.status = KeyProbeStatus::operational_error, .value = nullptr};
     }
 
-    jmethodID name_method = env->GetMethodID(algorithm_class, "name", "()Ljava/lang/String;");
-    if (utils::check_and_clear_exception(env, "resolving Algorithm.name"))
-    {
-        return {.status = KeyProbeStatus::operational_error, .value = nullptr};
-    }
+    jmethodID name_method = JNIHelper::method(JNIHelper::JavaMethod::algorithm_name);
     if (nullptr == name_method)
     {
         mpss::utils::log_and_set_error("Could not get method id for Algorithm.name.");
@@ -361,11 +344,7 @@ bool delete_key(std::string_view name)
         return false;
     }
 
-    jmethodID method = env->GetStaticMethodID(key_management, "DeleteKey", "(Ljava/lang/String;)Ljava/lang/Boolean;");
-    if (utils::check_and_clear_exception(env, "resolving KeyManagement.DeleteKey"))
-    {
-        return false;
-    }
+    jmethodID method = JNIHelper::method(JNIHelper::JavaMethod::delete_key_by_name);
     if (nullptr == method)
     {
         mpss::utils::log_and_set_error("Could not get KeyManagement.DeleteKey Java method.");
@@ -449,12 +428,7 @@ std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm, 
         return nullptr;
     }
 
-    jmethodID method = env->GetStaticMethodID(key_management, "CreateKey",
-                                              "(Ljava/lang/String;Lcom/microsoft/mpss/Algorithm;)Ljava/lang/Long;");
-    if (utils::check_and_clear_exception(env, "resolving KeyManagement.CreateKey"))
-    {
-        return nullptr;
-    }
+    jmethodID method = JNIHelper::method(JNIHelper::JavaMethod::create_key);
     if (nullptr == method)
     {
         mpss::utils::log_and_set_error("Could not get KeyManagement.CreateKey Java method.");
@@ -609,11 +583,7 @@ bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_k
         return false;
     }
 
-    jmethodID method = env->GetStaticMethodID(key_management, "VerifySignature", "([B[B[B)Ljava/lang/Boolean;");
-    if (utils::check_and_clear_exception(env, "resolving KeyManagement.VerifySignature"))
-    {
-        return false;
-    }
+    jmethodID method = JNIHelper::method(JNIHelper::JavaMethod::verify_standalone_signature);
     if (nullptr == method)
     {
         mpss::utils::log_and_set_error("Could not get KeyManagement.VerifySignature Java method.");

@@ -33,11 +33,7 @@ bool AndroidKeyPair::do_delete_key()
         return false;
     }
 
-    jmethodID method = env->GetStaticMethodID(key_management, "DeleteKey", "(Ljava/lang/String;J)Ljava/lang/Boolean;");
-    if (utils::check_and_clear_exception(env, "resolving KeyManagement.DeleteKey"))
-    {
-        return false;
-    }
+    jmethodID method = JNIHelper::method(JNIHelper::JavaMethod::delete_key_by_generation);
     if (nullptr == method)
     {
         mpss::utils::log_and_set_error("Could not get KeyManagement.DeleteKey Java method.");
@@ -101,11 +97,7 @@ std::size_t AndroidKeyPair::do_sign_hash(std::span<const std::byte> hash, std::s
         return 0;
     }
 
-    jmethodID method = env->GetStaticMethodID(key_management, "SignHash", "(Ljava/lang/String;[BJ)[B");
-    if (utils::check_and_clear_exception(env, "resolving KeyManagement.SignHash"))
-    {
-        return 0;
-    }
+    jmethodID method = JNIHelper::method(JNIHelper::JavaMethod::sign_hash);
     if (nullptr == method)
     {
         mpss::utils::log_and_set_error("Could not get KeyManagement.SignHash method.");
@@ -168,12 +160,7 @@ bool AndroidKeyPair::do_verify(std::span<const std::byte> hash, std::span<const 
         return false;
     }
 
-    jmethodID method =
-        env->GetStaticMethodID(key_management, "VerifySignature", "(Ljava/lang/String;[B[BJ)Ljava/lang/Boolean;");
-    if (utils::check_and_clear_exception(env, "resolving KeyManagement.VerifySignature"))
-    {
-        return false;
-    }
+    jmethodID method = JNIHelper::method(JNIHelper::JavaMethod::verify_signature);
     if (nullptr == method)
     {
         mpss::utils::log_and_set_error("Could not get KeyManagement.VerifySignature method.");
@@ -244,11 +231,7 @@ std::size_t AndroidKeyPair::do_extract_key(std::span<std::byte> public_key) cons
         return 0;
     }
 
-    jmethodID method = env->GetStaticMethodID(key_management, "GetPublicKey", "(Ljava/lang/String;J)[B");
-    if (utils::check_and_clear_exception(env, "resolving KeyManagement.GetPublicKey"))
-    {
-        return 0;
-    }
+    jmethodID method = JNIHelper::method(JNIHelper::JavaMethod::get_public_key);
     if (nullptr == method)
     {
         mpss::utils::log_and_set_error("Could not get KeyManagement.GetPublicKey method.");
@@ -304,11 +287,7 @@ bool AndroidKeyPair::close_key()
         return false;
     }
 
-    jmethodID method = env->GetStaticMethodID(key_management, "CloseKey", "(Ljava/lang/String;J)V");
-    if (utils::check_and_clear_exception(env, "resolving KeyManagement.CloseKey"))
-    {
-        return false;
-    }
+    jmethodID method = JNIHelper::method(JNIHelper::JavaMethod::close_key);
     if (nullptr == method)
     {
         mpss::utils::log_and_set_error("Could not get KeyManagement.CloseKey method.");
