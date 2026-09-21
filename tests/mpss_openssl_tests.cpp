@@ -516,16 +516,27 @@ TEST(MPSS_OpenSSL, GetKeyDescriptors)
     // Query gettable parameters
     OSSL_PARAM get_params[4];
     int is_hw = -1;
+    int tier = -1;
     char storage_desc[256] = {0};
     get_params[0] = OSSL_PARAM_construct_int("is_hardware_backed", &is_hw);
     get_params[1] = OSSL_PARAM_construct_utf8_string("storage_description", storage_desc, sizeof(storage_desc));
-    get_params[2] = OSSL_PARAM_END;
+    get_params[2] = OSSL_PARAM_construct_int("storage_tier", &tier);
+    get_params[3] = OSSL_PARAM_END;
 
     ASSERT_EQ(1, EVP_PKEY_get_params(pkey, get_params));
     // is_hardware_backed should be 0 or 1
     ASSERT_TRUE(0 == is_hw || 1 == is_hw);
     // storage_description should not be empty
     ASSERT_GT(strlen(storage_desc), 0);
+
+    // The tier is one this build names, and the other two parameters are what it reports: a
+    // provider that answered them from anywhere else could disagree with the key it holds.
+    ASSERT_GE(tier, MPSS_STORAGE_TIER_UNKNOWN);
+    ASSERT_LT(tier, static_cast<int>(mpss::StorageTier::count));
+    const mpss::StorageTierInfo tier_info = mpss::get_storage_tier_info(static_cast<mpss::StorageTier>(tier));
+    EXPECT_EQ(tier, static_cast<int>(tier_info.tier));
+    EXPECT_EQ(is_hw, tier_info.is_hardware_backed ? 1 : 0);
+    EXPECT_EQ(std::string(storage_desc), std::string(tier_info.description));
 
     EVP_PKEY_free(pkey);
     ASSERT_EQ(1, mpss_delete_key(key_name));

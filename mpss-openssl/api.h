@@ -30,6 +30,28 @@
 #define MPSS_KEY_POLICY_YUBIKEY_TOUCH_CACHED (3U << 4U)
 
 #define MPSS_KEY_POLICY_APPLE_SECURE_ENCLAVE_USER_PRESENCE (1ULL << 8U)
+
+/**
+ * @brief Storage tier constants for the "storage_tier" key parameter.
+ *
+ * These mirror @ref mpss::StorageTier and share its fixed numbering, so a consumer reading the
+ * parameter from a provider built against a different version of MPSS reads the tier that provider
+ * meant. Tiers are only ever appended, so a value this header does not name is a tier newer than
+ * this header; treat it the way @ref MPSS_STORAGE_TIER_UNKNOWN is treated and read
+ * "is_hardware_backed" and "storage_description" instead, both of which are answered for every
+ * tier and need no table here.
+ */
+#define MPSS_STORAGE_TIER_UNKNOWN 0
+#define MPSS_STORAGE_TIER_WINDOWS_SOFTWARE 1
+#define MPSS_STORAGE_TIER_WINDOWS_VBS 2
+#define MPSS_STORAGE_TIER_WINDOWS_TPM 3
+#define MPSS_STORAGE_TIER_APPLE_KEYCHAIN 4
+#define MPSS_STORAGE_TIER_APPLE_SECURE_ENCLAVE 5
+#define MPSS_STORAGE_TIER_ANDROID_SOFTWARE 6
+#define MPSS_STORAGE_TIER_ANDROID_UNKNOWN_SECURE 7
+#define MPSS_STORAGE_TIER_ANDROID_TRUSTED_ENVIRONMENT 8
+#define MPSS_STORAGE_TIER_ANDROID_STRONGBOX 9
+#define MPSS_STORAGE_TIER_YUBIKEY_PIV 10
 // NOLINTEND(*-macro-to-enum)
 
 #ifdef __cplusplus

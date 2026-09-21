@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 #include "mpss-openssl/provider/keymgmt.h"
+#include "mpss-openssl/api.h"
 #include "mpss-openssl/provider/reference.h"
 #include "mpss-openssl/utils/names.h"
 #include "mpss-openssl/utils/utils.h"
@@ -18,6 +19,70 @@ namespace mpss_openssl::provider
 {
 
 using namespace ::mpss_openssl::utils;
+
+// The numbers the "storage_tier" parameter reports are the ones api.h names, so a consumer that
+// reads them through those constants reads the tier this provider meant. Changing a tier's number
+// in either header without the other fails to compile here.
+static_assert(static_cast<int>(mpss::StorageTier::unknown) == MPSS_STORAGE_TIER_UNKNOWN);
+static_assert(static_cast<int>(mpss::StorageTier::windows_software) == MPSS_STORAGE_TIER_WINDOWS_SOFTWARE);
+static_assert(static_cast<int>(mpss::StorageTier::windows_vbs) == MPSS_STORAGE_TIER_WINDOWS_VBS);
+static_assert(static_cast<int>(mpss::StorageTier::windows_tpm) == MPSS_STORAGE_TIER_WINDOWS_TPM);
+static_assert(static_cast<int>(mpss::StorageTier::apple_keychain) == MPSS_STORAGE_TIER_APPLE_KEYCHAIN);
+static_assert(static_cast<int>(mpss::StorageTier::apple_secure_enclave) == MPSS_STORAGE_TIER_APPLE_SECURE_ENCLAVE);
+static_assert(static_cast<int>(mpss::StorageTier::android_software) == MPSS_STORAGE_TIER_ANDROID_SOFTWARE);
+static_assert(static_cast<int>(mpss::StorageTier::android_unknown_secure) == MPSS_STORAGE_TIER_ANDROID_UNKNOWN_SECURE);
+static_assert(static_cast<int>(mpss::StorageTier::android_trusted_environment) ==
+              MPSS_STORAGE_TIER_ANDROID_TRUSTED_ENVIRONMENT);
+static_assert(static_cast<int>(mpss::StorageTier::android_strongbox) == MPSS_STORAGE_TIER_ANDROID_STRONGBOX);
+static_assert(static_cast<int>(mpss::StorageTier::yubikey_piv) == MPSS_STORAGE_TIER_YUBIKEY_PIV);
+
+// A tier appended to the enum needs a constant in api.h, or the provider reports a number no
+// consumer of that header can name.
+static_assert(static_cast<int>(mpss::StorageTier::count) == MPSS_STORAGE_TIER_YUBIKEY_PIV + 1,
+              "a new StorageTier needs an MPSS_STORAGE_TIER_* constant in mpss-openssl/api.h");
+
+// The same for the policy bits the "mpss_key_policy" parameter carries: a caller names a policy
+// with the api.h constants and this provider reads the number as a mpss::KeyPolicy, so the two
+// spellings have to agree.
+static_assert(static_cast<std::uint64_t>(mpss::KeyPolicy::none) == MPSS_KEY_POLICY_NONE);
+static_assert(static_cast<std::uint64_t>(mpss::KeyPolicy::yubikey_pin_never) == MPSS_KEY_POLICY_YUBIKEY_PIN_NEVER);
+static_assert(static_cast<std::uint64_t>(mpss::KeyPolicy::yubikey_pin_once) == MPSS_KEY_POLICY_YUBIKEY_PIN_ONCE);
+static_assert(static_cast<std::uint64_t>(mpss::KeyPolicy::yubikey_pin_always) == MPSS_KEY_POLICY_YUBIKEY_PIN_ALWAYS);
+static_assert(static_cast<std::uint64_t>(mpss::KeyPolicy::yubikey_touch_never) == MPSS_KEY_POLICY_YUBIKEY_TOUCH_NEVER);
+static_assert(static_cast<std::uint64_t>(mpss::KeyPolicy::yubikey_touch_always) ==
+              MPSS_KEY_POLICY_YUBIKEY_TOUCH_ALWAYS);
+static_assert(static_cast<std::uint64_t>(mpss::KeyPolicy::yubikey_touch_cached) ==
+              MPSS_KEY_POLICY_YUBIKEY_TOUCH_CACHED);
+static_assert(static_cast<std::uint64_t>(mpss::KeyPolicy::apple_secure_enclave_user_presence) ==
+              MPSS_KEY_POLICY_APPLE_SECURE_ENCLAVE_USER_PRESENCE);
+
+// KeyPolicy packs several fields into one number, so a value that does not fit the field it belongs
+// to would be read as part of a neighbouring field instead of being rejected. Each field's values
+// stay inside its own mask, and the masks stay disjoint.
+static_assert((mpss::yubikey_pin_mask & mpss::yubikey_touch_mask) == mpss::KeyPolicy::none,
+              "the YubiKey PIN and touch fields must not share bits");
+static_assert(
+    [] {
+        for (const mpss::KeyPolicy pin : {mpss::KeyPolicy::yubikey_pin_never, mpss::KeyPolicy::yubikey_pin_once,
+                                          mpss::KeyPolicy::yubikey_pin_always})
+        {
+            if ((pin & mpss::yubikey_pin_mask) != pin)
+            {
+                return false;
+            }
+        }
+        for (const mpss::KeyPolicy touch : {mpss::KeyPolicy::yubikey_touch_never, mpss::KeyPolicy::yubikey_touch_always,
+                                            mpss::KeyPolicy::yubikey_touch_cached})
+        {
+            if ((touch & mpss::yubikey_touch_mask) != touch)
+            {
+                return false;
+            }
+        }
+        return (mpss::KeyPolicy::apple_secure_enclave_user_presence &
+                (mpss::yubikey_pin_mask | mpss::yubikey_touch_mask)) == mpss::KeyPolicy::none;
+    }(),
+    "every KeyPolicy value must fit inside the field it belongs to");
 
 struct mpss_keymgmt_gen_ctx
 {
@@ -314,6 +379,7 @@ try
                                      OSSL_PARAM_utf8_string("mpss_algorithm", nullptr, 0),
                                      OSSL_PARAM_utf8_string("mpss_backend", nullptr, 0),
                                      OSSL_PARAM_int("is_hardware_backed", nullptr),
+                                     OSSL_PARAM_int("storage_tier", nullptr),
                                      OSSL_PARAM_utf8_string("storage_description", nullptr, 0),
                                      OSSL_PARAM_int32(OSSL_PKEY_PARAM_BITS, nullptr),
                                      OSSL_PARAM_int32(OSSL_PKEY_PARAM_SECURITY_BITS, nullptr),
@@ -384,6 +450,11 @@ try
     }
     if ((p = OSSL_PARAM_locate(params, "is_hardware_backed")) &&
         !OSSL_PARAM_set_int(p, key->key_pair->key_info().is_hardware_backed ? 1 : 0))
+    {
+        return 0;
+    }
+    if ((p = OSSL_PARAM_locate(params, "storage_tier")) &&
+        !OSSL_PARAM_set_int(p, static_cast<int>(key->key_pair->key_info().storage_tier)))
     {
         return 0;
     }
