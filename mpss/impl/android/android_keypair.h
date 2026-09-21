@@ -12,9 +12,9 @@ namespace mpss::impl::os
 class AndroidKeyPair : public mpss::KeyPair
 {
   public:
-    AndroidKeyPair(mpss::Algorithm algorithm, std::string_view name, bool hardware_backed,
-                   const char *storage_description, std::uint64_t generation)
-        : mpss::KeyPair{algorithm, hardware_backed, storage_description}, key_name_{name}, generation_{generation}
+    AndroidKeyPair(mpss::Algorithm algorithm, std::string_view name, mpss::StorageTier storage_tier,
+                   std::uint64_t generation)
+        : mpss::KeyPair{algorithm, storage_tier}, key_name_{name}, generation_{generation}
     {
     }
 

@@ -333,12 +333,14 @@ TEST_F(WindowsKeyCreation, TpmProviderReportsTpmProtection)
     std::unique_ptr<mpss::KeyPair> key = CreateOsKey();
 
     ASSERT_NE(nullptr, key);
+    EXPECT_EQ(mpss::StorageTier::windows_tpm, key->key_info().storage_tier);
     EXPECT_EQ("TPM Protection", std::string(key->key_info().storage_description));
     EXPECT_TRUE(key->key_info().is_hardware_backed);
 }
 
 // Scenario: the host has no TPM, so the platform provider cannot be opened, but VBS is available.
-// Expected behavior: the create falls back to VBS and reports it as hardware-backed.
+// Expected behavior: the create falls back to VBS, which is reported by its description rather
+// than as hardware backing.
 TEST_F(WindowsKeyCreation, TpmUnavailableFallsBackToVbs)
 {
     FailTpmProvider();
@@ -346,8 +348,9 @@ TEST_F(WindowsKeyCreation, TpmUnavailableFallsBackToVbs)
     std::unique_ptr<mpss::KeyPair> key = CreateOsKey();
 
     ASSERT_NE(nullptr, key);
+    EXPECT_EQ(mpss::StorageTier::windows_vbs, key->key_info().storage_tier);
     EXPECT_EQ("Virtualization Based Security", std::string(key->key_info().storage_description));
-    EXPECT_TRUE(key->key_info().is_hardware_backed);
+    EXPECT_FALSE(key->key_info().is_hardware_backed);
 }
 
 // Scenario: neither the TPM nor VBS is available.
@@ -360,6 +363,7 @@ TEST_F(WindowsKeyCreation, TpmAndVbsUnavailableFallBackToSoftware)
     std::unique_ptr<mpss::KeyPair> key = CreateOsKey();
 
     ASSERT_NE(nullptr, key);
+    EXPECT_EQ(mpss::StorageTier::windows_software, key->key_info().storage_tier);
     EXPECT_EQ("Software Protection", std::string(key->key_info().storage_description));
     EXPECT_FALSE(key->key_info().is_hardware_backed);
 }
@@ -376,6 +380,7 @@ TEST_F(WindowsKeyCreation, SoftwareFallbackSucceedsWithoutSignalingDowngrade)
 
     ASSERT_NE(nullptr, key);
     EXPECT_FALSE(mpss::has_error()) << "a silent downgrade left an error set: " << mpss::get_error();
+    EXPECT_EQ(mpss::StorageTier::windows_software, key->key_info().storage_tier);
     EXPECT_FALSE(key->key_info().is_hardware_backed);
 }
 
@@ -460,12 +465,13 @@ TEST_F(WindowsKeyCreation, ReopenFromTpmReportsTpmProtection)
     std::unique_ptr<mpss::KeyPair> key = OpenOsKey();
 
     ASSERT_NE(nullptr, key);
+    EXPECT_EQ(mpss::StorageTier::windows_tpm, key->key_info().storage_tier);
     EXPECT_EQ("TPM Protection", std::string(key->key_info().storage_description));
     EXPECT_TRUE(key->key_info().is_hardware_backed);
 }
 
 // Scenario: the TPM does not hold the key, and the one in the software KSP is VBS-isolated.
-// Expected behavior: the reopened key reports VBS and is hardware-backed.
+// Expected behavior: the reopened key reports VBS by description and not as hardware backing.
 TEST_F(WindowsKeyCreation, ReopenFromVbsReportsVirtualizationBasedSecurity)
 {
     KeyLivesIn(ksp_provider_handle);
@@ -474,8 +480,9 @@ TEST_F(WindowsKeyCreation, ReopenFromVbsReportsVirtualizationBasedSecurity)
     std::unique_ptr<mpss::KeyPair> key = OpenOsKey();
 
     ASSERT_NE(nullptr, key);
+    EXPECT_EQ(mpss::StorageTier::windows_vbs, key->key_info().storage_tier);
     EXPECT_EQ("Virtualization Based Security", std::string(key->key_info().storage_description));
-    EXPECT_TRUE(key->key_info().is_hardware_backed);
+    EXPECT_FALSE(key->key_info().is_hardware_backed);
 }
 
 // Scenario: the key lives in the software KSP and is not VBS-isolated.
@@ -488,6 +495,7 @@ TEST_F(WindowsKeyCreation, ReopenFromSoftwareReportsSoftwareProtection)
     std::unique_ptr<mpss::KeyPair> key = OpenOsKey();
 
     ASSERT_NE(nullptr, key);
+    EXPECT_EQ(mpss::StorageTier::windows_software, key->key_info().storage_tier);
     EXPECT_EQ("Software Protection", std::string(key->key_info().storage_description));
     EXPECT_FALSE(key->key_info().is_hardware_backed);
 }
@@ -519,6 +527,7 @@ TEST_F(WindowsKeyCreation, VbsCreationThatIsNotIsolatedIsReportedAsSoftware)
     std::unique_ptr<mpss::KeyPair> key = CreateOsKey();
 
     ASSERT_NE(nullptr, key);
+    EXPECT_EQ(mpss::StorageTier::windows_software, key->key_info().storage_tier);
     EXPECT_EQ("Software Protection", std::string(key->key_info().storage_description));
     EXPECT_FALSE(key->key_info().is_hardware_backed);
 }
@@ -534,8 +543,9 @@ TEST_F(WindowsKeyCreation, VbsCreationThatIsIsolatedIsReportedAsVbs)
     std::unique_ptr<mpss::KeyPair> key = CreateOsKey();
 
     ASSERT_NE(nullptr, key);
+    EXPECT_EQ(mpss::StorageTier::windows_vbs, key->key_info().storage_tier);
     EXPECT_EQ("Virtualization Based Security", std::string(key->key_info().storage_description));
-    EXPECT_TRUE(key->key_info().is_hardware_backed);
+    EXPECT_FALSE(key->key_info().is_hardware_backed);
 }
 
 // Scenario: the TPM is unavailable, the VBS creation call succeeds, but the isolation property of

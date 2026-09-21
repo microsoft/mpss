@@ -13,9 +13,8 @@ namespace mpss::impl::os
 class WindowsKeyPair : public mpss::KeyPair
 {
   public:
-    WindowsKeyPair(mpss::Algorithm algorithm, NCRYPT_KEY_HANDLE handle, bool hardware_backed,
-                   const char *storage_description)
-        : mpss::KeyPair(algorithm, hardware_backed, storage_description), key_handle_(handle)
+    WindowsKeyPair(mpss::Algorithm algorithm, NCRYPT_KEY_HANDLE handle, mpss::StorageTier storage_tier)
+        : mpss::KeyPair(algorithm, storage_tier), key_handle_(handle)
     {
     }
 

@@ -27,10 +27,6 @@ constexpr DWORD key_spec = 0;
 constexpr LPCWSTR tpm_provider_name = MS_PLATFORM_KEY_STORAGE_PROVIDER;
 constexpr LPCWSTR software_ksp_name = MS_KEY_STORAGE_PROVIDER;
 
-constexpr LPCSTR tpm_description = "TPM Protection";
-constexpr LPCSTR vbs_description = "Virtualization Based Security";
-constexpr LPCSTR software_description = "Software Protection";
-
 // Older SDK headers lack this flag.
 #ifdef NCRYPT_REQUIRE_VBS_FLAG
 constexpr DWORD require_vbs = NCRYPT_REQUIRE_VBS_FLAG;
@@ -226,12 +222,11 @@ ExportPolicy GetExportPolicy(NCRYPT_KEY_HANDLE key_handle)
     return 0 != (export_policy & export_allowed) ? allowed : prohibited;
 }
 
-OpenKeyResult GetKey(std::string_view name, const char **storage_description, bool *hardware_backed)
+OpenKeyResult GetKey(std::string_view name, mpss::StorageTier *storage_tier)
 {
     using enum mpss::impl::KeyProbeStatus;
 
-    *storage_description = nullptr;
-    *hardware_backed = false;
+    *storage_tier = mpss::StorageTier::unknown;
 
     // Every provider is asked before any answer is used. The providers keep separate namespaces, so
     // the same name can be held in both at once; returning the first that answered would let a key
@@ -258,8 +253,7 @@ OpenKeyResult GetKey(std::string_view name, const char **storage_description, bo
     // constrains the verdict when the ladder found nothing at all.
     if (found == tpm_key.status)
     {
-        *storage_description = tpm_description;
-        *hardware_backed = true;
+        *storage_tier = mpss::StorageTier::windows_tpm;
         return tpm_key;
     }
 
@@ -274,13 +268,16 @@ OpenKeyResult GetKey(std::string_view name, const char **storage_description, bo
 
         if (VirtualIsolation::isolated == isolation)
         {
-            *storage_description = vbs_description;
-            *hardware_backed = true;
+            // Isolation puts the key beyond the rest of the operating system, so this is not a
+            // weak tier, but the hypervisor enforces it and what protects the key at rest depends
+            // on Secure Boot and on a TPM being present, neither of which this can establish.
+            // Reporting it as hardware backing would assert more than is known; the description
+            // keeps the distinction from software storage.
+            *storage_tier = mpss::StorageTier::windows_vbs;
         }
         else
         {
-            *storage_description = software_description;
-            *hardware_backed = false;
+            *storage_tier = mpss::StorageTier::windows_software;
         }
         return ksp_key;
     }
@@ -514,9 +511,8 @@ TryOpenKeyResult try_open_key(std::string_view name)
 
     Algorithm algorithm{unsupported};
 
-    const char *storage_description = nullptr;
-    bool hardware_backed = false;
-    OpenKeyResult found_key = GetKey(name, &storage_description, &hardware_backed);
+    StorageTier storage_tier = StorageTier::unknown;
+    OpenKeyResult found_key = GetKey(name, &storage_tier);
     if (found != found_key.status)
     {
         if (not_found == found_key.status)
@@ -565,9 +561,8 @@ TryOpenKeyResult try_open_key(std::string_view name)
         return {.status = operational_error, .value = nullptr};
     }
 
-    mpss::utils::log_trace("Key '{}' opened with {} storage.", name, storage_description);
-    return {.status = found,
-            .value = std::make_unique<WindowsKeyPair>(algorithm, key_handle, hardware_backed, storage_description)};
+    mpss::utils::log_trace("Key '{}' opened with {} storage.", name, get_storage_tier_info(storage_tier).description);
+    return {.status = found, .value = std::make_unique<WindowsKeyPair>(algorithm, key_handle, storage_tier)};
 }
 
 std::unique_ptr<KeyPair> open_key(std::string_view name)
@@ -678,35 +673,35 @@ std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm, 
     struct key_storage_provider
     {
         CreateKeyResult (*create_key)(std::string_view, mpss::Algorithm);
-        const char *storage_description;
-        bool is_hardware_backed;
+        StorageTier storage_tier;
 
         // Whether the reported tier rests on per-key isolation evidence. The TPM provider is not
         // verified this way: it does not implement the isolation property, and holding the key is
         // itself the evidence. The software KSP holds both isolated and ordinary keys, so a key
         // created there must be classified by what the key reports, not by the flag that was asked
-        // for.
+        // for. Isolation decides the description rather than this flag: only the TPM provider
+        // reports hardware backing, for the reason the open path gives.
         bool verify_virtual_isolation;
     };
 
     // Strongest protection first: the first provider that creates a key wins.
     static constexpr std::array create_providers = {
-        key_storage_provider{CreateKeyTpm, tpm_description, true, false},
-        key_storage_provider{CreateKeyVbs, vbs_description, true, true},
-        key_storage_provider{CreateKeySoftware, software_description, false, false},
+        key_storage_provider{CreateKeyTpm, StorageTier::windows_tpm, false},
+        key_storage_provider{CreateKeyVbs, StorageTier::windows_vbs, true},
+        key_storage_provider{CreateKeySoftware, StorageTier::windows_software, false},
     };
 
     // Report why each provider failed; the reasons usually differ.
     std::string errors;
     for (const key_storage_provider &provider : create_providers)
     {
-        mpss::utils::log_trace("Creating key '{}' with {} provider.", name, provider.storage_description);
+        mpss::utils::log_trace("Creating key '{}' with {} provider.", name,
+                               get_storage_tier_info(provider.storage_tier).description);
         const CreateKeyResult created = provider.create_key(name, algorithm);
         const NCRYPT_KEY_HANDLE key_handle = created.value;
         if (0 != key_handle)
         {
-            const char *storage_description = provider.storage_description;
-            bool hardware_backed = provider.is_hardware_backed;
+            StorageTier storage_tier = provider.storage_tier;
 
             if (provider.verify_virtual_isolation)
             {
@@ -725,20 +720,21 @@ std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm, 
                 if (VirtualIsolation::not_isolated == isolation)
                 {
                     // The key was created but is not isolated, so it is reported as what it is.
-                    storage_description = software_description;
-                    hardware_backed = false;
+                    storage_tier = StorageTier::windows_software;
                 }
             }
 
-            mpss::utils::log_trace("Key '{}' created with '{}' storage.", name, storage_description);
-            return std::make_unique<WindowsKeyPair>(algorithm, key_handle, hardware_backed, storage_description);
+            mpss::utils::log_trace("Key '{}' created with '{}' storage.", name,
+                                   get_storage_tier_info(storage_tier).description);
+            return std::make_unique<WindowsKeyPair>(algorithm, key_handle, storage_tier);
         }
 
         if (!errors.empty())
         {
             errors += "; ";
         }
-        errors += std::string{provider.storage_description} + ": " + mpss::utils::get_error();
+        errors +=
+            std::string{get_storage_tier_info(provider.storage_tier).description} + ": " + mpss::utils::get_error();
 
         // The next provider's namespace may be free, and creating there plants a duplicate that a
         // later open could resolve to instead of this key. The create is the atomic reservation, so

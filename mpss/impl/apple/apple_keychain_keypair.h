@@ -18,7 +18,16 @@ namespace mpss::impl::os
 class AppleKeychainKeyPair : public AppleKeyPairBase
 {
   public:
-    AppleKeychainKeyPair(std::string_view name, Algorithm algorithm, std::uint64_t generation);
+    /**
+     * @brief Constructs a handle to a key the Keychain holds.
+     * @param name The key name.
+     * @param algorithm The signature algorithm.
+     * @param generation The hold this handle took on the cached key.
+     * @param storage_tier Where the key store reported holding this key, read from the key itself
+     * rather than from what creation asked for.
+     */
+    AppleKeychainKeyPair(std::string_view name, Algorithm algorithm, std::uint64_t generation,
+                         StorageTier storage_tier);
     ~AppleKeychainKeyPair() override;
 
   protected:

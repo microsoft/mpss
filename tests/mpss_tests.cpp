@@ -219,6 +219,7 @@ void ReopenReportsTheSameProtection(Algorithm algorithm, std::string_view suffix
 
     std::string created_storage;
     bool created_hardware_backed = false;
+    mpss::StorageTier created_tier = mpss::StorageTier::unknown;
     {
         std::unique_ptr<mpss::KeyPair> handle = MPSS::CreateKey(key_name, algorithm);
         ASSERT_NE(nullptr, handle);
@@ -226,6 +227,7 @@ void ReopenReportsTheSameProtection(Algorithm algorithm, std::string_view suffix
 
         created_storage = handle->key_info().storage_description;
         created_hardware_backed = handle->key_info().is_hardware_backed;
+        created_tier = handle->key_info().storage_tier;
 
         // An empty description would satisfy the comparison below while telling a caller nothing.
         ASSERT_FALSE(created_storage.empty());
@@ -235,6 +237,7 @@ void ReopenReportsTheSameProtection(Algorithm algorithm, std::string_view suffix
     ASSERT_NE(nullptr, reopened_handle);
     ASSERT_NE(nullptr, reopened_handle->key_info().storage_description);
 
+    EXPECT_EQ(created_tier, reopened_handle->key_info().storage_tier);
     EXPECT_EQ(created_storage, std::string{reopened_handle->key_info().storage_description});
     EXPECT_EQ(created_hardware_backed, reopened_handle->key_info().is_hardware_backed);
 
@@ -478,6 +481,50 @@ TEST_F(MPSS, SignAndVerify384)
 TEST_F(MPSS, SignAndVerify521)
 {
     SignAndVerify(ecdsa_secp521r1_sha512, "521", 64);
+}
+
+TEST(StorageTiers, EveryTierIsDescribedAndAnsweredOnce)
+{
+    std::set<mpss::StorageTier> seen;
+    std::set<std::string> descriptions;
+    for (const mpss::StorageTierInfo &info : mpss::storage_tiers)
+    {
+        EXPECT_TRUE(seen.insert(info.tier).second) << "a tier appears twice in the table";
+        ASSERT_NE(nullptr, info.description);
+        EXPECT_NE(0U, std::string(info.description).size());
+        EXPECT_TRUE(descriptions.insert(info.description).second)
+            << "two tiers share the description '" << info.description << "'";
+    }
+}
+
+TEST(StorageTiers, KeyInfoReportsWhatTheTableHolds)
+{
+    for (const mpss::StorageTierInfo &info : mpss::storage_tiers)
+    {
+        const mpss::KeyInfo key_info{info.tier};
+        EXPECT_EQ(info.tier, key_info.storage_tier);
+        EXPECT_EQ(info.is_hardware_backed, key_info.is_hardware_backed);
+        EXPECT_EQ(std::string(info.description), std::string(key_info.storage_description));
+    }
+}
+
+// The rule the table encodes: hardware backing is claimed only for storage the platform vendor
+// classifies as secure hardware. Virtualization Based Security and the software tiers are not that,
+// and are the answers most likely to be changed by accident.
+TEST(StorageTiers, OnlySecureHardwareTiersClaimHardwareBacking)
+{
+    using enum mpss::StorageTier;
+    for (const mpss::StorageTier tier : {unknown, windows_software, windows_vbs, apple_keychain, android_software})
+    {
+        EXPECT_FALSE(mpss::get_storage_tier_info(tier).is_hardware_backed)
+            << "tier " << static_cast<int>(tier) << " must not claim hardware backing";
+    }
+    for (const mpss::StorageTier tier : {windows_tpm, apple_secure_enclave, android_unknown_secure,
+                                         android_trusted_environment, android_strongbox, yubikey_piv})
+    {
+        EXPECT_TRUE(mpss::get_storage_tier_info(tier).is_hardware_backed)
+            << "tier " << static_cast<int>(tier) << " must claim hardware backing";
+    }
 }
 
 TEST_F(MPSS, ReopenReportsTheSameProtection256)
@@ -958,7 +1005,8 @@ class RecoveringKeyPair : public KeyPair
   public:
     static constexpr char internal_error[] = "Simulated internal failure.";
 
-    explicit RecoveringKeyPair(bool succeed) : KeyPair(ecdsa_secp256r1_sha256, false, "test"), succeed_(succeed)
+    explicit RecoveringKeyPair(bool succeed)
+        : KeyPair(ecdsa_secp256r1_sha256, mpss::StorageTier::unknown), succeed_(succeed)
     {
     }
 
@@ -1010,7 +1058,7 @@ class CountingReleaseKeyPair : public KeyPair
 {
   public:
     explicit CountingReleaseKeyPair(bool succeed = true)
-        : KeyPair(ecdsa_secp256r1_sha256, false, "test"), succeed_(succeed)
+        : KeyPair(ecdsa_secp256r1_sha256, mpss::StorageTier::unknown), succeed_(succeed)
     {
     }
 
@@ -1289,7 +1337,7 @@ TEST(AppleErrorPropagation, MissingOpenHasNoErrorDetail)
 
     int bit_size = 0;
     std::uint64_t generation = 0;
-    EXPECT_EQ(MPSS_APPLE_RESULT_EXPECTED_NEGATIVE, MPSS_OpenExistingKey(key_name, &bit_size, &generation));
+    EXPECT_EQ(MPSS_APPLE_RESULT_EXPECTED_NEGATIVE, MPSS_OpenExistingKey(key_name, &bit_size, &generation, nullptr));
     EXPECT_TRUE(mpss::impl::os::utils::take_keychain_error().empty());
 
     EXPECT_EQ(MPSS_APPLE_RESULT_EXPECTED_NEGATIVE, MPSS_SE_OpenExistingKey(key_name, &generation));
@@ -1320,7 +1368,7 @@ TEST(AppleErrorPropagation, WrapperErrorsAreConsumedOnce)
 
     int bit_size = 0;
     std::uint64_t generation = 0;
-    EXPECT_EQ(MPSS_APPLE_RESULT_OPERATIONAL_ERROR, MPSS_OpenExistingKey(nullptr, &bit_size, &generation));
+    EXPECT_EQ(MPSS_APPLE_RESULT_OPERATIONAL_ERROR, MPSS_OpenExistingKey(nullptr, &bit_size, &generation, nullptr));
     EXPECT_FALSE(mpss::impl::os::utils::take_keychain_error().empty());
 
     const char unicode_key_name[] = {static_cast<char>(0xC3), static_cast<char>(0xA9), '\0'};

@@ -449,8 +449,8 @@ std::size_t KeyPair::extract_key(std::span<std::byte> public_key) const
     return clear_error_on_success(do_extract_key(public_key));
 }
 
-KeyPair::KeyPair(Algorithm algorithm, bool hardware_backed, const char *storage_description)
-    : algorithm_{algorithm}, info_{get_algorithm_info(algorithm)}, key_info_{hardware_backed, storage_description}
+KeyPair::KeyPair(Algorithm algorithm, StorageTier storage_tier)
+    : algorithm_{algorithm}, info_{get_algorithm_info(algorithm)}, key_info_{storage_tier}
 {
     if (0 == info_.key_bits)
     {

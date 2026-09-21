@@ -7,16 +7,11 @@
 #include "mpss/utils/utilities.h"
 #include <mutex>
 
-namespace
-{
-constexpr const char *storage_description = "Secure Enclave";
-}
-
 namespace mpss::impl::os
 {
 
 AppleSEKeyPair::AppleSEKeyPair(std::string_view name, Algorithm algorithm, std::uint64_t generation)
-    : AppleKeyPairBase{name, algorithm, /* hardware_backed */ true, storage_description, generation}
+    : AppleKeyPairBase{name, algorithm, StorageTier::apple_secure_enclave, generation}
 {
 }
 

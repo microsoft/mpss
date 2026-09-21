@@ -7,16 +7,12 @@
 #include "mpss/utils/utilities.h"
 #include <mutex>
 
-namespace
-{
-constexpr const char *storage_description = "Keychain";
-}
-
 namespace mpss::impl::os
 {
 
-AppleKeychainKeyPair::AppleKeychainKeyPair(std::string_view name, Algorithm algorithm, std::uint64_t generation)
-    : AppleKeyPairBase{name, algorithm, /* hardware_backed */ false, storage_description, generation}
+AppleKeychainKeyPair::AppleKeychainKeyPair(std::string_view name, Algorithm algorithm, std::uint64_t generation,
+                                           StorageTier storage_tier)
+    : AppleKeyPairBase{name, algorithm, storage_tier, generation}
 {
 }
 
@@ -31,7 +27,7 @@ bool AppleKeychainKeyPair::do_delete_key()
     // holds what this handle opened, and then deleting it, must be one decision.
     const std::scoped_lock lifecycle{mpss::utils::name_mutex(name())};
 
-    mpss::utils::log_trace("Deleting Keychain key '{}'.", name());
+    mpss::utils::log_trace("Deleting key '{}' ({}).", name(), key_info().storage_description);
 
     // Deleting reaches the name rather than the entry this handle opened, so refuse once the name
     // has moved on. Otherwise a handle to a deleted key would delete the key that replaced it.
@@ -44,7 +40,7 @@ bool AppleKeychainKeyPair::do_delete_key()
     const bool result = utils::delete_key_from_all_tiers(name());
     if (result)
     {
-        mpss::utils::log_trace("Keychain key '{}' deleted.", name());
+        mpss::utils::log_trace("Key '{}' deleted.", name());
     }
 
     return result;
@@ -52,7 +48,8 @@ bool AppleKeychainKeyPair::do_delete_key()
 
 std::size_t AppleKeychainKeyPair::do_sign_hash(std::span<const std::byte> hash, std::span<std::byte> sig) const
 {
-    mpss::utils::log_trace("Signing hash with Keychain key '{}', hash size {}.", name(), hash.size());
+    mpss::utils::log_trace("Signing hash with key '{}' ({}), hash size {}.", name(), key_info().storage_description,
+                           hash.size());
     std::size_t signature_size = sig.size();
 
     if (!MPSS_SignHash(name().c_str(), static_cast<int>(algorithm()), generation(),
@@ -79,7 +76,7 @@ bool AppleKeychainKeyPair::do_verify(std::span<const std::byte> hash, std::span<
 
 std::size_t AppleKeychainKeyPair::do_extract_key(std::span<std::byte> public_key) const
 {
-    mpss::utils::log_trace("Extracting public key from Keychain key '{}'.", name());
+    mpss::utils::log_trace("Extracting public key from key '{}'.", name());
     std::size_t pk_size = public_key.size();
 
     if (!MPSS_GetPublicKey(name().c_str(), generation(), reinterpret_cast<std::uint8_t *>(public_key.data()), &pk_size))
@@ -89,7 +86,7 @@ std::size_t AppleKeychainKeyPair::do_extract_key(std::span<std::byte> public_key
         return 0;
     }
 
-    mpss::utils::log_trace("Extracted {} byte public key from Keychain key '{}'.", pk_size, name());
+    mpss::utils::log_trace("Extracted {} byte public key from key '{}'.", pk_size, name());
     return pk_size;
 }
 

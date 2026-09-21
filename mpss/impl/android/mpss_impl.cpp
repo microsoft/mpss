@@ -18,22 +18,17 @@ using jni_bytearray = mpss::impl::os::utils::JNIObj<jbyteArray>;
 namespace
 {
 
-constexpr const char *unknown_storage = "Unknown";
-constexpr const char *software_storage = "Software";
-constexpr const char *trusted_storage = "Trusted Environment";
-constexpr const char *strongbox_storage = "StrongBox";
-constexpr const char *unknown_secure_storage = "Unknown Secure";
-
-void get_key_properties(std::string_view name, bool &hardware_backed, const char **storage_description)
+// Reports the tier the key store says this key is at. Returns false when that could not be
+// established, which is not the same as the key store answering "unknown".
+bool get_key_properties(std::string_view name, mpss::StorageTier &storage_tier)
 {
-    hardware_backed = false;
-    *storage_description = nullptr;
+    storage_tier = mpss::StorageTier::unknown;
 
     mpss::impl::os::JNIEnvGuard guard;
     if (!guard.valid())
     {
         mpss::utils::log_and_set_error("Android JNI environment is unavailable.");
-        return;
+        return false;
     }
     JNIEnv *const env = guard.env();
 
@@ -41,64 +36,61 @@ void get_key_properties(std::string_view name, bool &hardware_backed, const char
     if (nullptr == key_management)
     {
         mpss::utils::log_and_set_error("Could not get KeyManagement Java class");
-        return;
+        return false;
     }
 
     jmethodID method = mpss::impl::os::JNIHelper::method(mpss::impl::os::JNIHelper::JavaMethod::get_key_security_level);
     if (nullptr == method)
     {
         mpss::utils::log_and_set_error("Could not get KeyManagement.GetKeySecurityLevel Java method");
-        return;
+        return false;
     }
 
     const std::string key_name_str(name);
     jni_string key_name(env, env->NewStringUTF(key_name_str.c_str()));
     if (mpss::impl::os::utils::check_and_clear_exception(env, "converting an Android key name to a Java string"))
     {
-        return;
+        return false;
     }
     if (key_name.is_null())
     {
         mpss::utils::log_and_set_error("Could not convert key name to Java String");
-        return;
+        return false;
     }
 
     const jint result = env->CallStaticIntMethod(key_management, method, key_name.get());
     if (mpss::impl::os::utils::check_and_clear_exception(env, "calling KeyManagement.GetKeySecurityLevel"))
     {
-        return;
+        return false;
     }
     if (-1 == result)
     {
         mpss::impl::os::utils::report_java_error(env, "KeyManagement.GetKeySecurityLevel");
-        return;
+        return false;
     }
 
+    // The security level the key store reported, named as a tier. What each tier reports is
+    // answered in one place; see mpss/storage_tier.h.
     switch (result)
     {
     case 0:
-        hardware_backed = false;
-        *storage_description = unknown_storage;
-        return;
+        storage_tier = mpss::StorageTier::unknown;
+        return true;
     case 1:
-        hardware_backed = false;
-        *storage_description = software_storage;
-        return;
+        storage_tier = mpss::StorageTier::android_software;
+        return true;
     case 2:
-        hardware_backed = true;
-        *storage_description = unknown_secure_storage;
-        return;
+        storage_tier = mpss::StorageTier::android_unknown_secure;
+        return true;
     case 3:
-        hardware_backed = true;
-        *storage_description = trusted_storage;
-        return;
+        storage_tier = mpss::StorageTier::android_trusted_environment;
+        return true;
     case 4:
-        hardware_backed = true;
-        *storage_description = strongbox_storage;
-        return;
+        storage_tier = mpss::StorageTier::android_strongbox;
+        return true;
     default:
         mpss::utils::log_and_set_error("Unknown result from KeyManagement.GetKeySecurityLevel");
-        return;
+        return false;
     }
 }
 
@@ -275,22 +267,19 @@ OpenKeyResult try_open_key(std::string_view name)
         return {.status = KeyProbeStatus::operational_error, .value = nullptr};
     }
 
-    bool hardware_backed = false;
-    const char *storage_description = nullptr;
-    get_key_properties(name, hardware_backed, &storage_description);
-
-    if (nullptr == storage_description)
+    StorageTier storage_tier = StorageTier::unknown;
+    if (!get_key_properties(name, storage_tier))
     {
         // Error happened getting key properties. This is reported by get_key_properties, so we just return here.
         return {.status = KeyProbeStatus::operational_error, .value = nullptr};
     }
 
     // Finally, we can return the key.
-    mpss::utils::log_trace("Key '{}' opened on Android with {} storage.", name, storage_description);
+    mpss::utils::log_trace("Key '{}' opened on Android with {} storage.", name,
+                           get_storage_tier_info(storage_tier).description);
     handed_to_caller = true;
     return {.status = KeyProbeStatus::found,
-            .value =
-                std::make_unique<AndroidKeyPair>(algorithm, name, hardware_backed, storage_description, generation)};
+            .value = std::make_unique<AndroidKeyPair>(algorithm, name, storage_tier, generation)};
 }
 
 } // namespace
@@ -531,19 +520,17 @@ std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm, 
         }
     });
 
-    bool hardware_backed = false;
-    const char *storage_description = nullptr;
-    get_key_properties(name, hardware_backed, &storage_description);
-
-    if (nullptr == storage_description)
+    StorageTier storage_tier = StorageTier::unknown;
+    if (!get_key_properties(name, storage_tier))
     {
         // Error happened getting key properties. This is reported by get_key_properties, so we just return here.
         return nullptr;
     }
 
-    mpss::utils::log_trace("Key '{}' created on Android with {} storage.", name, storage_description);
+    mpss::utils::log_trace("Key '{}' created on Android with {} storage.", name,
+                           get_storage_tier_info(storage_tier).description);
     handed_to_caller = true;
-    return std::make_unique<AndroidKeyPair>(algorithm, name, hardware_backed, storage_description, generation);
+    return std::make_unique<AndroidKeyPair>(algorithm, name, storage_tier, generation);
 }
 
 bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_key, Algorithm algorithm,

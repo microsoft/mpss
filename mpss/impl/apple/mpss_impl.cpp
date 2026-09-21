@@ -17,6 +17,20 @@ using enum Algorithm;
 
 namespace
 {
+// What MPSS_CreateKey and MPSS_OpenExistingKey report about where a key ended up. A key store that
+// would not say is reported as unknown rather than as software: failing to ask is not an answer.
+StorageTier tier_from_key_location(int key_location)
+{
+    switch (key_location)
+    {
+    case MPSS_APPLE_KEY_LOCATION_SECURE_ENCLAVE:
+        return StorageTier::apple_secure_enclave;
+    case MPSS_APPLE_KEY_LOCATION_SOFTWARE:
+        return StorageTier::apple_keychain;
+    default:
+        return StorageTier::unknown;
+    }
+}
 
 using OpenKeyResult = KeyProbeResult<std::unique_ptr<KeyPair>>;
 
@@ -96,7 +110,8 @@ OpenKeyResult try_open_key(const std::string &key_name)
 
     int bit_size = 0;
     std::uint64_t generation = 0;
-    const std::int32_t raw_result = MPSS_OpenExistingKey(key_name.c_str(), &bit_size, &generation);
+    int key_location = 0;
+    const std::int32_t raw_result = MPSS_OpenExistingKey(key_name.c_str(), &bit_size, &generation, &key_location);
     switch (utils::decode_apple_result(raw_result))
     {
     case success:
@@ -132,7 +147,8 @@ OpenKeyResult try_open_key(const std::string &key_name)
     mpss::utils::log_trace("Key '{}' found in Keychain with algorithm '{}'.", key_name,
                            get_algorithm_info(algorithm).type_str);
     return {.status = KeyProbeStatus::found,
-            .value = std::make_unique<AppleKeychainKeyPair>(key_name, algorithm, generation)};
+            .value = std::make_unique<AppleKeychainKeyPair>(key_name, algorithm, generation,
+                                                            tier_from_key_location(key_location))};
 }
 
 } // namespace
@@ -215,7 +231,9 @@ std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm, 
 
     if (secure_enclave_supported && ecdsa_secp256r1_sha256 == algorithm)
     {
-        // Secure Enclave only supports ECDSA P256.
+        // CryptoKit reaches the enclave only for P-256, which is what confines this tier to it.
+        // Anything larger goes through the Security framework path, which asks the enclave for
+        // itself and reports whichever store answered.
         mpss::utils::log_trace("Creating key '{}' in Secure Enclave.", key_name);
         std::uint64_t generation = 0;
         if (MPSS_SE_CreateKey(key_name.c_str(), require_user_presence, &generation))
@@ -230,10 +248,12 @@ std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm, 
 
     mpss::utils::log_trace("Creating key '{}' in Keychain.", key_name);
     std::uint64_t create_generation = 0;
-    if (MPSS_CreateKey(key_name.c_str(), static_cast<int>(algorithm), &create_generation))
+    int key_location = 0;
+    if (MPSS_CreateKey(key_name.c_str(), static_cast<int>(algorithm), &create_generation, &key_location))
     {
-        mpss::utils::log_trace("Key '{}' created in Keychain.", key_name);
-        return std::make_unique<AppleKeychainKeyPair>(name, algorithm, create_generation);
+        const StorageTier created_tier = tier_from_key_location(key_location);
+        mpss::utils::log_trace("Key '{}' created in {}.", key_name, get_storage_tier_info(created_tier).description);
+        return std::make_unique<AppleKeychainKeyPair>(name, algorithm, create_generation, created_tier);
     }
 
     utils::report_keychain_error("create key");
@@ -264,7 +284,8 @@ bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_k
 
     if (MPSS_SE_SecureEnclaveIsSupported() && ecdsa_secp256r1_sha256 == algorithm)
     {
-        // Secure Enclave only supports ECDSA P256.
+        // CryptoKit reaches the enclave only for P-256. Verification needs no private key, so an
+        // algorithm it does not offer is verified below rather than being refused here.
         const std::int32_t raw_result = MPSS_SE_VerifyStandaloneSignature(
             reinterpret_cast<const std::uint8_t *>(public_key.data()), public_key.size(),
             reinterpret_cast<const std::uint8_t *>(hash.data()), hash.size(),

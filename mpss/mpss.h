@@ -370,7 +370,7 @@ class MPSS_DECOR KeyPair
 
     // NOLINTEND(*-non-private-member-variables-in-classes)
 
-    KeyPair(Algorithm algorithm, bool hardware_backed, const char *storage_description);
+    KeyPair(Algorithm algorithm, StorageTier storage_tier);
 
     // Releases the handle on the way out of a backend destructor, which is the only place it can
     // happen: once ~KeyPair runs, the backend is gone and do_release_key no longer resolves to it.

@@ -12,8 +12,11 @@ extern "C"
     // On success takes a hold on the cached key and reports the generation it was taken on, which
     // must be handed back to MPSS_RemoveKey so a release cannot be charged against a later key of
     // the same name.
-    std::int32_t MPSS_OpenExistingKey(const char *keyName, int *bitSize, std::uint64_t *generation);
-    bool MPSS_CreateKey(const char *keyName, int bitSize, std::uint64_t *generation);
+    // keyLocation reports where the key store actually put the key: 0 when that could not be
+    // established, 1 for software, 2 for the Secure Enclave. Read from the key, not from what
+    // creation asked for.
+    std::int32_t MPSS_OpenExistingKey(const char *keyName, int *bitSize, std::uint64_t *generation, int *keyLocation);
+    bool MPSS_CreateKey(const char *keyName, int bitSize, std::uint64_t *generation, int *keyLocation);
     // The generation is the one the handle recorded when it opened. These refuse rather than
     // resolving the name again, so a handle cannot reach a key created later under that name.
     bool MPSS_SignHash(const char *keyName, int signatureType, std::uint64_t generation, const std::uint8_t *hash,

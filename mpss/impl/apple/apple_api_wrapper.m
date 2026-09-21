@@ -241,12 +241,34 @@ static bool IsExpectedVerificationFailure(CFErrorRef error) {
          CFErrorGetCode(error) == errSecVerifyFailed;
 }
 
-static int32_t OpenExistingKeyInternal(NSString *keyLabel, int *bitSize, uint64_t *generation) {
+// Where the key store is holding this key. Asked of the key itself, never of what was requested: a
+// request for the enclave can be declined, and what the caller is told about the protection a key
+// has must describe the key that exists.
+//
+// A key whose attributes cannot be read is reported as neither, rather than as software: failing to
+// ask is not evidence of an answer.
+static int32_t KeyLocation(SecKeyRef keyRef) {
+  if (keyRef == NULL) {
+    return MPSS_APPLE_KEY_LOCATION_INDETERMINATE;
+  }
+  NSDictionary *attributes = (__bridge_transfer NSDictionary *)SecKeyCopyAttributes(keyRef);
+  if (attributes == nil) {
+    return MPSS_APPLE_KEY_LOCATION_INDETERMINATE;
+  }
+  id token = attributes[(id)kSecAttrTokenID];
+  return (token != nil && [token isEqual:(id)kSecAttrTokenIDSecureEnclave]) ? MPSS_APPLE_KEY_LOCATION_SECURE_ENCLAVE
+                                                                            : MPSS_APPLE_KEY_LOCATION_SOFTWARE;
+}
+
+static int32_t OpenExistingKeyInternal(NSString *keyLabel, int *bitSize, uint64_t *generation, int *keyLocation) {
   SecKeyRef keyRef = CopyKey(keyLabel, generation);
 
   if (keyRef) {
     mpss_log_debug("Found existing key in local dictionary.");
     *bitSize = GetKeySize(keyRef);
+    if (keyLocation != NULL) {
+      *keyLocation = KeyLocation(keyRef);
+    }
     CFRelease(keyRef);
     return MPSS_APPLE_RESULT_SUCCESS;
   }
@@ -305,6 +327,9 @@ static int32_t OpenExistingKeyInternal(NSString *keyLabel, int *bitSize, uint64_
   mpss_log_debug("Retrieved key from OS.");
   StoreKey(keyLabel, keyRef, generation);
   *bitSize = GetKeySize(keyRef);
+  if (keyLocation != NULL) {
+    *keyLocation = KeyLocation(keyRef);
+  }
   CFRelease(keyRef);
   return MPSS_APPLE_RESULT_SUCCESS;
 }
@@ -320,8 +345,11 @@ void MPSS_RemoveKey(const char *keyName, uint64_t generation) {
   }
 }
 
-int32_t MPSS_OpenExistingKey(const char *keyName, int *bitSize, uint64_t *generation) {
+int32_t MPSS_OpenExistingKey(const char *keyName, int *bitSize, uint64_t *generation, int *keyLocation) {
   ClearThreadLocalError();
+  if (keyLocation != NULL) {
+    *keyLocation = MPSS_APPLE_KEY_LOCATION_INDETERMINATE;
+  }
   if (keyName == NULL || bitSize == NULL || generation == NULL) {
     SetThreadLocalError(@"Invalid parameters (keyName, bitSize or generation is NULL).");
     return MPSS_APPLE_RESULT_OPERATIONAL_ERROR;
@@ -329,7 +357,7 @@ int32_t MPSS_OpenExistingKey(const char *keyName, int *bitSize, uint64_t *genera
 
   @autoreleasepool {
     NSString *keyLabel = GetKeyLabel(keyName);
-    return OpenExistingKeyInternal(keyLabel, bitSize, generation);
+    return OpenExistingKeyInternal(keyLabel, bitSize, generation, keyLocation);
   }
 }
 
@@ -389,8 +417,101 @@ int32_t MPSS_KeychainKeyExists(const char *keyName) {
   }
 }
 
-bool MPSS_CreateKey(const char *keyName, int bitSize, uint64_t *generation) {
+// Asks the key store to generate this key inside the Secure Enclave. Returns NULL when it declines,
+// which is an ordinary outcome rather than a failure: the enclave holds only what it holds, and a
+// host that cannot reach it at all answers the same way. The caller falls through to software.
+//
+// Enclave keys carry a SecAccessControl; the macOS software path uses the legacy SecAccess, so the
+// two attribute dictionaries are built separately rather than sharing one.
+static SecKeyRef CreateKeyInSecureEnclave(NSString *keyLabel, int keyBitSize) {
+  CFErrorRef accessError = NULL;
+  SecAccessControlRef access =
+      SecAccessControlCreateWithFlags(kCFAllocatorDefault, kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+                                      kSecAccessControlPrivateKeyUsage, &accessError);
+  if (access == NULL) {
+    if (accessError != NULL) {
+      CFRelease(accessError);
+    }
+    return NULL;
+  }
+
+  NSDictionary *privateKeyAttributes = @{
+    (id)kSecAttrIsPermanent : @YES,
+    (id)kSecAttrLabel : keyLabel,
+    (id)kSecAttrApplicationTag : [keyLabel dataUsingEncoding:NSUTF8StringEncoding],
+    (id)kSecAttrAccessControl : (__bridge id)access
+  };
+  NSDictionary *keyAttributes = @{
+    (id)kSecAttrKeyType : SupportedKeychainKeyType(),
+    (id)kSecAttrKeySizeInBits : @(keyBitSize),  // NOLINT(readability-redundant-parentheses)
+    (id)kSecAttrTokenID : (id)kSecAttrTokenIDSecureEnclave,
+    (id)kSecPrivateKeyAttrs : privateKeyAttributes
+  };
+
+  CFErrorRef error = NULL;
+  SecKeyRef keyRef = SecKeyCreateRandomKey((__bridge CFDictionaryRef)keyAttributes, &error);
+  CFRelease(access);
+  if (keyRef == NULL) {
+    NSError *err = CFBridgingRelease(error);
+    mpss_log_trace([[NSString stringWithFormat:@"Secure Enclave declined this key: %@", err] UTF8String]);
+    return NULL;
+  }
+  return keyRef;
+}
+
+// Generates the key in software, which is where a key the enclave will not hold goes.
+static SecKeyRef CreateKeyInSoftware(NSString *keyLabel, int keyBitSize) {
+  NSDictionary *privateKeyAttributes = @{
+    (id)kSecAttrIsPermanent : @YES,
+    (id)kSecAttrLabel : keyLabel,
+    (id)kSecAttrApplicationTag : [keyLabel dataUsingEncoding:NSUTF8StringEncoding],
+    (id)kSecAttrAccessible : (__bridge id)kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+  };
+#if TARGET_OS_OSX
+  SecAccessRef keyAccess = NULL;
+
+  // SecAccess is the only macOS API that names legacy Keychain items in authorization dialogs.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+  const OSStatus accessStatus = SecAccessCreate((__bridge CFStringRef)keyLabel, NULL, &keyAccess);
+#pragma clang diagnostic pop
+
+  if (accessStatus != errSecSuccess) {
+    NSString *error =
+        [NSString stringWithFormat:@"Failed to create key access controls with status: %d", (int)accessStatus];
+    SetThreadLocalError(error);
+    return NULL;
+  }
+#endif
+  NSMutableDictionary *keyAttributes = [NSMutableDictionary dictionaryWithDictionary:@{
+    (id)kSecAttrKeyType : SupportedKeychainKeyType(),
+    (id)kSecAttrKeySizeInBits : @(keyBitSize),  // NOLINT(readability-redundant-parentheses)
+    (id)kSecPrivateKeyAttrs : privateKeyAttributes
+  }];
+#if TARGET_OS_OSX
+  keyAttributes[(id)kSecAttrAccess] = (__bridge id)keyAccess;
+#endif
+
+  CFErrorRef error = NULL;
+  SecKeyRef keyRef = SecKeyCreateRandomKey((__bridge CFDictionaryRef)keyAttributes, &error);
+#if TARGET_OS_OSX
+  CFRelease(keyAccess);
+#endif
+
+  if (keyRef == NULL) {
+    NSError *err = CFBridgingRelease(error);
+    NSString *message = [NSString stringWithFormat:@"Failed to generate key: %@", err];
+    SetThreadLocalError(message);
+    return NULL;
+  }
+  return keyRef;
+}
+
+bool MPSS_CreateKey(const char *keyName, int bitSize, uint64_t *generation, int *keyLocation) {
   ClearThreadLocalError();
+  if (keyLocation != NULL) {
+    *keyLocation = MPSS_APPLE_KEY_LOCATION_INDETERMINATE;
+  }
   if (keyName == NULL) {
     SetThreadLocalError(@"Invalid parameter (keyName is NULL).");
     return false;
@@ -400,7 +521,7 @@ bool MPSS_CreateKey(const char *keyName, int bitSize, uint64_t *generation) {
   @autoreleasepool {
     int existingBitSize = 0;
     NSString *keyLabel = GetKeyLabel(keyName);
-    const int32_t openResult = OpenExistingKeyInternal(keyLabel, &existingBitSize, NULL);
+    const int32_t openResult = OpenExistingKeyInternal(keyLabel, &existingBitSize, NULL, NULL);
     if (openResult == MPSS_APPLE_RESULT_SUCCESS) {
       NSString *error = [NSString stringWithFormat:@"Key %s already exists.", keyName];
       SetThreadLocalError(error);
@@ -424,49 +545,16 @@ bool MPSS_CreateKey(const char *keyName, int bitSize, uint64_t *generation) {
     }
 
     mpss_log_debug([[NSString stringWithFormat:@"Creating key with bit size %d", keyBitSize] UTF8String]);
-    NSDictionary *privateKeyAttributes = @{
-      (id)kSecAttrIsPermanent : @YES,
-      (id)kSecAttrLabel : keyLabel,
-      (id)kSecAttrApplicationTag : [keyLabel dataUsingEncoding:NSUTF8StringEncoding],
-      (id)kSecAttrAccessible : (__bridge id)kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-    };
-#if TARGET_OS_OSX
-    SecAccessRef keyAccess = NULL;
 
-    // SecAccess is the only macOS API that names legacy Keychain items in authorization dialogs.
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-    const OSStatus accessStatus = SecAccessCreate((__bridge CFStringRef)keyLabel, NULL, &keyAccess);
-#pragma clang diagnostic pop
-
-    if (accessStatus != errSecSuccess) {
-      NSString *error =
-          [NSString stringWithFormat:@"Failed to create key access controls with status: %d", (int)accessStatus];
-      SetThreadLocalError(error);
-      return false;
+    // The enclave is asked for every key and answers for itself. Which algorithms it accepts is not
+    // something this code decides or records: a refusal falls through to software, and what the key
+    // turns out to be is read back from the key afterwards.
+    SecKeyRef keyRef = CreateKeyInSecureEnclave(keyLabel, keyBitSize);
+    if (keyRef == NULL) {
+      keyRef = CreateKeyInSoftware(keyLabel, keyBitSize);
     }
 
-#endif
-    NSMutableDictionary *keyAttributes = [NSMutableDictionary dictionaryWithDictionary:@{
-      (id)kSecAttrKeyType : SupportedKeychainKeyType(),
-      (id)kSecAttrKeySizeInBits : @(keyBitSize),  // NOLINT(readability-redundant-parentheses)
-      (id)kSecPrivateKeyAttrs : privateKeyAttributes
-    }];
-#if TARGET_OS_OSX
-    keyAttributes[(id)kSecAttrAccess] = (__bridge id)keyAccess;
-#endif
-
-    // Generate the key.
-    CFErrorRef error = NULL;
-    SecKeyRef keyRef = SecKeyCreateRandomKey((__bridge CFDictionaryRef)keyAttributes, &error);
-#if TARGET_OS_OSX
-    CFRelease(keyAccess);
-#endif
-
     if (keyRef == NULL) {
-      NSError *err = CFBridgingRelease(error);
-      NSString *error = [NSString stringWithFormat:@"Failed to generate key: %@", err];
-      SetThreadLocalError(error);
       return false;
     }
 
@@ -498,6 +586,10 @@ bool MPSS_CreateKey(const char *keyName, int bitSize, uint64_t *generation) {
         mpss_log_warning("Failed to remove the key created under a name that is not unique.");
       }
       return false;
+    }
+
+    if (keyLocation != NULL) {
+      *keyLocation = KeyLocation(keyRef);
     }
 
     StoreKey(keyLabel, keyRef, generation);
