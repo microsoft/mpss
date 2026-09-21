@@ -51,14 +51,44 @@ platform and then accepts `apple_keychain` and `android_software`, neither of wh
 backing. `is_hardware_backed` is what ranks tiers against each other.
 
 **An algorithm constrains which tiers are eligible, but does not settle which one a key gets.** On
-Apple, MPSS asks the Secure
-Enclave to hold every key and reads back from the key itself whether it did. The enclave takes
-P-256 and, on platforms that allow it, P-384; it refuses P-521, and it refuses everything on a
-macOS process that is not a provisioned application, in which case the key is created in software
-instead. Apple documents the enclave as working only with P-256, so P-384 rests on behaviour that
-is not promised and may stop being offered. MPSS does not assume it either way: a key reports the
-protection it actually has, so a caller that reads `key_info()` sees a change in platform
-behaviour rather than silently losing a guarantee it believed it had.
+Apple, MPSS asks the Secure Enclave to hold every key and establishes from the key itself whether it
+did. Which algorithms the enclave accepts, and what happens when it declines, differ between the two
+paths Apple provides; see [Apple: which store answers](#apple-which-store-answers). A key reports the
+protection it actually has, so a caller that reads `key_info()` sees a change in platform behaviour
+rather than silently losing a guarantee it believed it had.
+
+### Apple: which store answers
+
+Apple offers two ways to reach the enclave. MPSS uses both, and they establish the tier differently.
+
+| Path | Taken for | Where the key lives | How the tier is established |
+|---|---|---|---|
+| CryptoKit | P-256, where the platform reports an enclave | The enclave holds the key. MPSS stores its `dataRepresentation`, a blob wrapped to that enclave and inert anywhere else, as a Keychain generic password | The type. A `SecureEnclave.P256.Signing.PrivateKey` cannot be held anywhere else, so there is nothing to read back |
+| Security framework | P-384 and P-521, and anything where no enclave is reported | A Keychain key, held in the enclave if it accepted the request | Read back from `kSecAttrTokenID` on the key that was created |
+
+The CryptoKit path needs no entitlement, because what it persists is a password item rather than a
+key the enclave owns. The Security framework path asks for a persistent enclave key, which on macOS
+requires a provisioning profile; a command-line tool never has one, so the request fails with
+`-34018` and the key is created in software. An iOS application does have one, which is why the same
+P-384 request reaches the enclave on a phone and not in a terminal.
+
+**A P-256 create does not fall back.** Where an enclave is reported, it is the only place MPSS will
+put that key: if the enclave declines, creation fails rather than quietly returning a software key.
+Only the Security framework path falls back, and it reports `apple_keychain` when it does.
+
+Observed:
+
+| | P-256 | P-384 | P-521 |
+|---|---|---|---|
+| iPhone | Secure Enclave | Secure Enclave | Keychain |
+| Simulator | Keychain | Keychain | Keychain |
+
+Apple documents the enclave as working with P-256 only, so P-384 rests on behaviour that is not
+promised and may stop being offered. MPSS assumes it in neither direction.
+
+The simulator accepts `kSecAttrTokenIDSecureEnclave` and hands the attribute back, but signs at
+software speed and keeps the key in a file on the host. MPSS reports those keys as `apple_keychain`:
+there is no enclave for them to be in.
 
 **What a hardware-backed key defends against.** A key generated inside secure hardware and never
 exported cannot be read out of a backup, scraped from process memory, or committed to a repository,
