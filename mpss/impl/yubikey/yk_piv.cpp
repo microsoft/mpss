@@ -80,7 +80,7 @@ std::mutex &device_mutex(std::uint32_t serial)
 }
 
 // A live connection holds the bus shared for as long as it lasts. None of these locks is recursive,
-// so opening a second connection or scanning from the same thread ends in undefined behaviour or a
+// so opening a second connection or scanning from the same thread ends in undefined behavior or a
 // wait on a lock the thread itself holds. Both are refused, because the alternative is a hang with
 // nothing reported.
 thread_local int connection_depth = 0;

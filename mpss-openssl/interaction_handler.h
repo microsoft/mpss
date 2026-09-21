@@ -35,7 +35,7 @@ extern "C"
         MPSS_PIN_RESULT_WRONG_PIN = 1, /**< PIN was incorrect. */
         MPSS_PIN_RESULT_LOCKED = 2,    /**< PIN is locked. */
         MPSS_PIN_RESULT_ERROR = 3,     /**< Non-PIN error. */
-        /** The PIN never reached the device, so no retry was spent. Follows a cancelled, failing, or
+        /** The PIN never reached the device, so no retry was spent. Follows a canceled, failing, or
             withheld PIN request, so every request is answered by exactly one result. */
         MPSS_PIN_RESULT_NOT_ATTEMPTED = 4,
     };

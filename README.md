@@ -54,7 +54,7 @@ backing. `is_hardware_backed` is what ranks tiers against each other.
 Apple, MPSS asks the Secure Enclave to hold every key and establishes from the key itself whether it
 did. Which algorithms the enclave accepts, and what happens when it declines, differ between the two
 paths Apple provides; see [Apple: which store answers](#apple-which-store-answers). A key reports the
-protection it actually has, so a caller that reads `key_info()` sees a change in platform behaviour
+protection it actually has, so a caller that reads `key_info()` sees a change in platform behavior
 rather than silently losing a guarantee it believed it had.
 
 ### Apple: which store answers
@@ -83,7 +83,7 @@ Observed:
 | iPhone | Secure Enclave | Secure Enclave | Keychain |
 | Simulator | Keychain | Keychain | Keychain |
 
-Apple documents the enclave as working with P-256 only, so P-384 rests on behaviour that is not
+Apple documents the enclave as working with P-256 only, so P-384 rests on behavior that is not
 promised and may stop being offered. MPSS assumes it in neither direction.
 
 The simulator accepts `kSecAttrTokenIDSecureEnclave` and hands the attribute back, but signs at

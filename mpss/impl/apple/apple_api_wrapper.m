@@ -263,7 +263,7 @@ static int32_t KeyLocation(SecKeyRef keyRef) {
 #if TARGET_OS_SIMULATOR
   // The simulator accepts the enclave token and hands the attribute back, but signs at software
   // speed and keeps the key in a file on the host, so the token says nothing about where the key
-  // is. Report what it is rather than what it is labelled.
+  // is. Report what it is rather than what it is labeled.
   return MPSS_APPLE_KEY_LOCATION_SOFTWARE;
 #else
   return MPSS_APPLE_KEY_LOCATION_SECURE_ENCLAVE;
