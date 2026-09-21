@@ -167,8 +167,9 @@ public class KeyManagement {
     }
 
     /**
-     * Get security level for the given key pair.
+     * Get security level for the key a handle is holding.
      * @param keyName Name of the keypair.
+     * @param generation The generation the handle was opened on.
      * @return Integer indicating security level of the key. Possible values are:
      *         0: Unknown
      *         1: Software
@@ -178,14 +179,17 @@ public class KeyManagement {
      *         -1: Error getting security level
      */
     @SuppressWarnings("deprecation")
-    public static int GetKeySecurityLevel(String keyName) {
+    public static int GetKeySecurityLevel(String keyName, long generation) {
         ClearError();
         try {
             if (null == keyName) throw new IllegalArgumentException("keyName is null.");
 
-            KeyPair kp = GetExistingKeyPair(keyName);
+            KeyPair kp;
+            synchronized (_keyLock) {
+                kp = MemKeyStore.GetKeyForGeneration(keyName, generation);
+            }
             if (null == kp) {
-                String msg = "Could not get key: " + keyName;
+                String msg = "Key '" + keyName + "' is no longer the key this handle opened.";
                 Log.e("MPSS", msg);
                 SetError(msg);
                 return -1;

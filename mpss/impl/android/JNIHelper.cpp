@@ -117,7 +117,7 @@ constexpr std::array<MethodSpec, static_cast<std::size_t>(JNIHelper::JavaMethod:
     {.id = JNIHelper::JavaMethod::get_key_security_level,
      .owner = OwnerClass::key_management,
      .name = "GetKeySecurityLevel",
-     .descriptor = "(Ljava/lang/String;)I",
+     .descriptor = "(Ljava/lang/String;J)I",
      .is_static = true},
     {.id = JNIHelper::JavaMethod::take_error,
      .owner = OwnerClass::key_management,

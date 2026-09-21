@@ -18,9 +18,11 @@ using jni_bytearray = mpss::impl::os::utils::JNIObj<jbyteArray>;
 namespace
 {
 
-// Reports the tier the key store says this key is at. Returns false when that could not be
-// established, which is not the same as the key store answering "unknown".
-bool get_key_properties(std::string_view name, mpss::StorageTier &storage_tier)
+// Reports the tier the key store says the key this handle is holding is at. Asked of the held key
+// rather than of the name, so that a name rebound to another key since the handle was opened
+// reports nothing instead of reporting the replacement's tier. Returns false when the tier could
+// not be established, which is not the same as the key store answering "unknown".
+bool get_key_properties(std::string_view name, std::uint64_t generation, mpss::StorageTier &storage_tier)
 {
     storage_tier = mpss::StorageTier::unknown;
 
@@ -58,7 +60,8 @@ bool get_key_properties(std::string_view name, mpss::StorageTier &storage_tier)
         return false;
     }
 
-    const jint result = env->CallStaticIntMethod(key_management, method, key_name.get());
+    const jint result =
+        env->CallStaticIntMethod(key_management, method, key_name.get(), static_cast<jlong>(generation));
     if (mpss::impl::os::utils::check_and_clear_exception(env, "calling KeyManagement.GetKeySecurityLevel"))
     {
         return false;
@@ -268,7 +271,7 @@ OpenKeyResult try_open_key(std::string_view name)
     }
 
     StorageTier storage_tier = StorageTier::unknown;
-    if (!get_key_properties(name, storage_tier))
+    if (!get_key_properties(name, generation, storage_tier))
     {
         // Error happened getting key properties. This is reported by get_key_properties, so we just return here.
         return {.status = KeyProbeStatus::operational_error, .value = nullptr};
@@ -521,7 +524,7 @@ std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm, 
     });
 
     StorageTier storage_tier = StorageTier::unknown;
-    if (!get_key_properties(name, storage_tier))
+    if (!get_key_properties(name, generation, storage_tier))
     {
         // Error happened getting key properties. This is reported by get_key_properties, so we just return here.
         return nullptr;

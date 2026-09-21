@@ -883,7 +883,7 @@ TEST(AndroidJNITest, JavaErrorIsContextualAndConsumed)
     jclass key_management = mpss::impl::os::JNIHelper::key_management_class();
     ASSERT_NE(nullptr, key_management);
     jmethodID get_security_level =
-        env->GetStaticMethodID(key_management, "GetKeySecurityLevel", "(Ljava/lang/String;)I");
+        env->GetStaticMethodID(key_management, "GetKeySecurityLevel", "(Ljava/lang/String;J)I");
     ASSERT_FALSE(mpss::impl::os::utils::check_and_clear_exception(env, "resolving KeyManagement.GetKeySecurityLevel"));
     ASSERT_NE(nullptr, get_security_level);
 
@@ -892,14 +892,15 @@ TEST(AndroidJNITest, JavaErrorIsContextualAndConsumed)
         mpss::impl::os::utils::check_and_clear_exception(env, "converting an Android key name to a Java string"));
     ASSERT_FALSE(java_key_name.is_null());
 
-    const jint security_level = env->CallStaticIntMethod(key_management, get_security_level, java_key_name.get());
+    const jint security_level =
+        env->CallStaticIntMethod(key_management, get_security_level, java_key_name.get(), static_cast<jlong>(0));
     ASSERT_FALSE(mpss::impl::os::utils::check_and_clear_exception(env, "calling KeyManagement.GetKeySecurityLevel"));
     ASSERT_EQ(-1, security_level);
 
     mpss::impl::os::utils::report_java_error(env, "KeyManagement.GetKeySecurityLevel");
     const std::string first_error = mpss::get_error();
     EXPECT_NE(std::string::npos, first_error.find("KeyManagement.GetKeySecurityLevel failed:"));
-    EXPECT_NE(std::string::npos, first_error.find("Could not get key: " + key_name));
+    EXPECT_NE(std::string::npos, first_error.find("Key '" + key_name + "' is no longer the key this handle opened."));
 
     mpss::impl::os::utils::report_java_error(env, "second operation");
     const std::string second_error = mpss::get_error();
