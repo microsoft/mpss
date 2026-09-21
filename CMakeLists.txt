@@ -484,7 +484,8 @@ if(TARGET ${mpss_openssl_TARGET})
     )
 
     # We also need to link against OpenSSL::Crypto. This is a public dependency.
-    find_package(OpenSSL 3 REQUIRED)
+    # The store delete dispatch (OSSL_FUNC_STORE_DELETE) requires OpenSSL 3.2.
+    find_package(OpenSSL 3.2 REQUIRED)
     target_link_libraries(${mpss_openssl_TARGET} PUBLIC OpenSSL::Crypto)
 
     # Naturally, we depend on mpss. This is a PUBLIC dependency because

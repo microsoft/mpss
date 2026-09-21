@@ -22,7 +22,7 @@ if(NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 
         # libssl is a test-only dependency: the tests drive a TLS handshake, while the provider
         # itself links libcrypto alone and must keep doing so.
-        find_package(OpenSSL 3 REQUIRED)
+        find_package(OpenSSL 3.2 REQUIRED)
         list(APPEND mpss_TESTS_LINK_LIBRARIES OpenSSL::SSL)
     elseif(TARGET ${mpss_TARGET})
         list(APPEND mpss_TESTS_LINK_LIBRARIES ${mpss_TARGET})
@@ -134,7 +134,7 @@ if(MPSS_OPENSSL_FOUND)
     endif()
 
     # The same test-only libssl dependency as the integrated branch above.
-    find_package(OpenSSL 3 REQUIRED)
+    find_package(OpenSSL 3.2 REQUIRED)
     target_link_libraries(mpss_tests PRIVATE OpenSSL::SSL)
 elseif(MPSS_CORE_FOUND)
     if(TARGET mpss::mpss)

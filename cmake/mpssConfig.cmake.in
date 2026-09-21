@@ -94,7 +94,7 @@ endif()
 
 # Find dependencies.
 if(MPSS_OPENSSL_SHARED_FOUND OR MPSS_OPENSSL_STATIC_FOUND)
-    find_dependency(OpenSSL 3 REQUIRED)
+    find_dependency(OpenSSL 3.2 REQUIRED)
     set(MPSS_OPENSSL_FOUND YES)
 endif()
 
