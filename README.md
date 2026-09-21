@@ -6,7 +6,7 @@ private material. An OpenSSL provider exposes the same keys to OpenSSL 3.2 and l
 | Platform | API |
 |----------|-----|
 | Windows | TPM-backed [MS_PLATFORM_KEY_STORAGE_PROVIDER](https://learn.microsoft.com/en-us/windows/win32/api/ncrypt/nf-ncrypt-ncryptopenstorageprovider) if available; [VBS](https://learn.microsoft.com/en-us/windows-hardware/design/device-experiences/oem-vbs) otherwise; software-protected storage if neither |
-| macOS / iOS | [Secure Enclave](https://developer.apple.com/documentation/cryptokit/secureenclave) for P-256 when available; [Keychain](https://developer.apple.com/documentation/security/storing-keys-in-the-keychain) for P-384/P-521 or when the Secure Enclave is unavailable |
+| macOS / iOS | [Secure Enclave](https://developer.apple.com/documentation/cryptokit/secureenclave) for P-256, and for P-384 where the platform allows it; [Keychain](https://developer.apple.com/documentation/security/storing-keys-in-the-keychain) otherwise |
 | Android | [AndroidKeyStore](https://developer.android.com/privacy-and-security/keystore), requesting StrongBox for P-256 first; otherwise protection depends on the device and may be TEE-backed or software |
 | Linux | [YubiKey PIV](https://developers.yubico.com/PIV/) (default, see below) |
 | YubiKey (optional) | [YubiKey PIV](https://developers.yubico.com/PIV/) (cross-platform: Windows, macOS, Linux only) |
@@ -16,9 +16,108 @@ required on Linux, and unsupported on iOS/Android.
 
 **Windows protection is per key.** Creation tries TPM, VBS, then software storage; unsupported
 TPM algorithms can fall back without leaving an error. There is no minimum-storage-tier
-parameter. Read `key_info().storage_description` for `"TPM Protection"`,
-`"Virtualization Based Security"`, or `"Software Protection"`.
-`is_hardware_backed` is **true for both TPM and VBS keys**: VBS isolation is not TPM key storage.
+parameter. Read `key_info().storage_tier` for `StorageTier::windows_tpm`,
+`StorageTier::windows_vbs`, or `StorageTier::windows_software`.
+`is_hardware_backed` is **true only for TPM keys**. A VBS key is not exportable either, but its
+isolation rests on the hypervisor and its protection at rest on conditions MPSS cannot check, so it
+reports false; read the tier rather than the flag to tell VBS from software storage.
+
+## Threat Model
+
+MPSS exposes no way to retrieve private key material: `extract_key()` returns the public key, and
+the OpenSSL provider's encoder emits a backend and a name rather than a key. Signing happens inside
+the backend. How much that is worth depends on the storage a key actually obtained, which is what
+`key_info()` reports.
+
+`is_hardware_backed` is true when the private key is held outside the operating system's reach, in
+storage the platform vendor classifies as secure hardware: TPM on Windows, the Secure Enclave on
+Apple, Trusted Environment or StrongBox on Android, and the secure element of a YubiKey. It is
+false for the Apple Keychain tier and for plain software storage, and false for Windows
+Virtualization Based Security, which is not a weak tier but a conditional one: the isolation is
+enforced by the hypervisor, and what protects the key at rest depends on Secure Boot and on a TPM
+being present, neither of which MPSS can establish.
+
+`key_info()` reports one fact three ways. `storage_tier` is the fact: a `StorageTier` enumerator
+such as `StorageTier::apple_secure_enclave`, established by the backend from the key itself.
+`is_hardware_backed` and `storage_description` are what the table in `mpss/storage_tier.h` says that
+tier reports, derived from it rather than decided alongside it, so the three cannot disagree.
+Compare `storage_tier` whenever the difference between two tiers that give the same flag matters:
+`windows_tpm` and `yubikey_piv` both report true, and `apple_keychain` and `windows_vbs` both report
+false for unrelated reasons. `get_storage_tier_info()` answers for a tier without a key in hand.
+
+Tiers are names, not a rank: compare one for equality, never order it. The values run in increasing
+protection within a platform, so `tier >= StorageTier::windows_tpm` passes every test written on one
+platform and then accepts `apple_keychain` and `android_software`, neither of which is hardware
+backing. `is_hardware_backed` is what ranks tiers against each other.
+
+**An algorithm constrains which tiers are eligible, but does not settle which one a key gets.** On
+Apple, MPSS asks the Secure
+Enclave to hold every key and reads back from the key itself whether it did. The enclave takes
+P-256 and, on platforms that allow it, P-384; it refuses P-521, and it refuses everything on a
+macOS process that is not a provisioned application, in which case the key is created in software
+instead. Apple documents the enclave as working only with P-256, so P-384 rests on behaviour that
+is not promised and may stop being offered. MPSS does not assume it either way: a key reports the
+protection it actually has, so a caller that reads `key_info()` sees a change in platform
+behaviour rather than silently losing a guarantee it believed it had.
+
+**What a hardware-backed key defends against.** A key generated inside secure hardware and never
+exported cannot be read out of a backup, scraped from process memory, or committed to a repository,
+and whoever reaches the host cannot carry it away to use elsewhere afterwards, so their use of it
+lasts only as long as their access to the device. A Windows VBS key is not exportable either: the
+isolated environment holding it is not readable by the rest of the operating system. The remaining
+tiers do not isolate the key that way. Windows marks software-tier keys non-exportable through CNG,
+which is an access policy rather than isolation, and an Apple software Keychain key can be read out
+by code that reaches the keychain item, yielding the private key rather than anything sealed to the
+device, so it can be used elsewhere. An enclave-backed key differs in exactly that respect: a
+`SecKey` the enclave holds refuses to give up its private key at all, and the representation
+CryptoKit stores for a P-256 enclave key is wrapped to that enclave and inert on any other device.
+
+**What no tier defends against.** Any code running in the calling process can ask MPSS to sign, and
+the OpenSSL provider is the same trust boundary; a compromised application never has to defeat MPSS
+to use a key it can already reach. MPSS runs inside the process it is protecting, so a check MPSS
+makes is advisory: what holds is what the storage enforces, and what a relying party verifies off
+the machine. Hardware backing bounds the theft of a key, not its use.
+
+A key name is an identifier, not a secret. Which other code can reach the same key is decided by the
+backend: Windows keys belong to the current user, Apple follows Keychain access-group rules,
+AndroidKeyStore aliases are scoped to the application, and a YubiKey answers whoever can reach the
+device and satisfy its PIN and touch policy.
+
+Android and YubiKey refuse a key that was not generated in the key store itself, which they read
+from origin metadata the store records at generation. That says how a key came to be there rather
+than how it is protected now: on Android the check is independent of which tier the key store put
+the key in, which `key_info()` reports separately. The Windows and Apple paths do not establish
+origin at all, and `key_info()` reports where a key is now rather than where it came from.
+
+**Requiring the user for each signature** narrows the window in which a compromised host can sign.
+Only some backends offer it:
+
+| Backend | Per-signature policy `KeyPair::Create` accepts |
+| --- | --- |
+| YubiKey PIV | `yubikey_touch_always` |
+| Apple Secure Enclave | `apple_secure_enclave_user_presence` |
+| Windows | None; a nonzero `KeyPolicy` is rejected |
+| Android | None; a nonzero `KeyPolicy` is rejected |
+
+Windows and Android have platform facilities for this that MPSS does not expose.
+`yubikey_pin_always` requires PIN verification for every operation, but a PIN can come from
+`MPSS_YUBIKEY_PIN` or from a handler that holds one, so it governs credential use rather than
+showing that someone was present. Unless told otherwise MPSS creates YubiKey keys with the `cached`
+touch policy, under which the device asks for another touch only once more than 15 seconds have
+passed since the last one; `always` spends a touch on every signature. Apple evaluates its
+user-presence check inside the Secure Enclave rather than trusting a result the application supplies,
+though the application still chooses when to ask and what digest to submit.
+
+A touch or a presence check establishes that someone was there, not that they agreed to the
+operation that ran. Neither shows the user what is about to be signed, and on a compromised host the
+prompt asking them is written by whoever controls it. An application that needs the user to confirm
+*what* it signs needs a display that host does not control, or a confirmation channel that does not
+pass through it.
+
+**Deleting a key is not revocation.** A successful delete removes the stored entry, within the
+backend scope and partial-failure rules described below. It does not invalidate signatures or
+certificates already made with that key, and it cannot reach a copy held outside the entry it
+removed.
 
 ## Compiling for different platforms
 
@@ -457,11 +556,10 @@ For device setup and backend selection, see [Using MPSS with YubiKey PIV](#using
 
 Static targets are named `mpss::mpss_static` and `mpss::mpss_openssl_static`, whereas shared targets are `mpss::mpss` and `mpss::mpss_openssl`.
 Single-configuration generators use `CMAKE_BUILD_TYPE` to select `Debug` or `Release`.
-Building the tests does not run them. On desktop builds, run `bin/mpss_tests` from the build
-directory (`bin\Debug\mpss_tests.exe` or `bin\Release\mpss_tests.exe` with Visual Studio).
-When enabled, run `mpss_win32_mock_tests.exe` separately from the same configuration directory.
-Shared-core builds do **not** create that mock executable, even if
-`MPSS_BUILD_WIN32_MOCK_TESTS=ON`; their normal test suite is not a substitute for those mocks.
+On desktop builds, run `bin/mpss_tests` from the build directory (`bin\Debug\mpss_tests.exe` or
+`bin\Release\mpss_tests.exe` with Visual Studio). When enabled, run `mpss_win32_mock_tests.exe`
+separately from the same configuration directory; shared-core builds do **not** create it, even
+with `MPSS_BUILD_WIN32_MOCK_TESTS=ON`.
 
 ## Using the MPSS Core Library
 
@@ -573,7 +671,7 @@ Windows skips providers it cannot open, so success does not establish absence th
 YubiKey deletion by name requires a valid [slot label](#yubikey-backend-limitations-and-considerations).
 Handles to a deleted key refuse every operation afterwards, whichever API deleted it.
 
-### Releasing a Handle
+### Handle Lifetime
 
 A handle holds something for as long as it lives: an OS key handle on Windows, a hold on a cached
 key on Apple and Android. Destroying it gives that back, so most callers never release explicitly.
@@ -588,16 +686,14 @@ the size requests spelled as `sign_hash` and `extract_key` with an empty buffer.
 recorded when it was opened still answers: `algorithm`, `key_info`, `sign_hash_size` and
 `extract_key_size` never reach the key.
 
-The return value reports whether everything the handle held was given up. It is not
-`[[nodiscard]]`, because a caller with nothing to do with the answer may ignore it, and the
-destructor does. A `false` return does not invite another attempt: the handle is finished either
-way, and releasing an already released handle repeats what the one attempt reported.
+The return value reports whether everything the handle held was given up. A `false` return does not
+invite another attempt: the handle is finished either way, and releasing it again repeats what the
+one attempt reported.
 
-### Handles and a Name That Has Moved On
-
-A key can be deleted and created again under the same name while a handle to the old key is still
-open. That handle does not silently follow the name to the new key. Every operation on it fails
-with an error naming the reason:
+A handle also stops working when the name it opened moves on. A key can be deleted and created
+again under the same name while a handle to the old key is still open; that handle does not
+silently follow the name to the new key. Every operation on it fails with an error naming the
+reason:
 
 ```text
 Key 'my-key' is no longer the key this handle opened.
@@ -653,8 +749,10 @@ The library supports the following ECDSA algorithms:
 | `ecdsa_secp521r1_sha512` | 521 bits | 256 bits | SHA-512 | ✗ No |
 
 **Note**: The YubiKey backend does not support P-521 (secp521r1). Use an OS-native backend for
-P-521 where available, but do not assume it will be hardware-backed. Apple Secure Enclave and
-Android StrongBox are used only for P-256, and Windows TPM algorithm support varies by device.
+P-521 where available, but do not assume it will be hardware-backed. Android StrongBox is used only
+for P-256, Windows TPM algorithm support varies by device, and the Apple Secure Enclave takes P-256
+and, on platforms that allow it, P-384; it refuses P-521. Read `key_info()` rather than inferring
+protection from the algorithm.
 
 ### Standalone Verification
 
@@ -687,7 +785,9 @@ to read. For normal returns:
 
 The C API provides `mpss_get_error()`, `mpss_has_error()`, and `mpss_clear_error()`.
 The pointer returned by `mpss_get_error()` is valid until that function is called again on
-the same thread or the thread exits; copy the string if needed longer.
+the same thread or the thread exits; copy the string if needed longer. Through the provider,
+these diagnostics are accompanied by OpenSSL's own error queue; see
+[Errors and the OpenSSL Error Queue](#errors-and-the-openssl-error-queue).
 
 ##### Availability queries
 
@@ -696,35 +796,6 @@ an unknown algorithm/backend or missing default backend sets an error.
 OS backends probe using a scratch key. YubiKey answers from static capabilities, even without
 a device. Default-backend queries cache positive results, so availability is not a readiness
 or storage-tier guarantee.
-
-##### Internal errors and the OpenSSL error queue
-
-Provider callbacks and fallible C API operations catch C++ exceptions and report
-`ERR_LIB_PROV` / `ERR_R_INTERNAL_ERROR` on OpenSSL's error queue, which prints as:
-
-```
-error:1C8C0103:Provider routines::internal error
-```
-
-Such a failure may leave no MPSS error string. If `mpss_get_error()` itself cannot copy the
-string, it returns `"Internal error."`.
-
-Inspect both diagnostics on failure. An absent name makes by-name deletion succeed, so
-`false` must not be interpreted as "nothing to delete":
-
-```c
-ERR_clear_error();
-if (!mpss_delete_key(name)) {
-    if (mpss_has_error()) {
-        fprintf(stderr, "delete failed: %s\n", mpss_get_error());
-    }
-    ERR_print_errors_fp(stderr);
-}
-```
-
-The two channels are independent and thread-local. Clear the OpenSSL queue before an operation
-whose errors you want to isolate. A non-empty queue alone does not indicate failure: it may
-contain entries from recovered internal steps.
 
 ### Thread Safety
 
@@ -747,10 +818,9 @@ while another thread is still inside it.
 The last-error channel is per-thread, so concurrent calls do not overwrite each other's
 diagnostics. See [Error Handling](#error-handling).
 
-An interaction handler is called on whichever thread performs the operation, and from inside the
-locks that operation is holding, so **it must not call back into MPSS**. A call made from a handler
-is refused and reports an error rather than being allowed to wait on locks its own caller holds.
-See [Custom Interaction Handlers](#custom-interaction-handlers).
+An interaction handler is called on whichever thread performs the operation, from inside the locks
+that operation is holding, so **it must not call back into MPSS**; such a call is refused and
+reports an error. See [Custom Interaction Handlers](#custom-interaction-handlers).
 
 **YubiKey.** One device serves one operation at a time. A PIV session is stateful, since verifying
 a PIN and then signing are separate exchanges carried on one connection, so MPSS serializes by
@@ -760,9 +830,8 @@ Different YubiKeys proceed in parallel. Listing devices connects to every reader
 connecting to a device disturbs what a session has established on it, a verified PIN among that, so
 a listing runs only while no session is open on any device.
 
-**Other backends.** Apple and Android resolve a key through caches that are internally
-synchronized, and Windows hands the key handle the process owns straight to CNG. None of them
-serializes by device, so operations on distinct handles proceed in parallel.
+**Other backends.** Apple, Android and Windows do not serialize by device, so operations on
+distinct handles proceed in parallel.
 
 ### Logging
 
@@ -911,32 +980,36 @@ public:
         if (mpss::PinStatus::wrong_pin == context.last_status &&
             !my_ui::confirm_retry(context.retries_remaining)) {
             return std::nullopt;  // Give up rather than spend another try.
-        }
+}
 
         // context.operation describes what needs the PIN, for the prompt text. Have the dialog
         // return a SecureString so the PIN is never held in an ordinary std::string.
         return my_ui::prompt_for_pin(context.operation);  // std::nullopt if the user cancels.
-    }
+}
 
-    void notify_touch_needed() override { my_ui::show_touch_prompt(); }
+void notify_touch_needed() override
+{
+    my_ui::show_touch_prompt();
+}
 
-    void notify_touch_complete(bool success) override { my_ui::hide_touch_prompt(success); }
+void notify_touch_complete(bool success) override
+{
+    my_ui::hide_touch_prompt(success);
+}
 
-    // Optional, but it is the only place an outcome other than "wrong PIN" is reported: on success,
-    // lockout, a device error, or a PIN that never reached the device, MPSS stops calling request_pin,
-    // so a dialog opened there would never learn to close itself. Exactly one result follows every
-    // request, so dismissing here is always reached.
+// Optional, but the only place an outcome other than "wrong PIN" is reported.
     void notify_pin_result(mpss::PinResult result, int retries_remaining) override
+{
+    if (mpss::PinResult::not_attempted == result)
     {
-        if (mpss::PinResult::not_attempted == result) {
-            // MPSS withheld the PIN rather than spend one of the device's few tries on it, or the
-            // request was cancelled. No attempt was made, so retries_remaining is unchanged.
+        // No attempt was made, so retries_remaining is unchanged.
             my_ui::hide_pin_dialog();
-            return;
-        }
-        my_ui::report_pin_result(result, retries_remaining);  // ok, wrong_pin, locked, or error.
+    return;
     }
-};
+        my_ui::report_pin_result(result, retries_remaining);  // ok, wrong_pin, locked, or error.
+}
+}
+;
 
 // Install once, before any MPSS operation (typically at application startup).
 mpss::GetOrSetInteractionHandler(std::make_shared<MyInteractionHandler>());
@@ -953,12 +1026,8 @@ performs the operation, so an implementation that drives UI must marshal to its 
 
 A handler runs from inside the locks the operation is holding, the device's own among them, so it
 must not call back into MPSS. Creating, opening, deleting, signing or releasing from a handler is
-refused and reports an error, because the alternative is waiting on a lock the handler's own caller
-holds, which on a YubiKey means a device that stops answering with someone waiting to touch it. Do
-any MPSS work before the operation that needs the PIN, or after it returns.
-
-MPSS stops asking on cancellation, an empty PIN, success, lockout, authentication errors, or
-repetition of a PIN this device has already refused.
+refused and reports an error. Do any MPSS work before the operation that needs the PIN, or after it
+returns.
 
 Callers that cannot subclass a C++ interface can install the same four behaviors as plain function
 pointers through [mpss-openssl/interaction_handler.h](mpss-openssl/interaction_handler.h), which
@@ -974,18 +1043,29 @@ export MPSS_YUBIKEY_SERIAL=18268739
 ```
 
 Creation, opening, and deletion by name obey this selection. Malformed serials are warned
-about and treated as unset. Existing `KeyPair` handles retain their serial and slot.
-By-name deletion also refuses device enumerations that could not identify an attached device.
+about and treated as unset. Existing `KeyPair` handles retain their serial, slot, and public key.
 
-Each device has its own PIN, while `MPSS_YUBIKEY_PIN` holds a single value, so a PIN that suits one
-device will generally not suit another. Because a device locks after a few wrong PINs and every
-operation authenticates afresh, a stale configured PIN would otherwise be spent one retry at a time
-until the device locked. MPSS therefore declines to present a PIN that the device has already
-refused, and reports that as the reason the operation failed.
-The record is kept per serial, so a value one device refused is still offered to another, where it
-may well be correct. Only values that device actually refused are withheld, so correcting the PIN
-takes effect immediately. MPSS retains a keyed fingerprint of each refused PIN rather than the PIN
-itself.
+Creating, opening, and deleting by name all refuse when any detected reader added no device of its
+own. Such a reader may hold a YubiKey this process cannot reach, and the smart card layer reports
+that the same way as an empty reader or a card that is not a YubiKey. Two readers answering with
+one serial are refused on the same grounds: a device reachable on two readers and a card claiming
+another device's serial cannot be told apart, because the serial is asserted by the card. A hidden
+device would otherwise go uncounted by the refusal above, so a name held on more than one device
+would resolve to whichever one answered.
+
+These refusals apply when no device is selected. Setting `MPSS_YUBIKEY_SERIAL` names the device
+outright, so the operation proceeds without asking the reader scan whether it accounted for
+everything attached; MPSS still scans to find which reader answers for that serial. That is how to
+use these operations on a machine carrying other smart card readers, at the cost of the refusals
+above: a card asserting the selected serial is told apart from the genuine device only by the scan
+those refusals report on.
+
+Each device has its own PIN, while `MPSS_YUBIKEY_PIN` holds a single value. MPSS declines to present
+a PIN that a device has already refused, and reports that as the reason the operation failed, so a
+stale configured PIN cannot spend that device's remaining retries. The record is kept per serial, as
+a keyed fingerprint rather than the PIN itself, so a value one device refused is still offered to
+another and correcting the PIN takes effect immediately.
+
 The record lasts for the lifetime of the loaded library. If the device PIN is changed elsewhere to a
 value MPSS has already seen refused, restart the process so that value is offered again.
 
@@ -1010,7 +1090,7 @@ value MPSS has already seen refused, restart the process so that value is offere
 | Algorithms | P-256 and P-384; no P-521 |
 | Device access | Key operations require the device, including verification through a `KeyPair`. Standalone verification with an extracted public key does not |
 | Authentication | Creation/deletion request a PIN only after authentication-related failure; other refusals do not trigger a PIN retry |
-| PIN lockout | A PIN the device refuses is not presented to it again for the lifetime of the process, so a stale `MPSS_YUBIKEY_PIN` cannot spend the device's remaining retries. Recorded per serial, so other devices are unaffected |
+| PIN lockout | A PIN the device refuses is not presented to it again for the lifetime of the process, so a stale `MPSS_YUBIKEY_PIN` cannot spend the device's remaining retries. See [Device Selection](#device-selection) |
 | PIN policy | MPSS reconnects per operation, so `once` need not cache the PIN across signing calls. `never` affects signing, not management authentication |
 | Touch policy | `cached` needs a touch only if more than 15 seconds have passed since the last one. The handler is notified whenever the policy is not `never`, so under `cached` a prompt can appear when the cached touch means none is actually required. MPSS sets no timeout of its own; signing blocks until the device gives up, and an untouched key fails the operation |
 | Concurrency | Run one PIV writer per device. Multi-step operations are not atomic across processes |
@@ -1020,9 +1100,16 @@ MPSS ignores mismatched labels and refuses ambiguous names. Labels are not attes
 a writer with management credentials can replace both key and label. Storing an unrelated
 certificate in the slot replaces MPSS's label.
 
+MPSS opens only keys the device generated itself. PIV slot metadata records whether a key was
+generated on the device or imported into it, and a key imported into a slot resides in the same
+secure element and reports the same protection while whoever imported it still holds the private
+material. Such a key is refused by `Open` and is not created over; it can still be deleted, since
+deletion addresses the slot rather than vouching for what is in it.
+
 By-name deletion clears keys with matching labels on the selected device and fails if a slot is unreadable.
-Keys without valid labels require direct slot administration. Existing handles retain a serial
-and slot, not an immutable key snapshot.
+Keys without valid labels require direct slot administration. Existing handles retain the serial,
+the slot, and the public key the slot held when they opened it, and confirm that key before
+reaching it.
 
 Firmware 5.7 and later supports key erasure. On firmware without that command, MPSS overwrites
 the key with a dummy and labels the slot `"(available)"` for reuse; this is not evidence of
@@ -1150,8 +1237,8 @@ referencing the stored key; ambiguous names are refused.
 The remaining examples assume a live `libctx` with MPSS and the default provider loaded.
 
 ```cpp
-#include <openssl/store.h>
 #include <openssl/pem.h>
+#include <openssl/store.h>
 
 // Open an existing MPSS key by name.
 OSSL_STORE_CTX *store =
@@ -1165,7 +1252,8 @@ if (store == nullptr) {
 EVP_PKEY *existing_pkey = nullptr;
 OSSL_STORE_INFO *info = OSSL_STORE_load(store);
 if (info != nullptr) {
-    if (OSSL_STORE_INFO_get_type(info) == OSSL_STORE_INFO_PKEY) {
+    if (OSSL_STORE_INFO_get_type(info) == OSSL_STORE_INFO_PKEY)
+    {
         existing_pkey = OSSL_STORE_INFO_get1_PKEY(info);
     }
     OSSL_STORE_INFO_free(info);
@@ -1232,10 +1320,11 @@ X509_free(cert);
 | `mpss_key_name` | UTF-8 string | The key's persistent name. |
 | `mpss_algorithm` | UTF-8 string | The key's algorithm suite (canonical form). |
 | `mpss_backend` | UTF-8 string | The backend that created or opened the key. |
-| `is_hardware_backed` | int | The core `KeyInfo` boolean, exposed as `1` or `0`. Windows reports `1` for both TPM and VBS keys; this is not a TPM-storage guarantee. |
-| `storage_description` | UTF-8 string | Human-readable description of the storage location (e.g., `"Keychain"`, `"YubiKey PIV"`). |
+| `is_hardware_backed` | int | The core `KeyInfo` boolean, exposed as `1` or `0`. See [Threat Model](#threat-model) for what it reports; on Windows only TPM keys report `1`. |
+| `storage_tier` | int | The exact tier, as the number of the corresponding `mpss::StorageTier`. The numbers are fixed and only ever appended to, and `MPSS_STORAGE_TIER_*` in `mpss-openssl/api.h` names them; a value those constants do not name is a tier newer than the consumer's headers, so fall back to the two parameters that are answered for every tier. |
+| `storage_description` | UTF-8 string | Human-readable description of the storage location (e.g., `"Keychain"`, `"YubiKey PIV"`). Intended for display; compare `storage_tier` rather than this string. |
 
-The standard OpenSSL parameters `OSSL_PKEY_PARAM_BITS`, `OSSL_PKEY_PARAM_SECURITY_BITS`, `OSSL_PKEY_PARAM_MANDATORY_DIGEST`, and `OSSL_PKEY_PARAM_DEFAULT_DIGEST` are also supported.
+The standard OpenSSL parameters `OSSL_PKEY_PARAM_GROUP_NAME`, `OSSL_PKEY_PARAM_BITS`, `OSSL_PKEY_PARAM_SECURITY_BITS`, `OSSL_PKEY_PARAM_MANDATORY_DIGEST`, and `OSSL_PKEY_PARAM_DEFAULT_DIGEST` are also supported.
 
 #### 5. Certificate Authority and Certificate Chain Creation
 
@@ -1322,6 +1411,37 @@ A reference resolves the name again in its recorded backend, using current devic
 rules. It contains no fingerprint or device serial: replacing the file or reusing the key name
 can select a different key. Protect reference files as credential-selection configuration.
 Reading fails if the name is absent, ambiguous, or inaccessible.
+
+### Errors and the OpenSSL Error Queue
+
+Provider callbacks and fallible C API operations catch C++ exceptions and report
+`ERR_LIB_PROV` / `ERR_R_INTERNAL_ERROR` on OpenSSL's error queue, which prints as:
+
+```
+error:1C8C0103:Provider routines::internal error
+```
+
+Such a failure may leave no MPSS error string. If `mpss_get_error()` itself cannot copy the
+string, it returns `"Internal error."`.
+
+Inspect both diagnostics on failure. An absent name makes by-name deletion succeed, so
+`false` must not be interpreted as "nothing to delete":
+
+```c
+ERR_clear_error();
+if (!mpss_delete_key(name)) {
+    if (mpss_has_error())
+    {
+        fprintf(stderr, "delete failed: %s\n", mpss_get_error());
+    }
+    ERR_print_errors_fp(stderr);
+}
+```
+
+The two channels are independent and thread-local. Clear the OpenSSL queue before an operation
+whose errors you want to isolate. A non-empty queue alone does not indicate failure: it may
+contain entries from recovered internal steps. See [Error Handling](#error-handling) for the
+core last-error contract.
 
 ### Building mpss-openssl
 
