@@ -6,15 +6,43 @@
 #include "mpss/impl/yubikey/yk_utils.h"
 #include "mpss/interaction_handler.h"
 #include "mpss/utils/utilities.h"
+#include <algorithm>
 #include <mutex>
+#include <vector>
 #include <ykpiv/ykpiv.h>
 
 namespace mpss::impl::yubikey
 {
 
-YubiKeyKeyPair::YubiKeyKeyPair(std::string_view name, Algorithm algorithm, std::uint8_t slot, std::uint32_t serial)
-    : KeyPair{algorithm, StorageTier::yubikey_piv}, name_{name}, slot_{slot}, serial_{serial}
+YubiKeyKeyPair::YubiKeyKeyPair(std::string_view name, Algorithm algorithm, std::uint8_t slot, std::uint32_t serial,
+                               std::span<const std::byte> public_key)
+    : KeyPair{algorithm, StorageTier::yubikey_piv}, name_{name}, slot_{slot}, serial_{serial},
+      public_key_{public_key.begin(), public_key.end()}
 {
+}
+
+bool YubiKeyKeyPair::is_opened_key(std::span<const std::byte> slot_key) const
+{
+    if (public_key_.empty() || slot_key.size() != public_key_.size() ||
+        !std::equal(public_key_.begin(), public_key_.end(), slot_key.begin()))
+    {
+        mpss::utils::log_and_set_error("Key '{}' is no longer the key this handle opened.", name_);
+        return false;
+    }
+    return true;
+}
+
+bool YubiKeyKeyPair::slot_still_holds_opened_key(YubiKeyPIV &piv) const
+{
+    std::vector<std::byte> slot_key(mpss::utils::get_public_key_size(algorithm()));
+    const std::size_t read = piv.get_public_key(slot_, slot_key, /* probe */ true);
+    if (0 == read)
+    {
+        // An emptied slot reads as nothing, which is as much a replacement as a different key.
+        mpss::utils::log_and_set_error("Key '{}' is no longer the key this handle opened.", name_);
+        return false;
+    }
+    return is_opened_key(std::span<const std::byte>{slot_key}.first(read));
 }
 
 bool YubiKeyKeyPair::do_delete_key()
@@ -28,6 +56,13 @@ bool YubiKeyKeyPair::do_delete_key()
     if (!piv.is_connected())
     {
         mpss::utils::log_trace("Cannot delete key '{}': YubiKey connection failed.", name_);
+        return false;
+    }
+
+    // Checked before anything is deleted, so that deleting through a handle whose key has been
+    // replaced cannot destroy the key that replaced it.
+    if (!slot_still_holds_opened_key(piv))
+    {
         return false;
     }
 
@@ -46,7 +81,14 @@ bool YubiKeyKeyPair::do_delete_key()
             return false;
         }
 
-        // PIN is now verified on this connection.
+        // PIN is now verified on this connection. The slot is confirmed again because the prompt
+        // above waits on a person, which is long enough for another writer to take the slot over
+        // between the first check and this delete.
+        if (!slot_still_holds_opened_key(piv))
+        {
+            return false;
+        }
+
         deleted = piv.delete_key(slot_);
     }
 
@@ -72,9 +114,24 @@ std::size_t YubiKeyKeyPair::do_sign_hash(std::span<const std::byte> hash, std::s
         return 0;
     }
 
+    // Checked before any PIN or touch is asked for, so a handle whose key has been replaced spends
+    // neither. One read answers all three questions signing asks of the slot.
+    YubiKeyPIV::SlotMetadata metadata;
+    if (!piv.read_slot_metadata(slot_, metadata, /* probe */ true))
+    {
+        // A slot that will not answer no longer holds the key this handle opened, as far as this
+        // operation can tell.
+        mpss::utils::log_and_set_error("Key '{}' is no longer the key this handle opened.", name_);
+        return 0;
+    }
+    if (!is_opened_key(metadata.public_key))
+    {
+        return 0;
+    }
+
     const std::shared_ptr<InteractionHandler> handler = mpss::GetInteractionHandler();
-    const bool needs_pin = (YKPIV_PINPOLICY_NEVER != piv.get_key_pin_policy(slot_));
-    const bool needs_touch = (YKPIV_TOUCHPOLICY_NEVER != piv.get_key_touch_policy(slot_));
+    const bool needs_pin = (YKPIV_PINPOLICY_NEVER != metadata.pin_policy);
+    const bool needs_touch = (YKPIV_TOUCHPOLICY_NEVER != metadata.touch_policy);
 
     // The logic is a bit complicated by the fact that we want to avoid unnecessary PIN prompts, but also avoid
     // using sign() as a probe when the key has a touch policy (to prevent unexpected blocking waiting for touch).
@@ -102,6 +159,13 @@ std::size_t YubiKeyKeyPair::do_sign_hash(std::span<const std::byte> hash, std::s
         if (!authenticate_pin_interactive(piv, "sign with key '" + name_ + "'"))
         {
             mpss::utils::log_trace("Cannot sign with key '{}': PIN authentication failed.", name_);
+            return 0;
+        }
+
+        // The prompt above waits on a person, which is long enough for another writer to take the
+        // slot over, so what it holds is confirmed again before this signs with it.
+        if (!slot_still_holds_opened_key(piv))
+        {
             return 0;
         }
     }
@@ -143,7 +207,12 @@ bool YubiKeyKeyPair::do_verify(std::span<const std::byte> hash, std::span<const 
     const std::size_t pk_len = do_extract_key(public_key);
     if (0 == pk_len)
     {
-        mpss::utils::log_and_set_error("Cannot verify with key '{}': public key extraction failed.", name_);
+        // Extraction refuses a handle whose key has been replaced, and says so; that reason is
+        // more use to the caller than this one.
+        if (!mpss::utils::has_error())
+        {
+            mpss::utils::log_and_set_error("Cannot verify with key '{}': public key extraction failed.", name_);
+        }
         return false;
     }
     public_key.resize(pk_len);
@@ -159,7 +228,6 @@ bool YubiKeyKeyPair::do_verify(std::span<const std::byte> hash, std::span<const 
 
 std::size_t YubiKeyKeyPair::do_extract_key(std::span<std::byte> public_key) const
 {
-    // Connect and extract public key directly into the caller's buffer.
     mpss::utils::log_trace("Extracting public key from YubiKey slot {}.", utils::get_slot_name(slot_));
     YubiKeyPIV piv{serial_};
     if (!piv.is_connected())
@@ -168,17 +236,30 @@ std::size_t YubiKeyKeyPair::do_extract_key(std::span<std::byte> public_key) cons
         return 0;
     }
 
-    const std::size_t pk_size = piv.get_public_key(slot_, public_key);
-    if (0 != pk_size)
-    {
-        mpss::utils::log_trace("Extracted {} byte public key from YubiKey slot {}.", pk_size,
-                               utils::get_slot_name(slot_));
-    }
-    else
+    // Read into a temporary: a failed extraction must leave the caller's buffer untouched, and a
+    // slot that has moved on would otherwise hand back the key that replaced the one opened here.
+    std::vector<std::byte> slot_key(mpss::utils::get_public_key_size(algorithm()));
+    const std::size_t pk_size = piv.get_public_key(slot_, slot_key);
+    if (0 == pk_size)
     {
         mpss::utils::log_trace("Failed to extract public key from slot {} for key '{}'.", utils::get_slot_name(slot_),
                                name_);
+        return 0;
     }
+
+    if (!is_opened_key(std::span<const std::byte>{slot_key}.first(pk_size)))
+    {
+        return 0;
+    }
+
+    if (pk_size > public_key.size())
+    {
+        mpss::utils::log_and_set_error("Public key buffer too small.");
+        return 0;
+    }
+    std::copy_n(slot_key.begin(), pk_size, public_key.begin());
+
+    mpss::utils::log_trace("Extracted {} byte public key from YubiKey slot {}.", pk_size, utils::get_slot_name(slot_));
     return pk_size;
 }
 

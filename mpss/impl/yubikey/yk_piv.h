@@ -117,11 +117,15 @@ class YubiKeyPIV
      * @param slot The PIV slot number.
      * @param algorithm The YubiKey PIV algorithm constant (YKPIV_ALGO_ECCP256, etc.).
      * @param policy Key policy bitmask. If KeyPolicy::none, uses env vars / defaults.
+     * @param[out] public_key Optional. On success, the public key the device reports for the key it
+     * just generated. This identifies that key: a slot another writer has filled since holds a
+     * different one, and nothing else about the slot distinguishes them.
      * @return GenerateResult::generated on success; GenerateResult::unauthenticated when the device
      * refused for want of credentials, which is the only refusal that verifying a PIN and retrying
      * can change; GenerateResult::refused for every other failure.
      */
-    GenerateResult generate_key(std::uint8_t slot, std::uint8_t algorithm, KeyPolicy policy = KeyPolicy::none);
+    GenerateResult generate_key(std::uint8_t slot, std::uint8_t algorithm, KeyPolicy policy = KeyPolicy::none,
+                                std::vector<std::byte> *public_key = nullptr);
 
     /**
      * @brief Sign a hash with the key in the specified slot.
@@ -152,6 +156,34 @@ class YubiKeyPIV
     std::size_t get_public_key(std::uint8_t slot, std::span<std::byte> public_key, bool probe = false);
 
     /**
+     * @brief What a slot's metadata says about the key it holds.
+     */
+    struct SlotMetadata
+    {
+        std::uint8_t pin_policy{0};
+        std::uint8_t touch_policy{0};
+        // Where the key came from, which the secure element stamps at generation and a writer
+        // cannot supply. A key imported into a slot resides in the same hardware and is protected
+        // the same way, yet whoever imported it still holds the private material.
+        bool generated_on_device{false};
+        std::vector<std::byte> public_key;
+    };
+
+    /**
+     * @brief Read a slot's key and both of its policies in one exchange with the device.
+     *
+     * Everything a slot's metadata says arrives together, so asking for one answer costs the same
+     * round trip as asking for all three. This is the only way to read a slot's policies.
+     *
+     * @param slot The PIV slot number.
+     * @param[out] metadata Filled when the slot answers. A policy the slot does not state carries
+     *                      the firmware default.
+     * @param probe When true, a failure is not reported through the last error.
+     * @return True when the slot answered and its public key could be read.
+     */
+    bool read_slot_metadata(std::uint8_t slot, SlotMetadata &metadata, bool probe = false);
+
+    /**
      * @brief Outcome of a key deletion attempt.
      */
     enum class DeleteResult
@@ -178,30 +210,6 @@ class YubiKeyPIV
      * mode, for instance -- refuses to delete this way too, and for the same unsatisfiable reason.
      */
     DeleteResult delete_key(std::uint8_t slot);
-
-    /**
-     * @brief Get the touch policy of the key in the specified slot.
-     *
-     * Reads the key metadata and returns the touch policy constant. If the
-     * metadata cannot be read (e.g., slot is empty), returns YKPIV_TOUCHPOLICY_NEVER
-     * as a safe default (no spurious touch notifications).
-     *
-     * @param slot The PIV slot number.
-     * @return The touch policy constant (YKPIV_TOUCHPOLICY_NEVER, YKPIV_TOUCHPOLICY_ALWAYS, etc.).
-     */
-    std::uint8_t get_key_touch_policy(std::uint8_t slot);
-
-    /**
-     * @brief Get the PIN policy of the key in the specified slot.
-     *
-     * Reads the key metadata and returns the PIN policy constant. If the
-     * metadata cannot be read (e.g., slot is empty), returns YKPIV_PINPOLICY_DEFAULT
-     * as a safe default (assumes PIN may be needed).
-     *
-     * @param slot The PIV slot number.
-     * @return The PIN policy constant (YKPIV_PINPOLICY_NEVER, YKPIV_PINPOLICY_ONCE, etc.).
-     */
-    std::uint8_t get_key_pin_policy(std::uint8_t slot);
 
     /**
      * @brief Check if a key exists in the specified slot.
@@ -316,8 +324,10 @@ class YubiKeyPIV
      * a discovery method: it leaves no connection open, and it records which reader answered for
      * each serial, which is what lets a later connection address one reader directly.
      *
-     * @param[out] device_skipped Optional. Set when a reader answered but the device on it could not
-     * be identified, so the returned list is not a complete account of what is attached.
+     * @param[out] device_skipped Optional. Set when a listed reader added no device of its own,
+     * whether it refused the connection, would not identify what it holds, or answered with a
+     * serial another reader had already claimed, so the returned list is not a complete account of
+     * what is attached.
      * @return A vector of serial numbers for all reachable YubiKeys.
      */
     static MPSS_DECOR std::vector<std::uint32_t> available_serials(bool *device_skipped = nullptr);
@@ -330,8 +340,8 @@ class YubiKeyPIV
     // order they were taken in.
     //
     // A scan wants the bus exclusively, so a thread holding these must not start one: the
-    // constructor releases both before rescanning, and nothing reached from here calls
-    // available_serials.
+    // constructor releases both before rescanning, and opening a second connection or listing
+    // devices from a thread that already holds one is refused rather than left to wait.
     std::shared_lock<std::shared_mutex> bus_lock_;
     std::unique_lock<std::mutex> device_lock_;
 

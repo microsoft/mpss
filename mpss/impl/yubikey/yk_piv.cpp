@@ -79,12 +79,27 @@ std::mutex &device_mutex(std::uint32_t serial)
     return *device;
 }
 
+// A live connection holds the bus shared for as long as it lasts. None of these locks is recursive,
+// so opening a second connection or scanning from the same thread ends in undefined behaviour or a
+// wait on a lock the thread itself holds. Both are refused, because the alternative is a hang with
+// nothing reported.
+thread_local int connection_depth = 0;
+
+[[nodiscard]]
+bool holds_connection() noexcept
+{
+    return 0 != connection_depth;
+}
+
 // Connects to every reader in turn, records which one answers for each serial, and reports the
 // serials found. Connecting to a device disturbs what a session has established on it, so the
 // caller must already hold the bus exclusively.
 //
-// device_skipped reports that a reader answered but the device on it would not give its serial, so
-// a caller that has to speak for every attached device knows this list is not all of them.
+// device_skipped reports that a listed reader added no device of its own, so a caller that has to
+// speak for every attached device knows this list is not all of them. That covers a reader that
+// will not connect, one that connects but will not state a serial, and one whose serial another
+// reader has already claimed; none of the three can be told apart from an attached device this
+// process cannot account for.
 std::optional<std::vector<std::uint32_t>> scan_readers_locked(bool *device_skipped)
 {
     if (nullptr != device_skipped)
@@ -122,6 +137,15 @@ std::optional<std::vector<std::uint32_t>> scan_readers_locked(bool *device_skipp
         rc = ykpiv_connect(state, exact_reader.c_str());
         if (YKPIV_OK != rc)
         {
+            // A connect can take the card handle and still fail afterwards, selecting the PIV
+            // applet among the steps that can, which leaves the handle on the state this loop goes
+            // on to reuse. The next connect re-establishes the context this releases.
+            ykpiv_disconnect(state);
+
+            // PC/SC reports an empty reader, a foreign card and a YubiKey another process is
+            // holding the same way, so a reader that will not connect leaves a device unaccounted
+            // for rather than ruled out.
+            skipped = true;
             mpss::utils::log_trace("Reader '{}': connection failed ({}).", reader, ykpiv_strerror(rc));
             continue;
         }
@@ -137,9 +161,16 @@ std::optional<std::vector<std::uint32_t>> scan_readers_locked(bool *device_skipp
             continue;
         }
 
-        if (discovered.contains(serial))
+        const auto seen = discovered.find(serial);
+        if (discovered.end() != seen)
         {
-            mpss::utils::log_warning("Duplicate serial {} found on reader '{}'.", serial, reader);
+            // One device reachable on two readers and a second device claiming the first one's
+            // serial look the same from here, because the serial is asserted by the card. Either
+            // way this reader added no device of its own, so the list is not a complete account of
+            // what is attached.
+            mpss::utils::log_warning("Serial {} answers on both reader '{}' and reader '{}'.", serial, seen->second,
+                                     reader);
+            skipped = true;
             continue;
         }
 
@@ -268,10 +299,109 @@ EVP_PKEY *make_ec_public_key(const char *group_name, std::span<const std::byte> 
 
     return pkey;
 }
+
+// Reads and parses a slot's metadata. Every answer metadata carries comes from this one exchange
+// with the device, so a caller that wants more than one of them asks once rather than once each.
+bool read_parsed_metadata(ykpiv_state *state, std::uint8_t slot, ykpiv_metadata &metadata, bool probe)
+{
+    unsigned char metadata_buf[YKPIV_OBJ_MAX_SIZE];
+    std::size_t metadata_len = sizeof(metadata_buf);
+
+    ykpiv_rc rc = ykpiv_get_metadata(state, slot, metadata_buf, &metadata_len);
+    if (YKPIV_OK != rc)
+    {
+        report_failure(probe, "Failed to get metadata from slot {}: {}", utils::get_slot_name(slot),
+                       ykpiv_strerror(rc));
+        return false;
+    }
+
+    rc = ykpiv_util_parse_metadata(metadata_buf, metadata_len, &metadata);
+    if (YKPIV_OK != rc)
+    {
+        report_failure(probe, "Failed to parse metadata from slot {}: {}", utils::get_slot_name(slot),
+                       ykpiv_strerror(rc));
+        return false;
+    }
+
+    return true;
+}
+
+// The public key in metadata is BER-TLV-wrapped with a PIV tag:
+// 86 <length> 04 <X> <Y> (tag 0x86 = public point, context-specific)
+// Parse the TLV to skip the header and copy out the raw X9.63 uncompressed point.
+std::size_t extract_public_point(const ykpiv_metadata &metadata, std::span<std::byte> out, std::uint8_t slot,
+                                 bool probe)
+{
+    const std::uint8_t *pubkey = metadata.pubkey;
+    std::size_t pubkey_len = metadata.pubkey_len;
+    if (pubkey_len >= 2 && 0x86 == pubkey[0])
+    {
+        std::size_t header_len = 2;
+        std::size_t num_len_bytes = 0;
+        if (pubkey[1] >= 0x80)
+        {
+            // Long form: the low bits count the bytes the length is spelled in.
+            num_len_bytes = pubkey[1] & 0x7FU;
+            if (0 == num_len_bytes || num_len_bytes > sizeof(std::size_t))
+            {
+                report_failure(probe, "Malformed BER-TLV public key in slot {}: unsupported length form.",
+                               utils::get_slot_name(slot));
+                return 0;
+            }
+            header_len = 2 + num_len_bytes;
+        }
+
+        if (header_len > pubkey_len)
+        {
+            report_failure(probe, "Malformed BER-TLV public key in slot {}: header exceeds data length.",
+                           utils::get_slot_name(slot));
+            return 0;
+        }
+
+        // Short form spells the length in the byte itself, long form in the bytes that follow it.
+        std::size_t declared_len = pubkey[1];
+        if (0 != num_len_bytes)
+        {
+            declared_len = 0;
+            for (std::size_t i = 0; i < num_len_bytes; ++i)
+            {
+                declared_len = (declared_len << 8U) | pubkey[2 + i];
+            }
+        }
+
+        // A length that disagrees with what is present means the slot is not saying what it appears
+        // to say, and the point it holds is not something to guess at.
+        if (declared_len != pubkey_len - header_len)
+        {
+            report_failure(
+                probe, "Malformed BER-TLV public key in slot {}: declared length {} does not match the {} bytes given.",
+                utils::get_slot_name(slot), declared_len, pubkey_len - header_len);
+            return 0;
+        }
+
+        pubkey += header_len;
+        pubkey_len = declared_len;
+    }
+
+    if (pubkey_len > out.size())
+    {
+        report_failure(probe, "Public key buffer too small.");
+        return 0;
+    }
+
+    std::copy_n(reinterpret_cast<const std::byte *>(pubkey), pubkey_len, out.data());
+    return pubkey_len;
+}
 } // namespace
 
 YubiKeyPIV::YubiKeyPIV(std::uint32_t serial)
 {
+    if (holds_connection())
+    {
+        mpss::utils::log_and_set_error("Cannot open a YubiKey connection from a thread that already holds one.");
+        return;
+    }
+
     // Addressing one reader is what keeps opening a device from disturbing the session another
     // thread has on a different one. Which reader that is comes from what a scan remembered, and is
     // read while holding the bus, so a scan cannot replace it between the reading and the connect.
@@ -317,6 +447,9 @@ YubiKeyPIV::~YubiKeyPIV()
 
 bool YubiKeyPIV::connect_to_reader(const std::string &reader, std::uint32_t target_serial)
 {
+    // Built before the state exists, so that an allocation failure has nothing to strand.
+    const std::string exact_reader = std::string("@") + reader;
+
     ykpiv_state *state = nullptr;
     ykpiv_rc rc = ykpiv_init(&state, 0);
     if (YKPIV_OK != rc)
@@ -325,12 +458,11 @@ bool YubiKeyPIV::connect_to_reader(const std::string &reader, std::uint32_t targ
         return false;
     }
 
-    const std::string exact_reader = std::string("@") + reader;
     rc = ykpiv_connect(state, exact_reader.c_str());
     if (YKPIV_OK != rc)
     {
-        mpss::utils::log_trace("Reader '{}': connection failed ({}).", reader, ykpiv_strerror(rc));
         ykpiv_done(state);
+        mpss::utils::log_trace("Reader '{}': connection failed ({}).", reader, ykpiv_strerror(rc));
         return false;
     }
 
@@ -340,15 +472,29 @@ bool YubiKeyPIV::connect_to_reader(const std::string &reader, std::uint32_t targ
     {
         // Whatever answers this reader is not what the caller asked for, so what was remembered has
         // gone stale.
-        mpss::utils::log_debug("Reader '{}' no longer answers for serial {}.", reader, target_serial);
         ykpiv_disconnect(state);
         ykpiv_done(state);
+        mpss::utils::log_debug("Reader '{}' no longer answers for serial {}.", reader, target_serial);
         return false;
     }
 
-    mpss::utils::log_trace("Connected to YubiKey with serial {} on reader '{}'.", serial, reader);
+    // Ownership moves to the object before anything that can throw runs.
     state_ = state;
     serial_ = serial;
+    ++connection_depth;
+
+    try
+    {
+        mpss::utils::log_trace("Connected to YubiKey with serial {} on reader '{}'.", serial, reader);
+    }
+    catch (...)
+    {
+        // Throwing out of here leaves the constructor incomplete, so no destructor would run to
+        // give back the connection or the depth this just took.
+        disconnect();
+        throw;
+    }
+
     return true;
 }
 
@@ -359,6 +505,7 @@ void YubiKeyPIV::disconnect()
         ykpiv_disconnect(state_);
         ykpiv_done(state_);
         state_ = nullptr;
+        --connection_depth;
     }
 }
 
@@ -482,7 +629,8 @@ bool YubiKeyPIV::authenticate_mgm_key()
     return false;
 }
 
-YubiKeyPIV::GenerateResult YubiKeyPIV::generate_key(std::uint8_t slot, std::uint8_t algorithm, KeyPolicy policy)
+YubiKeyPIV::GenerateResult YubiKeyPIV::generate_key(std::uint8_t slot, std::uint8_t algorithm, KeyPolicy policy,
+                                                    std::vector<std::byte> *public_key)
 {
     if (nullptr == state_)
     {
@@ -548,6 +696,11 @@ YubiKeyPIV::GenerateResult YubiKeyPIV::generate_key(std::uint8_t slot, std::uint
 
     if (YKPIV_OK == rc)
     {
+        if (nullptr != public_key && nullptr != point && 0 != point_len)
+        {
+            const auto *bytes = reinterpret_cast<const std::byte *>(point);
+            public_key->assign(bytes, bytes + point_len);
+        }
         return GenerateResult::generated;
     }
 
@@ -652,68 +805,42 @@ std::size_t YubiKeyPIV::get_public_key(std::uint8_t slot, std::span<std::byte> p
         return 0;
     }
 
-    // Get the public key from metadata.
-    unsigned char metadata_buf[YKPIV_OBJ_MAX_SIZE];
-    std::size_t metadata_len = sizeof(metadata_buf);
-
-    ykpiv_rc rc = ykpiv_get_metadata(state_, slot, metadata_buf, &metadata_len);
-    if (YKPIV_OK != rc)
-    {
-        report_failure(probe, "Failed to get metadata from slot {}: {}", utils::get_slot_name(slot),
-                       ykpiv_strerror(rc));
-        return 0;
-    }
-
-    // Parse metadata to extract public key.
     ykpiv_metadata metadata = {};
-    rc = ykpiv_util_parse_metadata(metadata_buf, metadata_len, &metadata);
-    if (YKPIV_OK != rc)
+    if (!read_parsed_metadata(state_, slot, metadata, probe))
     {
-        report_failure(probe, "Failed to parse metadata from slot {}: {}", utils::get_slot_name(slot),
-                       ykpiv_strerror(rc));
         return 0;
     }
 
-    // The public key in metadata is BER-TLV-wrapped with a PIV tag:
-    // 86 <length> 04 <X> <Y> (tag 0x86 = public point, context-specific)
-    // Parse the TLV to skip the header and get the raw X9.63 uncompressed point.
-    const std::uint8_t *pubkey = metadata.pubkey;
-    std::size_t pubkey_len = metadata.pubkey_len;
-    if (pubkey_len >= 2 && 0x86 == pubkey[0])
+    return extract_public_point(metadata, public_key, slot, probe);
+}
+
+bool YubiKeyPIV::read_slot_metadata(std::uint8_t slot, SlotMetadata &metadata, bool probe)
+{
+    if (nullptr == state_)
     {
-        std::size_t header_len = 0;
-        if (pubkey[1] < 0x80)
-        {
-            // Short form: length is a single byte.
-            header_len = 2;
-        }
-        else
-        {
-            // Long form: first byte is 0x80 | number_of_length_bytes.
-            const std::size_t num_len_bytes = pubkey[1] & 0x7F;
-            header_len = 2 + num_len_bytes;
-        }
-
-        if (header_len > pubkey_len)
-        {
-            report_failure(probe, "Malformed BER-TLV public key in slot {}: header exceeds data length.",
-                           utils::get_slot_name(slot));
-            return 0;
-        }
-
-        pubkey += header_len;
-        pubkey_len -= header_len;
+        report_failure(probe, "YubiKey not connected.");
+        return false;
     }
 
-    if (pubkey_len > public_key.size())
+    ykpiv_metadata raw = {};
+    if (!read_parsed_metadata(state_, slot, raw, probe))
     {
-        report_failure(probe, "Public key buffer too small.");
-        return 0;
+        return false;
     }
 
-    // Copy directly into the caller's buffer.
-    std::copy_n(reinterpret_cast<const std::byte *>(pubkey), pubkey_len, public_key.data());
-    return pubkey_len;
+    std::vector<std::byte> point(max_public_key_bytes);
+    const std::size_t point_len = extract_public_point(raw, point, slot, probe);
+    if (0 == point_len)
+    {
+        return false;
+    }
+    point.resize(point_len);
+
+    metadata.pin_policy = raw.pin_policy;
+    metadata.touch_policy = raw.touch_policy;
+    metadata.generated_on_device = (YKPIV_METADATA_ORIGIN_GENERATED == raw.origin);
+    metadata.public_key = std::move(point);
+    return true;
 }
 
 Algorithm YubiKeyPIV::read_slot_algorithm(std::uint8_t slot)
@@ -856,66 +983,12 @@ YubiKeyPIV::DeleteResult YubiKeyPIV::delete_key(std::uint8_t slot)
                                  utils::get_slot_name(slot));
 
         // The slot is now effectively unusable since the metadata is required to recognize it as free, but the key
-        // material has been overwritten so it can't be used maliciously. We log a warning but return success since
-        // the key material was securely deleted.
+        // that was there has been overwritten and cannot be used through the slot any more. We log a warning but
+        // return success on that basis; overwriting is not evidence of physical erasure.
         return DeleteResult::deleted;
     }
 
     return DeleteResult::deleted;
-}
-
-std::uint8_t YubiKeyPIV::get_key_touch_policy(std::uint8_t slot)
-{
-    if (nullptr == state_)
-    {
-        return YKPIV_TOUCHPOLICY_NEVER;
-    }
-
-    unsigned char metadata_buf[YKPIV_OBJ_MAX_SIZE];
-    std::size_t metadata_len = sizeof(metadata_buf);
-
-    ykpiv_rc rc = ykpiv_get_metadata(state_, slot, metadata_buf, &metadata_len);
-    if (YKPIV_OK != rc)
-    {
-        // Assume touch may be required so the sign path prompts rather than blocking silently.
-        return YKPIV_TOUCHPOLICY_DEFAULT;
-    }
-
-    ykpiv_metadata metadata = {};
-    rc = ykpiv_util_parse_metadata(metadata_buf, metadata_len, &metadata);
-    if (YKPIV_OK != rc)
-    {
-        // Assume touch may be required so the sign path prompts rather than blocking silently.
-        return YKPIV_TOUCHPOLICY_DEFAULT;
-    }
-
-    return metadata.touch_policy;
-}
-
-std::uint8_t YubiKeyPIV::get_key_pin_policy(std::uint8_t slot)
-{
-    if (nullptr == state_)
-    {
-        return YKPIV_PINPOLICY_DEFAULT;
-    }
-
-    unsigned char metadata_buf[YKPIV_OBJ_MAX_SIZE];
-    std::size_t metadata_len = sizeof(metadata_buf);
-
-    ykpiv_rc rc = ykpiv_get_metadata(state_, slot, metadata_buf, &metadata_len);
-    if (YKPIV_OK != rc)
-    {
-        return YKPIV_PINPOLICY_DEFAULT;
-    }
-
-    ykpiv_metadata metadata = {};
-    rc = ykpiv_util_parse_metadata(metadata_buf, metadata_len, &metadata);
-    if (YKPIV_OK != rc)
-    {
-        return YKPIV_PINPOLICY_DEFAULT;
-    }
-
-    return metadata.pin_policy;
 }
 
 bool YubiKeyPIV::key_exists(std::uint8_t slot)
@@ -1440,6 +1513,17 @@ std::uint8_t YubiKeyPIV::find_free_slot()
 
 std::vector<std::uint32_t> YubiKeyPIV::available_serials(bool *device_skipped)
 {
+    if (nullptr != device_skipped)
+    {
+        *device_skipped = false;
+    }
+
+    if (holds_connection())
+    {
+        mpss::utils::log_and_set_error("Cannot list YubiKeys from a thread that holds a connection.");
+        return {};
+    }
+
     // Listing serials connects to every reader in turn, and connecting to a device disturbs what a
     // session has established on it, a verified PIN among that. Connections take the bus shared and
     // this takes it exclusively, so no session is open anywhere while this scans.
