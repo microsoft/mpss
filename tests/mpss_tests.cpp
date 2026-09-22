@@ -15,6 +15,7 @@
 #include "mpss/impl/apple/apple_se_wrapper.h"
 #include "mpss/impl/apple/apple_utils.h"
 #endif
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstddef>
