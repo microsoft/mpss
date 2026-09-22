@@ -2040,7 +2040,10 @@ TEST_F(CrossBackendTest, CreateKeyOnEachBackend)
 
     // Create a key on the YubiKey backend. The backend may be registered without
     // any device being currently available, so treat creation failure as a skip.
-    auto yk_key = mpss::KeyPair::Create(yk_key_name, ecdsa_secp256r1_sha256, "yubikey");
+    // touch=never so signing does not block on a physical touch during automated runs; pin=once
+    // uses the configured PIN (MPSS_YUBIKEY_PIN) for the signing operation.
+    auto yk_key = mpss::KeyPair::Create(yk_key_name, ecdsa_secp256r1_sha256, "yubikey",
+                                        KeyPolicy::yubikey_touch_never | KeyPolicy::yubikey_pin_once);
     if (nullptr == yk_key)
     {
         os_key->delete_key();
