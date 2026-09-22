@@ -17,6 +17,7 @@
 #include <mutex>
 #include <random>
 #include <unordered_map>
+#include <utility>
 
 namespace
 {
@@ -54,9 +55,10 @@ namespace mpss::impl
 class BackendNameSetter
 {
   public:
-    static void set(KeyPair &kp, const char *name)
+    static void set(KeyPair &kp, const char *backend, std::string name)
     {
-        kp.backend_name_ = name;
+        kp.backend_name_ = backend;
+        kp.key_name_ = std::move(name);
     }
 };
 
@@ -84,6 +86,27 @@ bool is_valid_key_name(std::string_view name)
         return uch >= 0x20 && uch < 0x7F;
     });
 }
+
+bool is_valid_location(const KeyLocation &location)
+{
+    if (!is_valid_key_name(location.name))
+    {
+        utils::log_and_set_error("Invalid key name (must be 1-{} printable ASCII characters).", max_key_name_length);
+        return false;
+    }
+    if (location.backend_name.empty())
+    {
+        utils::log_and_set_error("A key location requires a backend name.");
+        return false;
+    }
+    if (location.device_id && location.device_id->empty())
+    {
+        utils::log_and_set_error("A device identifier must not be empty.");
+        return false;
+    }
+    return true;
+}
+
 } // namespace
 
 /**
@@ -293,15 +316,14 @@ bool is_algorithm_available(std::string_view backend_name, Algorithm algorithm)
     return backend->is_algorithm_available(algorithm);
 }
 
-// Explicit-backend functions - the real implementations.
-std::unique_ptr<KeyPair> create_key(std::string_view backend_name, std::string_view name, Algorithm algorithm,
-                                    KeyPolicy policy)
+std::unique_ptr<KeyPair> create_key(const KeyLocation &location, Algorithm algorithm, KeyPolicy policy)
 {
-    if (!is_valid_key_name(name))
+    if (!is_valid_location(location))
     {
-        utils::log_and_set_error("Invalid key name (must be 1-{} printable ASCII characters).", max_key_name_length);
         return nullptr;
     }
+    const auto &backend_name = location.backend_name;
+    const auto &name = location.name;
 
     BackendRegistry &registry = BackendRegistry::Instance();
     const std::shared_ptr<Backend> backend = registry.get_backend(backend_name);
@@ -313,22 +335,24 @@ std::unique_ptr<KeyPair> create_key(std::string_view backend_name, std::string_v
 
     utils::log_trace("Creating key '{}' with algorithm '{}' using backend '{}'.", name,
                      get_algorithm_info(algorithm).type_str, backend->name());
-    auto key = backend->create_key(name, algorithm, policy);
+    std::string recorded_name = name;
+    auto key = backend->create_key(location, algorithm, policy);
     if (nullptr != key)
     {
         utils::log_trace("Key '{}' created on backend '{}'.", name, backend->name());
-        BackendNameSetter::set(*key, backend->name());
+        BackendNameSetter::set(*key, backend->name(), std::move(recorded_name));
     }
     return key;
 }
 
-std::unique_ptr<KeyPair> open_key(std::string_view backend_name, std::string_view name)
+std::unique_ptr<KeyPair> open_key(const KeyLocation &location, std::span<const std::byte> expected_public_key)
 {
-    if (!is_valid_key_name(name))
+    if (!is_valid_location(location))
     {
-        utils::log_and_set_error("Invalid key name (must be 1-{} printable ASCII characters).", max_key_name_length);
         return nullptr;
     }
+    const auto &backend_name = location.backend_name;
+    const auto &name = location.name;
 
     BackendRegistry &registry = BackendRegistry::Instance();
     const std::shared_ptr<Backend> backend = registry.get_backend(backend_name);
@@ -339,22 +363,24 @@ std::unique_ptr<KeyPair> open_key(std::string_view backend_name, std::string_vie
     }
 
     utils::log_trace("Opening key '{}' using backend '{}'.", name, backend->name());
-    auto key = backend->open_key(name);
+    std::string recorded_name = name;
+    auto key = backend->open_key(location, expected_public_key);
     if (nullptr != key)
     {
         utils::log_trace("Key '{}' opened on backend '{}'.", name, backend->name());
-        BackendNameSetter::set(*key, backend->name());
+        BackendNameSetter::set(*key, backend->name(), std::move(recorded_name));
     }
     return key;
 }
 
-bool delete_key(std::string_view backend_name, std::string_view name)
+bool delete_key(const KeyLocation &location)
 {
-    if (!is_valid_key_name(name))
+    if (!is_valid_location(location))
     {
-        utils::log_and_set_error("Invalid key name (must be 1-{} printable ASCII characters).", max_key_name_length);
         return false;
     }
+    const auto &backend_name = location.backend_name;
+    const auto &name = location.name;
 
     BackendRegistry &registry = BackendRegistry::Instance();
     const std::shared_ptr<Backend> backend = registry.get_backend(backend_name);
@@ -365,7 +391,18 @@ bool delete_key(std::string_view backend_name, std::string_view name)
     }
 
     utils::log_trace("Deleting key '{}' using backend '{}'.", name, backend->name());
-    return backend->delete_key(name);
+    return backend->delete_key(location);
+}
+
+std::optional<std::vector<std::string>> get_available_devices(std::string_view backend_name)
+{
+    const auto backend = BackendRegistry::Instance().get_backend(backend_name);
+    if (nullptr == backend)
+    {
+        utils::log_and_set_error("Backend '{}' not found.", backend_name);
+        return std::nullopt;
+    }
+    return backend->available_devices();
 }
 
 bool verify(std::string_view backend_name, std::span<const std::byte> hash, std::span<const std::byte> public_key,
@@ -380,40 +417,6 @@ bool verify(std::string_view backend_name, std::span<const std::byte> hash, std:
     }
 
     return backend->verify(hash, public_key, algorithm, sig);
-}
-
-// Default-backend functions - delegate to the explicit-backend overloads.
-std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm, KeyPolicy policy)
-{
-    const std::shared_ptr<Backend> backend = BackendRegistry::Instance().get_default_backend();
-    if (nullptr == backend)
-    {
-        utils::log_and_set_error("No default backend available for creating key '{}'.", name);
-        return nullptr;
-    }
-    return create_key(backend->name(), name, algorithm, policy);
-}
-
-std::unique_ptr<KeyPair> open_key(std::string_view name)
-{
-    const std::shared_ptr<Backend> backend = BackendRegistry::Instance().get_default_backend();
-    if (nullptr == backend)
-    {
-        utils::log_and_set_error("No default backend available for opening key '{}'.", name);
-        return nullptr;
-    }
-    return open_key(backend->name(), name);
-}
-
-bool delete_key(std::string_view name)
-{
-    const std::shared_ptr<Backend> backend = BackendRegistry::Instance().get_default_backend();
-    if (nullptr == backend)
-    {
-        utils::log_and_set_error("No default backend available for deleting key '{}'.", name);
-        return false;
-    }
-    return delete_key(backend->name(), name);
 }
 
 bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_key, Algorithm algorithm,
@@ -466,7 +469,8 @@ bool Backend::is_algorithm_available(Algorithm algorithm) const
     // error. They remain in the log. Registered before the deletion guard so that it runs last.
     SCOPE_GUARD({ utils::clear_error(); });
 
-    std::unique_ptr<KeyPair> key = create_key(random_key, algorithm, KeyPolicy::none);
+    std::unique_ptr<KeyPair> key =
+        create_key(KeyLocation{name(), random_key, std::nullopt}, algorithm, KeyPolicy::none);
 
     // Could we even create a key?
     if (nullptr == key)

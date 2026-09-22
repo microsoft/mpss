@@ -3,11 +3,17 @@
 
 #include "mpss/mpss.h"
 #include "mpss/impl/backend_registry.h"
+#ifdef MPSS_BACKEND_YUBIKEY
+#include "mpss/impl/yubikey/yk_utils.h"
+#endif
 #include "mpss/utils/utilities.h"
+#include <algorithm>
 #include <array>
+#include <cstdint>
 #include <mutex>
 #include <optional>
 #include <shared_mutex>
+#include <utility>
 
 namespace mpss
 {
@@ -32,9 +38,44 @@ T clear_error_on_success(T result)
     }
     return result;
 }
+
+std::optional<KeyLocation> location_with_defaults(std::string_view name,
+                                                  std::optional<std::string_view> backend_name = std::nullopt)
+{
+    clear_error();
+    // Refuse reentry before resolving defaults, which can initialize the backend registry.
+    if (utils::in_interaction_handler())
+    {
+        utils::log_and_set_error("MPSS cannot be called from an interaction handler.");
+        return std::nullopt;
+    }
+    const std::string_view backend = backend_name ? *backend_name : impl::get_default_backend_name();
+    if (!backend_name && backend.empty())
+    {
+        utils::log_and_set_error("No default backend available for key '{}'.", name);
+        return std::nullopt;
+    }
+    KeyLocation location{.backend_name = std::string{backend}, .name = std::string{name}, .device_id = std::nullopt};
+#ifdef MPSS_BACKEND_YUBIKEY
+    if ("yubikey" == backend)
+    {
+        const std::optional<std::uint32_t> serial = impl::yubikey::utils::get_serial_from_env();
+        if (serial)
+        {
+            location.device_id = std::to_string(*serial);
+        }
+    }
+#endif
+    return location;
+}
 } // namespace
 
-std::unique_ptr<KeyPair> KeyPair::Create(std::string_view name, Algorithm algorithm, KeyPolicy policy)
+KeyLocation KeyPair::location() const
+{
+    return {.backend_name = backend_name_, .name = key_name_, .device_id = device_id_};
+}
+
+std::unique_ptr<KeyPair> KeyPair::Create(const KeyLocation &location, Algorithm algorithm, KeyPolicy policy)
 {
     clear_error();
     if (utils::in_interaction_handler())
@@ -42,105 +83,69 @@ std::unique_ptr<KeyPair> KeyPair::Create(std::string_view name, Algorithm algori
         utils::log_and_set_error("MPSS cannot be called from an interaction handler.");
         return nullptr;
     }
+    const std::scoped_lock lifecycle{utils::name_mutex(location.name)};
+    return clear_error_on_success(impl::create_key(location, algorithm, policy));
+}
 
-    // Held across the whole operation, so that looking for the name and acting on what was found
-    // are one decision rather than two another thread can land between.
-    const std::scoped_lock lifecycle{utils::name_mutex(name)};
-    utils::log_trace("KeyPair::Create called for key '{}' with algorithm '{}'.", name,
-                     get_algorithm_info(algorithm).type_str);
-    return clear_error_on_success(impl::create_key(name, algorithm, policy));
+std::unique_ptr<KeyPair> KeyPair::Open(const KeyLocation &location)
+{
+    clear_error();
+    if (utils::in_interaction_handler())
+    {
+        utils::log_and_set_error("MPSS cannot be called from an interaction handler.");
+        return nullptr;
+    }
+    const std::scoped_lock lifecycle{utils::name_mutex(location.name)};
+    return clear_error_on_success(impl::open_key(location));
+}
+
+bool KeyPair::Delete(const KeyLocation &location)
+{
+    clear_error();
+    if (utils::in_interaction_handler())
+    {
+        utils::log_and_set_error("MPSS cannot be called from an interaction handler.");
+        return false;
+    }
+    const std::scoped_lock lifecycle{utils::name_mutex(location.name)};
+    return clear_error_on_success(impl::delete_key(location));
+}
+
+std::unique_ptr<KeyPair> KeyPair::Create(std::string_view name, Algorithm algorithm, KeyPolicy policy)
+{
+    const std::optional<KeyLocation> location = location_with_defaults(name);
+    return location ? Create(*location, algorithm, policy) : nullptr;
 }
 
 std::unique_ptr<KeyPair> KeyPair::Create(std::string_view name, Algorithm algorithm, std::string_view backend_name,
                                          KeyPolicy policy)
 {
-    clear_error();
-    if (utils::in_interaction_handler())
-    {
-        utils::log_and_set_error("MPSS cannot be called from an interaction handler.");
-        return nullptr;
-    }
-
-    // Held across the whole operation, so that looking for the name and acting on what was found
-    // are one decision rather than two another thread can land between.
-    const std::scoped_lock lifecycle{utils::name_mutex(name)};
-    utils::log_trace("KeyPair::Create called for key '{}' with algorithm '{}' on backend '{}'.", name,
-                     get_algorithm_info(algorithm).type_str, backend_name);
-    return clear_error_on_success(impl::create_key(backend_name, name, algorithm, policy));
+    const std::optional<KeyLocation> location = location_with_defaults(name, backend_name);
+    return location ? Create(*location, algorithm, policy) : nullptr;
 }
 
 std::unique_ptr<KeyPair> KeyPair::Open(std::string_view name)
 {
-    clear_error();
-    if (utils::in_interaction_handler())
-    {
-        utils::log_and_set_error("MPSS cannot be called from an interaction handler.");
-        return nullptr;
-    }
-
-    // Held across the whole operation, so that looking for the name and acting on what was found
-    // are one decision rather than two another thread can land between.
-    const std::scoped_lock lifecycle{utils::name_mutex(name)};
-    utils::log_trace("KeyPair::Open called for key '{}'.", name);
-    return clear_error_on_success(impl::open_key(name));
+    const std::optional<KeyLocation> location = location_with_defaults(name);
+    return location ? Open(*location) : nullptr;
 }
 
 std::unique_ptr<KeyPair> KeyPair::Open(std::string_view name, std::string_view backend_name)
 {
-    clear_error();
-    if (utils::in_interaction_handler())
-    {
-        utils::log_and_set_error("MPSS cannot be called from an interaction handler.");
-        return nullptr;
-    }
-
-    // Held across the whole operation, so that looking for the name and acting on what was found
-    // are one decision rather than two another thread can land between.
-    const std::scoped_lock lifecycle{utils::name_mutex(name)};
-    utils::log_trace("KeyPair::Open called for key '{}' on backend '{}'.", name, backend_name);
-    return clear_error_on_success(impl::open_key(backend_name, name));
+    const std::optional<KeyLocation> location = location_with_defaults(name, backend_name);
+    return location ? Open(*location) : nullptr;
 }
 
 bool KeyPair::Delete(std::string_view name)
 {
-    clear_error();
-    if (utils::in_interaction_handler())
-    {
-        utils::log_and_set_error("MPSS cannot be called from an interaction handler.");
-        return false;
-    }
-
-    // Held across the whole operation, so that looking for the name and acting on what was found
-    // are one decision rather than two another thread can land between.
-    const std::scoped_lock lifecycle{utils::name_mutex(name)};
-    utils::log_trace("KeyPair::Delete called for key '{}'.", name);
-    const bool deleted = impl::delete_key(name);
-    if (deleted)
-    {
-        clear_error();
-    }
-    return deleted;
+    const std::optional<KeyLocation> location = location_with_defaults(name);
+    return location && Delete(*location);
 }
 
 bool KeyPair::Delete(std::string_view name, std::string_view backend_name)
 {
-    clear_error();
-    if (utils::in_interaction_handler())
-    {
-        utils::log_and_set_error("MPSS cannot be called from an interaction handler.");
-        return false;
-    }
-
-    // Held across the whole operation, so that looking for the name and acting on what was found
-    // are one decision rather than two another thread can land between.
-    const std::scoped_lock lifecycle{utils::name_mutex(name)};
-    utils::log_trace("KeyPair::Delete called for key '{}' on backend '{}'.", name, backend_name);
-    const bool deleted = impl::delete_key(backend_name, name);
-    if (deleted)
-    {
-        clear_error();
-    }
-    return deleted;
+    const std::optional<KeyLocation> location = location_with_defaults(name, backend_name);
+    return location && Delete(*location);
 }
 
 bool is_algorithm_available(Algorithm algorithm)
@@ -241,6 +246,17 @@ bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_k
 std::vector<const char *> get_available_backends()
 {
     return impl::get_available_backends();
+}
+
+std::optional<std::vector<std::string>> get_available_devices(std::string_view backend_name)
+{
+    clear_error();
+    if (utils::in_interaction_handler())
+    {
+        utils::log_and_set_error("MPSS cannot be called from an interaction handler.");
+        return std::nullopt;
+    }
+    return clear_error_on_success(impl::get_available_devices(backend_name));
 }
 
 const char *get_default_backend_name()

@@ -41,35 +41,42 @@ extern "C"
     };
 
     /**
-     * @brief Callback type for requesting a YubiKey PIN from the user.
-     * @param context A human-readable reason for the PIN request (e.g., "sign with key 'my-key'").
+     * @brief Target metadata, valid only for the duration of a callback.
+     *
+     * Strings are non-null and null-terminated. Copy them before returning if needed later.
+     * For YubiKey, device_id is its decimal serial. reader_name identifies the current transport,
+     * not trusted hardware identity. key_name is empty for device-only operations.
+     */
+    typedef struct mpss_interaction_context
+    {
+        const char *backend_name;
+        const char *device_id;
+        const char *key_name;
+        const char *reader_name;
+    } mpss_interaction_context_t;
+
+    /**
+     * @brief Requests a PIN for the specified target.
+     * @param target Device, key, and reader information, valid only during the callback.
+     * @param operation Human-readable reason (e.g., "sign with key 'my-key'").
      * @param last_status Status of the previous PIN attempt (@ref mpss_pin_status).
-     * @param retries_remaining PIN retries remaining on the device, or -1 if unknown.
-     * @param pin_buf Buffer to write the null-terminated PIN into.
-     * @param pin_buf_size Size of pin_buf in bytes (always @ref MPSS_PIN_BUF_SIZE).
-     * @return true if the PIN was provided, false if the user canceled.
-     * @warning Implementations must never log or persist the PIN.
+     * @param retries_remaining PIN retries remaining, or -1 if unknown.
+     * @param pin_buf Buffer for the null-terminated PIN; never log or persist its contents.
+     * @param pin_buf_size Buffer size in bytes (always @ref MPSS_PIN_BUF_SIZE).
+     * @param user_data Application pointer supplied when installing the handler.
+     * @return true if the PIN was provided, false to cancel.
      */
-    typedef bool (*mpss_request_pin_handler_t)(const char *context, int last_status, int retries_remaining,
-                                               char *pin_buf, size_t pin_buf_size);
-
-    /**
-     * @brief Callback type for PIN result notifications.
-     * @param result The outcome of the PIN attempt (@ref mpss_pin_result).
-     * @param retries_remaining PIN retries remaining on the device, or -1 if unknown.
-     */
-    typedef void (*mpss_notify_pin_result_handler_t)(int result, int retries_remaining);
-
-    /**
-     * @brief Callback type for touch notifications.
-     */
-    typedef void (*mpss_notify_touch_handler_t)(void);
-
-    /**
-     * @brief Callback type for touch completion notifications.
-     * @param success True if the operation completed, false if it failed (for example, the touch timed out).
-     */
-    typedef void (*mpss_notify_touch_complete_handler_t)(bool success);
+    typedef bool (*mpss_request_pin_handler_t)(const mpss_interaction_context_t *target, const char *operation,
+                                               int last_status, int retries_remaining, char *pin_buf,
+                                               size_t pin_buf_size, void *user_data);
+    /** @brief Reports a PIN result (@ref mpss_pin_result) and remaining retries (-1 if unknown). */
+    typedef void (*mpss_notify_pin_result_handler_t)(const mpss_interaction_context_t *target, int result,
+                                                     int retries_remaining, void *user_data);
+    /** @brief Reports the start of an operation that may require touch. */
+    typedef void (*mpss_notify_touch_handler_t)(const mpss_interaction_context_t *target, void *user_data);
+    /** @brief Reports completion; success is false if the operation failed or touch timed out. */
+    typedef void (*mpss_notify_touch_complete_handler_t)(const mpss_interaction_context_t *target, bool success,
+                                                         void *user_data);
 
     /**
      * @brief Installs a custom interaction handler for YubiKey operations.
@@ -79,16 +86,20 @@ extern "C"
      *
      * Any callback may be NULL, in which case the corresponding operation is a no-op
      * (a NULL request_pin always cancels, i.e., returns no PIN).
+     * Callbacks from different devices may run concurrently.
      *
      * @param[in] request_pin Called when a PIN is needed.
      * @param[in] notify_pin_result Called after each PIN attempt with the result. May be NULL.
      * @param[in] notify_touch_needed Called when a touch-requiring operation starts.
      * @param[in] notify_touch_complete Called when the touch-requiring operation finishes, with whether it succeeded.
+     * @param[in] user_data Forwarded unchanged to callbacks. MPSS does not own it; keep it valid for callbacks
+     * already in flight even after replacing the handler.
      */
     MPSS_OPENSSL_DECOR void mpss_set_interaction_handler(mpss_request_pin_handler_t request_pin,
                                                          mpss_notify_pin_result_handler_t notify_pin_result,
                                                          mpss_notify_touch_handler_t notify_touch_needed,
-                                                         mpss_notify_touch_complete_handler_t notify_touch_complete);
+                                                         mpss_notify_touch_complete_handler_t notify_touch_complete,
+                                                         void *user_data);
 
     /**
      * @brief Resets the interaction handler to the default terminal-based handler.

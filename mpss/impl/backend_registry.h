@@ -29,21 +29,24 @@ class Backend
 
     /**
      * @brief Create a new key pair.
-     * @param[in] name The name of the key pair.
+     * @param[in] location The explicit backend, name and optional device identifier.
      * @param[in] algorithm The signature algorithm to use.
      * @param[in] policy Backend-specific key policy.
      * @return Key pair if successful, nullptr otherwise.
      */
     [[nodiscard]]
-    virtual std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm, KeyPolicy policy) const = 0;
+    virtual std::unique_ptr<KeyPair> create_key(const KeyLocation &location, Algorithm algorithm,
+                                                KeyPolicy policy) const = 0;
 
     /**
      * @brief Open an existing key pair.
-     * @param[in] name The name of the key pair.
+     * @param[in] location The explicit backend, name and optional device identifier.
+     * @param[in] expected_public_key Optional expected key used to select matching device routes.
      * @return Key pair if successful, nullptr otherwise.
      */
     [[nodiscard]]
-    virtual std::unique_ptr<KeyPair> open_key(std::string_view name) const = 0;
+    virtual std::unique_ptr<KeyPair> open_key(const KeyLocation &location,
+                                              std::span<const std::byte> expected_public_key = {}) const = 0;
 
     /**
      * @brief Delete every key stored under a name, without opening it.
@@ -53,12 +56,18 @@ class Backend
      * removing every key under it: leaving one behind would let a refused name start resolving
      * again, to whichever key survived.
      *
-     * @param[in] name The name to clear.
+     * @param[in] location The name and selected storage to clear.
      * @return true if the name holds no key afterwards, including when it held none to begin
      * with; false if a key could not be removed or the storage could not be read.
      */
     [[nodiscard]]
-    virtual bool delete_key(std::string_view name) const = 0;
+    virtual bool delete_key(const KeyLocation &location) const = 0;
+
+    [[nodiscard]]
+    virtual std::optional<std::vector<std::string>> available_devices() const
+    {
+        return std::vector<std::string>{};
+    }
 
     /**
      * @brief Verify a signature (standalone, without a key pair object).
@@ -86,16 +95,17 @@ class Backend
     virtual bool is_algorithm_available(Algorithm algorithm) const;
 };
 
-// Explicit-backend functions. The default-backend overloads below delegate to these.
 [[nodiscard]]
-std::unique_ptr<KeyPair> create_key(std::string_view backend_name, std::string_view name, Algorithm algorithm,
-                                    KeyPolicy policy);
+std::unique_ptr<KeyPair> create_key(const KeyLocation &location, Algorithm algorithm, KeyPolicy policy);
 
 [[nodiscard]]
-std::unique_ptr<KeyPair> open_key(std::string_view backend_name, std::string_view name);
+std::unique_ptr<KeyPair> open_key(const KeyLocation &location, std::span<const std::byte> expected_public_key = {});
 
 [[nodiscard]]
-bool delete_key(std::string_view backend_name, std::string_view name);
+bool delete_key(const KeyLocation &location);
+
+[[nodiscard]]
+std::optional<std::vector<std::string>> get_available_devices(std::string_view backend_name);
 
 [[nodiscard]]
 bool verify(std::string_view backend_name, std::span<const std::byte> hash, std::span<const std::byte> public_key,
@@ -107,15 +117,6 @@ bool is_algorithm_available(std::string_view backend_name, Algorithm algorithm);
 // Default-backend overloads that resolve the default backend and delegate to the above.
 [[nodiscard]]
 bool is_algorithm_available(Algorithm algorithm);
-
-[[nodiscard]]
-std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm, KeyPolicy policy);
-
-[[nodiscard]]
-std::unique_ptr<KeyPair> open_key(std::string_view name);
-
-[[nodiscard]]
-bool delete_key(std::string_view name);
 
 [[nodiscard]]
 bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_key, Algorithm algorithm,

@@ -5,9 +5,9 @@
 #include "mpss/utils/utilities.h"
 #include <algorithm>
 #include <cctype>
+#include <charconv>
 #include <cstdlib>
 #include <format>
-#include <limits>
 #include <ykpiv/ykpiv.h>
 
 namespace
@@ -137,6 +137,21 @@ bool is_affirmative_environment_value(std::string_view value)
     return "1" == normalized || "true" == normalized || "yes" == normalized || "on" == normalized;
 }
 
+std::optional<std::uint32_t> parse_serial(std::string_view serial)
+{
+    if (serial.empty() || max_serial_length < serial.size())
+    {
+        return std::nullopt;
+    }
+    std::uint32_t value = 0;
+    const auto [end, error] = std::from_chars(serial.data(), serial.data() + serial.size(), value);
+    if (std::errc{} != error || end != serial.data() + serial.size() || 0 == value)
+    {
+        return std::nullopt;
+    }
+    return value;
+}
+
 std::optional<std::uint32_t> get_serial_from_env()
 {
     const char *serial = std::getenv("MPSS_YUBIKEY_SERIAL");
@@ -145,21 +160,12 @@ std::optional<std::uint32_t> get_serial_from_env()
         return std::nullopt;
     }
 
-    char *end = nullptr;
-    const unsigned long value = std::strtoul(serial, &end, 10);
-    if (end == serial || *end != '\0' || 0 == value)
+    const std::optional<std::uint32_t> value = parse_serial(serial);
+    if (!value)
     {
-        mpss::utils::log_warning("MPSS_YUBIKEY_SERIAL value '{}' is not a valid serial number.", serial);
-        return std::nullopt;
+        mpss::utils::log_warning("MPSS_YUBIKEY_SERIAL is not a valid decimal serial number; ignoring the default.");
     }
-
-    if (value > std::numeric_limits<std::uint32_t>::max())
-    {
-        mpss::utils::log_warning("MPSS_YUBIKEY_SERIAL value '{}' is out of range.", serial);
-        return std::nullopt;
-    }
-
-    return static_cast<std::uint32_t>(value); // NOLINT(*-narrowing-conversions)
+    return value;
 }
 
 SecureByteVector get_mgm_key_from_env()

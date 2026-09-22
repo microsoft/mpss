@@ -7,6 +7,7 @@
 #include "mpss/defines.h"
 #include "mpss/key_info.h"
 #include "mpss/key_policy.h"
+#include "mpss/key_reference.h"
 #include <cstddef>
 #include <memory>
 #include <shared_mutex>
@@ -143,6 +144,15 @@ MPSS_DECOR bool verify(std::span<const std::byte> hash, std::span<const std::byt
 MPSS_DECOR std::vector<const char *> get_available_backends();
 
 /**
+ * @brief Lists currently reachable selectable device identifiers for a backend.
+ *
+ * An empty list is a successful snapshot without selectable devices; OS storage has no device
+ * selectors. A nullopt reports an enumeration or dispatch failure through @ref get_error.
+ */
+[[nodiscard]]
+MPSS_DECOR std::optional<std::vector<std::string>> get_available_devices(std::string_view backend_name);
+
+/**
  * @brief Get the name of the default backend.
  * @return The default backend name, or an empty string if none is available.
  */
@@ -156,6 +166,10 @@ MPSS_DECOR const char *get_default_backend_name();
  * concurrently with each other, while releasing and deleting exclude everything else, so an
  * operation either runs wholly before a release or is refused by it. Destroying a handle is not an
  * operation: like any other object, it must not be destroyed while another thread is using it.
+ *
+ * Overloads taking a key name use the backend's environment defaults. Overloads taking a
+ * KeyLocation use the supplied backend and device selection instead. Once a key is opened or
+ * created, changing those defaults does not change which device its handle uses.
  */
 class MPSS_DECOR KeyPair
 {
@@ -206,6 +220,33 @@ class MPSS_DECOR KeyPair
     {
         return backend_name_;
     }
+
+    /**
+     * @brief Returns the actual location recorded when this handle was created or opened.
+     *
+     * YubiKey device identifiers are canonical decimal serial numbers. OS storage has no device
+     * identifier. This immutable metadata remains available after releasing the handle.
+     */
+    [[nodiscard]]
+    KeyLocation location() const;
+
+    /**
+     * @brief Creates a key at an explicitly selected backend.
+     *
+     * Leave the device ID unset for automatic selection, without using MPSS_YUBIKEY_SERIAL.
+     * A supplied ID must be nonempty and supported by the backend; another device is never substituted.
+     */
+    [[nodiscard]]
+    static std::unique_ptr<KeyPair> Create(const KeyLocation &location, Algorithm algorithm,
+                                           KeyPolicy policy = KeyPolicy::none);
+
+    /** @brief Opens a location using the same device-selection rules as @ref Create. */
+    [[nodiscard]]
+    static std::unique_ptr<KeyPair> Open(const KeyLocation &location);
+
+    /** @brief Clears every key under the name in the selected storage, without falling back. */
+    [[nodiscard]]
+    static bool Delete(const KeyLocation &location);
 
     /**
      * @brief Creates a new key pair with the given name and algorithm.
@@ -367,6 +408,7 @@ class MPSS_DECOR KeyPair
     AlgorithmInfo info_;
     KeyInfo key_info_;
     const char *backend_name_{""};
+    std::optional<std::string> device_id_;
 
     // NOLINTEND(*-non-private-member-variables-in-classes)
 
@@ -411,6 +453,7 @@ class MPSS_DECOR KeyPair
 
     bool released_{false};
     bool release_result_{true};
+    std::string key_name_;
 };
 
 } // namespace mpss

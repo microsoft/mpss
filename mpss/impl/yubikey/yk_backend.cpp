@@ -7,8 +7,14 @@
 #include "mpss/impl/yubikey/yk_utils.h"
 #include "mpss/utils/scope_guard.h"
 #include "mpss/utils/utilities.h"
+#include <algorithm>
+#include <cstdint>
 #include <openssl/core_names.h>
 #include <openssl/evp.h>
+#include <openssl/provider.h>
+#include <optional>
+#include <string_view>
+#include <vector>
 
 namespace
 {
@@ -27,6 +33,20 @@ VerifyOutcome openssl_ecdsa_verify(const char *group_name, std::span<const std::
 {
     using enum VerifyOutcome;
 
+    // Host verification must not inherit application-loaded providers or default properties.
+    OSSL_LIB_CTX *libctx = OSSL_LIB_CTX_new();
+    if (nullptr == libctx)
+    {
+        return error;
+    }
+    SCOPE_GUARD(OSSL_LIB_CTX_free(libctx));
+    OSSL_PROVIDER *provider = OSSL_PROVIDER_load(libctx, "default");
+    if (nullptr == provider)
+    {
+        return error;
+    }
+    SCOPE_GUARD(OSSL_PROVIDER_unload(provider));
+
     // Build an EVP_PKEY from the raw uncompressed EC point (X9.63: 04||X||Y).
     OSSL_PARAM params[] = {
         OSSL_PARAM_construct_utf8_string(OSSL_PKEY_PARAM_GROUP_NAME, const_cast<char *>(group_name), 0),
@@ -35,7 +55,7 @@ VerifyOutcome openssl_ecdsa_verify(const char *group_name, std::span<const std::
             const_cast<unsigned char *>(reinterpret_cast<const unsigned char *>(public_key.data())), public_key.size()),
         OSSL_PARAM_END};
 
-    EVP_PKEY_CTX *build_ctx = EVP_PKEY_CTX_new_from_name(nullptr, "EC", nullptr);
+    EVP_PKEY_CTX *build_ctx = EVP_PKEY_CTX_new_from_name(libctx, "EC", "provider=default");
     if (nullptr == build_ctx)
     {
         return error;
@@ -51,7 +71,7 @@ VerifyOutcome openssl_ecdsa_verify(const char *group_name, std::span<const std::
     SCOPE_GUARD(EVP_PKEY_free(pkey));
 
     // Verify the DER-encoded ECDSA signature against the pre-computed hash.
-    EVP_PKEY_CTX *verify_ctx = EVP_PKEY_CTX_new(pkey, nullptr);
+    EVP_PKEY_CTX *verify_ctx = EVP_PKEY_CTX_new_from_pkey(libctx, pkey, "provider=default");
     if (nullptr == verify_ctx)
     {
         return error;
@@ -83,6 +103,46 @@ namespace mpss::impl::yubikey
 
 using enum Algorithm;
 
+namespace
+{
+
+[[nodiscard]]
+std::optional<std::uint32_t> select_device(const KeyLocation &location)
+{
+    if (location.device_id)
+    {
+        const std::optional<std::uint32_t> serial = utils::parse_serial(*location.device_id);
+        if (!serial)
+        {
+            mpss::utils::log_and_set_error(
+                "Invalid YubiKey device_id: expected a decimal serial number from 1 to 4294967295 "
+                "(at most {} characters).",
+                utils::max_serial_length);
+        }
+        return serial;
+    }
+
+    const std::optional<std::vector<std::uint32_t>> serials = YubiKeyPIV::available_serials();
+    if (!serials)
+    {
+        return std::nullopt;
+    }
+    if (serials->empty())
+    {
+        mpss::utils::log_and_set_error("No reachable YubiKey found.");
+        return std::nullopt;
+    }
+    if (serials->size() > 1)
+    {
+        mpss::utils::log_and_set_error(
+            "Multiple YubiKeys detected. Set device_id to the desired YubiKey serial number.");
+        return std::nullopt;
+    }
+    return serials->front();
+}
+
+} // namespace
+
 const char *YubiKeyBackend::name() const
 {
     return "yubikey";
@@ -93,8 +153,26 @@ bool YubiKeyBackend::is_algorithm_available(Algorithm algorithm) const
     return 0 != utils::mpss_to_yk_algorithm(algorithm);
 }
 
-std::unique_ptr<KeyPair> YubiKeyBackend::create_key(std::string_view name, Algorithm algorithm, KeyPolicy policy) const
+std::optional<std::vector<std::string>> YubiKeyBackend::available_devices() const
 {
+    const std::optional<std::vector<std::uint32_t>> serials = YubiKeyPIV::available_serials();
+    if (!serials)
+    {
+        return std::nullopt;
+    }
+    std::vector<std::string> devices;
+    devices.reserve(serials->size());
+    for (const std::uint32_t serial : *serials)
+    {
+        devices.push_back(std::to_string(serial));
+    }
+    return devices;
+}
+
+std::unique_ptr<KeyPair> YubiKeyBackend::create_key(const KeyLocation &location, Algorithm algorithm,
+                                                    KeyPolicy policy) const
+{
+    const std::string_view name = location.name;
     const std::string key_name{name};
     if (key_name.empty())
     {
@@ -132,42 +210,16 @@ std::unique_ptr<KeyPair> YubiKeyBackend::create_key(std::string_view name, Algor
         return nullptr;
     }
 
-    // Determine which YubiKey to target.
-    bool device_skipped = false;
-    const std::optional<std::uint32_t> target_serial = utils::get_serial_from_env();
-    const std::vector<std::uint32_t> serials =
-        target_serial ? std::vector<std::uint32_t>{*target_serial} : YubiKeyPIV::available_serials(&device_skipped);
-
-    // A device left out of the list is a device the refusal below cannot count, so a key would be
-    // created on whichever one happened to answer. Asked first, for the same reason it is asked
-    // first when clearing a name.
-    if (!target_serial && device_skipped)
+    const std::optional<std::uint32_t> selected = select_device(location);
+    if (!selected)
     {
-        mpss::utils::log_and_set_error("Refusing to create key '{}': an attached YubiKey could not be identified. Set "
-                                       "MPSS_YUBIKEY_SERIAL to select the target device.",
-                                       key_name);
-        return nullptr;
-    }
-
-    // Refuse to create a key when multiple YubiKeys are present and no serial is specified,
-    // since the caller cannot control which device receives the key.
-    if (!target_serial && serials.size() > 1)
-    {
-        mpss::utils::log_and_set_error(
-            "Multiple YubiKeys detected. Set MPSS_YUBIKEY_SERIAL to select the target device.");
-        return nullptr;
-    }
-
-    if (serials.empty())
-    {
-        mpss::utils::log_and_set_error("No YubiKey found.");
         return nullptr;
     }
 
     // Connect to YubiKey.
     mpss::utils::log_trace("Creating key '{}' with algorithm '{}' on YubiKey.", key_name,
                            get_algorithm_info(algorithm).type_str);
-    YubiKeyPIV piv{serials.front()};
+    YubiKeyPIV piv{*selected, name};
     if (!piv.is_connected())
     {
         return nullptr;
@@ -284,8 +336,10 @@ std::unique_ptr<KeyPair> YubiKeyBackend::create_key(std::string_view name, Algor
     return std::make_unique<YubiKeyKeyPair>(name, algorithm, slot, serial, slot_metadata.public_key);
 }
 
-std::unique_ptr<KeyPair> YubiKeyBackend::open_key(std::string_view name) const
+std::unique_ptr<KeyPair> YubiKeyBackend::open_key(const KeyLocation &location,
+                                                  std::span<const std::byte> expected_public_key) const
 {
+    const std::string_view name = location.name;
     const std::string key_name{name};
     if (key_name.empty())
     {
@@ -301,91 +355,51 @@ std::unique_ptr<KeyPair> YubiKeyBackend::open_key(std::string_view name) const
 
     mpss::utils::log_trace("Attempting to open key '{}' on YubiKey.", key_name);
 
-    // Determine which YubiKeys to search.
-    bool device_skipped = false;
-    const std::optional<std::uint32_t> target_serial = utils::get_serial_from_env();
-    const std::vector<std::uint32_t> serials =
-        target_serial ? std::vector<std::uint32_t>{*target_serial} : YubiKeyPIV::available_serials(&device_skipped);
-
-    // A device left out of the list is a device the refusal below cannot count, so a name held on
-    // more than one device would resolve to whichever one answered.
-    if (!target_serial && device_skipped)
+    const std::optional<std::uint32_t> selected = select_device(location);
+    if (!selected)
     {
-        mpss::utils::log_and_set_error("Refusing to open key '{}': an attached YubiKey could not be identified. Set "
-                                       "MPSS_YUBIKEY_SERIAL to select the target device.",
-                                       key_name);
         return nullptr;
     }
 
-    // Refuse to open when multiple YubiKeys are present and no serial is specified.
-    if (!target_serial && serials.size() > 1)
+    YubiKeyPIV piv{*selected, name, expected_public_key};
+    if (!piv.is_connected())
+    {
+        return nullptr;
+    }
+
+    const KeyProbeResult<YubiKeyPIV::SlotInfo> slot_info = piv.find_slot_by_name(name, expected_public_key);
+    if (KeyProbeStatus::found != slot_info.status)
+    {
+        return nullptr;
+    }
+
+    YubiKeyPIV::SlotMetadata slot_metadata;
+    if (!piv.read_slot_metadata(slot_info.value.slot, slot_metadata))
+    {
+        return nullptr;
+    }
+
+    if (!slot_metadata.generated_on_device)
     {
         mpss::utils::log_and_set_error(
-            "Multiple YubiKeys detected. Set MPSS_YUBIKEY_SERIAL to select the target device.");
+            "Refusing to open key '{}': the key in slot {} was imported rather than generated on the device.", key_name,
+            utils::get_slot_name(slot_info.value.slot));
         return nullptr;
     }
 
-    // A device we could not query might hold the key, so it cannot be ruled out.
-    bool undetermined = false;
-
-    for (const std::uint32_t serial : serials)
+    if (!expected_public_key.empty() && !std::ranges::equal(slot_metadata.public_key, expected_public_key))
     {
-        YubiKeyPIV piv{serial};
-        if (!piv.is_connected())
-        {
-            undetermined = true;
-            continue;
-        }
-
-        const KeyProbeResult<YubiKeyPIV::SlotInfo> slot_info = piv.find_slot_by_name(name);
-        if (KeyProbeStatus::operational_error == slot_info.status)
-        {
-            undetermined = true;
-            continue;
-        }
-        if (KeyProbeStatus::found == slot_info.status)
-        {
-            // Bound to the key rather than to the slot, so a slot emptied and filled again under
-            // this name is not reachable through this handle.
-            YubiKeyPIV::SlotMetadata slot_metadata;
-            if (!piv.read_slot_metadata(slot_info.value.slot, slot_metadata, /* probe */ true))
-            {
-                undetermined = true;
-                continue;
-            }
-
-            // MPSS opens only keys the device generated itself. An imported key sits in the same
-            // secure element and reports the same protection, yet whoever imported it still holds
-            // the private material, which is the one thing that protection is meant to rule out.
-            if (!slot_metadata.generated_on_device)
-            {
-                mpss::utils::log_and_set_error(
-                    "Refusing to open key '{}': the key in slot {} was imported rather than generated on the device.",
-                    key_name, utils::get_slot_name(slot_info.value.slot));
-                return nullptr;
-            }
-
-            mpss::utils::log_trace("Key '{}' found in YubiKey slot {} (serial {}) with algorithm '{}'.", key_name,
-                                   utils::get_slot_name(slot_info.value.slot), serial,
-                                   get_algorithm_info(slot_info.value.algorithm).type_str);
-            return std::make_unique<YubiKeyKeyPair>(name, slot_info.value.algorithm, slot_info.value.slot, serial,
-                                                    slot_metadata.public_key);
-        }
-    }
-
-    if (undetermined)
-    {
-        mpss::utils::log_and_set_error("Could not determine whether key '{}' is present on the attached YubiKeys.",
-                                       key_name);
+        mpss::utils::log_and_set_error("The opened key does not match the referenced public key.");
         return nullptr;
     }
 
-    mpss::utils::log_debug("Key '{}' not found on any YubiKey.", key_name);
-    return nullptr;
+    return std::make_unique<YubiKeyKeyPair>(name, slot_info.value.algorithm, slot_info.value.slot, piv.get_serial(),
+                                            slot_metadata.public_key);
 }
 
-bool YubiKeyBackend::delete_key(std::string_view name) const
+bool YubiKeyBackend::delete_key(const KeyLocation &location) const
 {
+    const std::string_view name = location.name;
     const std::string key_name{name};
     if (is_reserved_key_name(name))
     {
@@ -395,79 +409,37 @@ bool YubiKeyBackend::delete_key(std::string_view name) const
         return false;
     }
 
-    // A destructive operation must be no less selective about which device it touches than opening
-    // is, so the same device-selection rule applies: clear the pinned device, or refuse when more
-    // than one is attached and none was pinned.
-    bool device_skipped = false;
-    const std::optional<std::uint32_t> target_serial = utils::get_serial_from_env();
-    const std::vector<std::uint32_t> serials =
-        target_serial ? std::vector<std::uint32_t>{*target_serial} : YubiKeyPIV::available_serials(&device_skipped);
-    if (device_skipped)
+    const std::optional<std::uint32_t> selected = select_device(location);
+    if (!selected)
     {
-        // A listed reader that yielded no device may be holding one this process cannot reach, so
-        // the name cannot be reported cleared everywhere it might be held. Asked before emptiness:
-        // an unidentified device is left out of the list, so the sole attached device going
-        // unidentified also leaves the list empty, and "no devices found" would then describe the
-        // wrong state.
-        mpss::utils::log_and_set_error("Refusing to clear key '{}': an attached YubiKey could not be identified.",
-                                       key_name);
-        return false;
-    }
-    if (serials.empty())
-    {
-        mpss::utils::log_and_set_error("No YubiKey devices found.");
-        return false;
-    }
-    if (!target_serial && serials.size() > 1)
-    {
-        mpss::utils::log_and_set_error(
-            "Multiple YubiKeys detected. Set MPSS_YUBIKEY_SERIAL to select the target device.");
         return false;
     }
 
-    // A device that could not be reached might hold the name, so the name cannot be reported as
-    // cleared until every attached device has answered.
-    bool undetermined = false;
-    std::size_t deleted = 0;
-
-    for (const std::uint32_t serial : serials)
+    YubiKeyPIV piv{*selected, name};
+    if (!piv.is_connected())
     {
-        YubiKeyPIV piv{serial};
-        if (!piv.is_connected())
+        return false;
+    }
+
+    YubiKeyPIV::DeleteByNameResult result = piv.delete_keys_by_name(key_name);
+    if (result.needs_authentication)
+    {
+        if (authenticate_pin_interactive(piv, "delete key '" + key_name + "'"))
         {
-            undetermined = true;
-            continue;
+            const YubiKeyPIV::DeleteByNameResult retry = piv.delete_keys_by_name(key_name);
+            result.deleted += retry.deleted;
+            result.delete_refused = retry.delete_refused;
+            result.unreadable_slot = retry.unreadable_slot;
         }
-
-        YubiKeyPIV::DeleteByNameResult result = piv.delete_keys_by_name(key_name);
-        if (result.needs_authentication)
-        {
-            // Deleting needs the management key, which may need the PIN on this device. Only a refusal
-            // for want of credentials is retried: every other one stands on grounds no PIN satisfies,
-            // so prompting there would spend an attempt, and the caller's attention, on a retry that
-            // can only fail the same way.
-            if (authenticate_pin_interactive(piv, "delete key '" + key_name + "'"))
-            {
-                // The retry rescans every slot, so its own verdict on what could be read supersedes
-                // the first pass's; only the count of slots already cleared carries over.
-                const YubiKeyPIV::DeleteByNameResult retry = piv.delete_keys_by_name(key_name);
-                result.deleted += retry.deleted;
-                result.delete_refused = retry.delete_refused;
-                result.unreadable_slot = retry.unreadable_slot;
-            }
-        }
-
-        deleted += result.deleted;
-        undetermined = undetermined || result.delete_refused || result.unreadable_slot;
     }
 
-    if (undetermined)
+    if (result.delete_refused || result.unreadable_slot)
     {
-        mpss::utils::log_and_set_error("Could not clear key '{}' from every attached YubiKey.", key_name);
+        mpss::utils::log_and_set_error("Could not clear key '{}' from YubiKey serial {}.", key_name, *selected);
         return false;
     }
 
-    mpss::utils::log_trace("Cleared {} slot(s) carrying key '{}'.", deleted, key_name);
+    mpss::utils::log_trace("Cleared {} slot(s) carrying key '{}'.", result.deleted, key_name);
     return true;
 }
 

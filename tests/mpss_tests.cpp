@@ -6,6 +6,7 @@
 #include "mpss/log.h"
 #include "mpss/mpss.h"
 #include "mpss/secure_types.h"
+#include "mpss/utils/scope_guard.h"
 #include "mpss/utils/utilities.h"
 #include "tests/compat_env.h"
 #include "tests/test_key_names.h"
@@ -1204,6 +1205,14 @@ TEST(InteractionHandlerReentry, MpssRefusesWhileInsideAHandler)
     EXPECT_EQ(nullptr, mpss::KeyPair::Open("mpss_reentry_test_key"));
     EXPECT_EQ(nullptr, mpss::KeyPair::Create("mpss_reentry_test_key", ecdsa_secp256r1_sha256));
     EXPECT_FALSE(mpss::KeyPair::Delete("mpss_reentry_test_key"));
+    EXPECT_EQ(nullptr, mpss::KeyPair::Open("mpss_reentry_test_key", "os"));
+    EXPECT_EQ(nullptr, mpss::KeyPair::Create("mpss_reentry_test_key", ecdsa_secp256r1_sha256, "os"));
+    EXPECT_FALSE(mpss::KeyPair::Delete("mpss_reentry_test_key", "os"));
+    const KeyLocation location{"os", "mpss_reentry_test_key", std::nullopt};
+    EXPECT_EQ(nullptr, mpss::KeyPair::Open(location));
+    EXPECT_EQ(nullptr, mpss::KeyPair::Create(location, ecdsa_secp256r1_sha256));
+    EXPECT_FALSE(mpss::KeyPair::Delete(location));
+    EXPECT_EQ("MPSS cannot be called from an interaction handler.", mpss::get_error());
 
     // Refused rather than released, so the backend was never reached.
     EXPECT_EQ(0, handle.releases.load(std::memory_order_relaxed));
@@ -1545,6 +1554,59 @@ TEST(BackendTest, GetDefaultBackendName)
     ASSERT_NE(nullptr, name);
     EXPECT_GT(std::strlen(name), std::size_t{0});
     mpss::GetLogger()->info("Default backend: {}", name);
+}
+
+TEST(KeyLocationTest, RejectsInvalidLocationsBeforeDispatch)
+{
+    const std::array<KeyLocation, 3> invalid = {KeyLocation{"", "key", std::nullopt},
+                                                KeyLocation{"os", "", std::nullopt},
+                                                KeyLocation{"yubikey", "key", std::string{}}};
+    for (const auto &location : invalid)
+    {
+        EXPECT_EQ(nullptr, KeyPair::Create(location, ecdsa_secp256r1_sha256));
+        EXPECT_TRUE(mpss::has_error());
+        const std::string error = mpss::get_error();
+        EXPECT_EQ(nullptr, KeyPair::Open(location));
+        EXPECT_TRUE(mpss::has_error());
+        EXPECT_FALSE(KeyPair::Delete(location));
+        EXPECT_TRUE(mpss::has_error());
+        if (!location.device_id)
+        {
+            EXPECT_EQ(nullptr, KeyPair::Create(location.name, ecdsa_secp256r1_sha256, location.backend_name));
+            EXPECT_EQ(error, mpss::get_error());
+            EXPECT_EQ(nullptr, KeyPair::Open(location.name, location.backend_name));
+            EXPECT_EQ(error, mpss::get_error());
+            EXPECT_FALSE(KeyPair::Delete(location.name, location.backend_name));
+            EXPECT_EQ(error, mpss::get_error());
+        }
+    }
+}
+
+TEST(KeyLocationTest, UnknownBackendCannotListDevices)
+{
+    EXPECT_FALSE(mpss::get_available_devices("unknown-backend").has_value());
+    EXPECT_TRUE(mpss::has_error());
+}
+
+TEST(KeyLocationTest, OSStorageRejectsDeviceSelection)
+{
+    const auto backends = mpss::get_available_backends();
+    if (std::ranges::none_of(backends, [](const char *name) { return "os" == std::string_view{name}; }))
+    {
+        GTEST_SKIP() << "OS backend is not built.";
+    }
+    const auto devices = mpss::get_available_devices("os");
+    ASSERT_TRUE(devices.has_value());
+    EXPECT_TRUE(devices->empty());
+    EXPECT_FALSE(mpss::has_error());
+
+    const KeyLocation location{"os", test_key_name("device_selector"), "123"};
+    EXPECT_EQ(nullptr, KeyPair::Create(location, ecdsa_secp256r1_sha256));
+    EXPECT_TRUE(mpss::has_error());
+    EXPECT_EQ(nullptr, KeyPair::Open(location));
+    EXPECT_TRUE(mpss::has_error());
+    EXPECT_FALSE(KeyPair::Delete(location));
+    EXPECT_TRUE(mpss::has_error());
 }
 
 TEST(BackendTest, CreateKeyWithExplicitBackend)
@@ -2185,7 +2247,7 @@ class YubiKeyMgmKeyEnv : public ::testing::Test
         saved_allow_default_ = (nullptr == value) ? std::nullopt : std::optional<std::string>{value};
         unsetenv("MPSS_YUBIKEY_ALLOW_DEFAULT_MGM_KEY"); // NOLINT(concurrency-mt-unsafe)
 
-        serials_ = mpss::impl::yubikey::YubiKeyPIV::available_serials();
+        serials_ = mpss::impl::yubikey::YubiKeyPIV::available_serials().value_or(std::vector<std::uint32_t>{});
         if (serials_.empty())
         {
             GTEST_SKIP() << "Requires a connected YubiKey.";
@@ -2271,7 +2333,7 @@ class YubiKeySlotBinding : public ::testing::Test
         const char *value = std::getenv("MPSS_YUBIKEY_SERIAL"); // NOLINT(concurrency-mt-unsafe)
         saved_serial_ = (nullptr == value) ? std::nullopt : std::optional<std::string>{value};
 
-        serials_ = mpss::impl::yubikey::YubiKeyPIV::available_serials();
+        serials_ = mpss::impl::yubikey::YubiKeyPIV::available_serials().value_or(std::vector<std::uint32_t>{});
         if (serials_.empty())
         {
             GTEST_SKIP() << "Requires a connected YubiKey.";
@@ -2339,6 +2401,96 @@ TEST_F(YubiKeySlotBinding, LabelDoesNotResolveAfterSlotKeyIsReplaced)
     EXPECT_FALSE(opened);
 }
 
+// A scan cannot run from a thread that already holds a connection, since connecting to each reader
+// in turn would disturb the session that thread established. The refusal must report that nothing
+// was established about any device, which is not the same answer as no device being attached.
+TEST_F(YubiKeySlotBinding, AScanThatCannotRunIsNotAnEmptyDeviceList)
+{
+    using mpss::impl::yubikey::YubiKeyPIV;
+
+    // Established first, so the contrast is against this same device on this same host.
+    const auto reachable = YubiKeyPIV::available_serials();
+    ASSERT_TRUE(reachable.has_value());
+    ASSERT_FALSE(reachable->empty());
+
+    {
+        YubiKeyPIV piv{serials_[0]};
+        ASSERT_TRUE(piv.is_connected());
+        {
+            YubiKeyPIV nested{serials_[0]};
+            EXPECT_FALSE(nested.is_connected());
+        }
+        const std::optional<std::vector<std::uint32_t>> unlistable = YubiKeyPIV::available_serials();
+        EXPECT_FALSE(unlistable.has_value());
+        EXPECT_NE(std::optional<std::vector<std::uint32_t>>{std::vector<std::uint32_t>{}}, unlistable);
+    }
+    EXPECT_TRUE(YubiKeyPIV::available_serials().has_value());
+}
+
+TEST_F(YubiKeySlotBinding, ExplicitLocationsOverrideEnvironmentAndReportActualSerial)
+{
+    std::uint32_t absent_serial = 0xFFFFFFFF;
+    while (std::ranges::find(serials_, absent_serial) != serials_.end())
+    {
+        --absent_serial;
+    }
+    const auto absent_id = std::to_string(absent_serial);
+    setenv("MPSS_YUBIKEY_SERIAL", absent_id.c_str(), 1); // NOLINT(concurrency-mt-unsafe)
+
+    const auto actual_id = std::to_string(serials_[0]);
+    const KeyLocation requested{"yubikey", test_key_name("explicit_location"), "000" + actual_id};
+    auto created = KeyPair::Create(requested, ecdsa_secp256r1_sha256);
+    ASSERT_NE(nullptr, created) << mpss::get_error();
+    bool deleted = false;
+    SCOPE_GUARD({
+        if (!deleted)
+        {
+            static_cast<void>(created->delete_key());
+        }
+    });
+    const auto actual = created->location();
+    EXPECT_EQ(std::optional<std::string>{actual_id}, actual.device_id);
+
+    const auto devices = mpss::get_available_devices("yubikey");
+    ASSERT_TRUE(devices.has_value());
+    EXPECT_NE(devices->end(), std::ranges::find(*devices, actual_id));
+    EXPECT_NE(nullptr, KeyPair::Open(actual));
+    EXPECT_EQ(nullptr, KeyPair::Create(actual.name, ecdsa_secp256r1_sha256, "yubikey"));
+    EXPECT_NE(std::string::npos, mpss::get_error().find(absent_id));
+    EXPECT_EQ(nullptr, KeyPair::Open(actual.name, "yubikey"));
+    EXPECT_NE(std::string::npos, mpss::get_error().find(absent_id));
+    EXPECT_FALSE(KeyPair::Delete(actual.name, "yubikey"));
+    EXPECT_NE(std::string::npos, mpss::get_error().find(absent_id));
+
+    const KeyLocation automatic{"yubikey", actual.name, std::nullopt};
+    if (1 == serials_.size())
+    {
+        auto opened = KeyPair::Open(automatic);
+        ASSERT_NE(nullptr, opened) << mpss::get_error();
+        EXPECT_EQ(actual.device_id, opened->location().device_id);
+    }
+    else
+    {
+        EXPECT_EQ(nullptr, KeyPair::Open(automatic));
+        EXPECT_NE(std::string::npos, mpss::get_error().find("Multiple YubiKeys"));
+    }
+
+    const KeyLocation missing{"yubikey", actual.name, absent_id};
+    EXPECT_EQ(nullptr, KeyPair::Create(missing, ecdsa_secp256r1_sha256));
+    EXPECT_EQ(nullptr, KeyPair::Open(missing));
+    EXPECT_FALSE(KeyPair::Delete(missing));
+    EXPECT_NE(nullptr, KeyPair::Open(actual));
+
+    ASSERT_EQ(0, setenv("MPSS_YUBIKEY_SERIAL", actual_id.c_str(), 1)); // NOLINT(concurrency-mt-unsafe)
+    EXPECT_EQ(nullptr, KeyPair::Create(actual.name, ecdsa_secp256r1_sha256, "yubikey"));
+    EXPECT_NE(std::string::npos, mpss::get_error().find("already exists"));
+    auto opened = KeyPair::Open(actual.name, "yubikey");
+    ASSERT_NE(nullptr, opened) << mpss::get_error();
+    EXPECT_EQ(actual.device_id, opened->location().device_id);
+    deleted = KeyPair::Delete(actual.name, "yubikey");
+    EXPECT_TRUE(deleted) << mpss::get_error();
+}
+
 #endif
 
 // The sentinel name used to mark free/deleted slots is reserved and must not be accepted as a user key
@@ -2354,6 +2506,20 @@ TEST(YubiKeyReservedName, MarkerNameRejected)
     EXPECT_EQ(nullptr, mpss::KeyPair::Open("(available)", "yubikey"));
 }
 
+TEST(KeyLocationTest, YubiKeyRejectsInvalidSerialBeforeDeviceAccess)
+{
+    for (const auto *id : {"", "0", "-1", "+1", " 1", "1 ", "1x", "4294967296"})
+    {
+        const KeyLocation location{"yubikey", "invalid_device", id};
+        EXPECT_EQ(nullptr, KeyPair::Create(location, ecdsa_secp256r1_sha256)) << id;
+        EXPECT_TRUE(mpss::has_error());
+        EXPECT_EQ(nullptr, KeyPair::Open(location)) << id;
+        EXPECT_TRUE(mpss::has_error());
+        EXPECT_FALSE(KeyPair::Delete(location)) << id;
+        EXPECT_TRUE(mpss::has_error());
+    }
+}
+
 // Multi-device YubiKey tests. These tests require at least two YubiKeys to be physically connected.
 // They are automatically skipped when fewer than two devices are available.
 
@@ -2362,7 +2528,7 @@ class MultiYubiKeyTest : public ::testing::Test
   protected:
     void SetUp() override
     {
-        serials_ = mpss::impl::yubikey::YubiKeyPIV::available_serials();
+        serials_ = mpss::impl::yubikey::YubiKeyPIV::available_serials().value_or(std::vector<std::uint32_t>{});
 
         // Read the pin before the skip below. GTEST_SKIP returns from SetUp but TearDown still
         // runs, so a value saved after it would be missed and the restore would clear a variable
@@ -2506,6 +2672,56 @@ TEST_F(MultiYubiKeyTest, KeysOnDifferentDevicesAreIndependent)
     key_b->delete_key();
 }
 
+// The suite pins a serial, so automatic selection is exercised by clearing it here.
+TEST_F(MultiYubiKeyTest, AnAmbiguousDeviceIsRefusedRatherThanGuessed)
+{
+    const auto refused_as_ambiguous = [] {
+        const std::string error = mpss::get_error();
+        return std::string::npos != error.find("Multiple YubiKeys detected");
+    };
+
+    const std::string key_name = test_key_name("ambiguous_device");
+    const std::string absent_name = test_key_name("ambiguous_absent");
+
+    // Put a key on a chosen device, so the open and delete refusals below are refusing to act on
+    // something that really is there rather than merely failing to find it.
+    TargetDevice(serials_[0]);
+    std::unique_ptr<mpss::KeyPair> leftover = mpss::KeyPair::Open(key_name, "yubikey");
+    if (nullptr != leftover)
+    {
+        leftover->delete_key();
+        leftover.reset();
+    }
+
+    std::unique_ptr<mpss::KeyPair> created = mpss::KeyPair::Create(key_name, ecdsa_secp256r1_sha256, "yubikey");
+    ASSERT_NE(nullptr, created);
+    created.reset();
+
+    ClearDeviceTarget();
+
+    EXPECT_EQ(nullptr, mpss::KeyPair::Create(absent_name, ecdsa_secp256r1_sha256, "yubikey"));
+    EXPECT_TRUE(refused_as_ambiguous()) << mpss::get_error();
+
+    EXPECT_EQ(nullptr, mpss::KeyPair::Open(key_name, "yubikey"));
+    EXPECT_TRUE(refused_as_ambiguous()) << mpss::get_error();
+
+    EXPECT_FALSE(mpss::KeyPair::Delete(key_name, "yubikey"));
+    EXPECT_TRUE(refused_as_ambiguous()) << mpss::get_error();
+
+    // Refusing left everything as it was: the key is still on the device that holds it, and the
+    // name the create was refused for was not taken on some other device.
+    TargetDevice(serials_[0]);
+    std::unique_ptr<mpss::KeyPair> reopened = mpss::KeyPair::Open(key_name, "yubikey");
+    ASSERT_NE(nullptr, reopened);
+    EXPECT_TRUE(reopened->delete_key());
+
+    for (const std::uint32_t serial : serials_)
+    {
+        TargetDevice(serial);
+        EXPECT_EQ(nullptr, mpss::KeyPair::Open(absent_name, "yubikey"));
+    }
+}
+
 #ifndef MPSS_CORE_IS_SHARED
 // A device allows only a few wrong PINs before it locks, and every operation asks for a PIN afresh, so a
 // value a device has already refused must not be presented to it again. Device-independent -- these
@@ -2591,6 +2807,49 @@ TEST(YubiKeyRejectedPins, ARejectionOnOneDeviceDoesNotBlockAnother)
     EXPECT_FALSE(pin_already_rejected(other_serial, "not-a-real-pin-a"));
 }
 
+TEST(YubiKeyDeviceIdentifier, AcceptsOnlyNonzeroDecimalSerials)
+{
+    using mpss::impl::yubikey::utils::parse_serial;
+
+    EXPECT_EQ(std::uint32_t{1}, parse_serial("1"));
+    EXPECT_EQ(std::uint32_t{123}, parse_serial("000123"));
+    EXPECT_EQ(std::uint32_t{0xFFFFFFFF}, parse_serial("4294967295"));
+    for (const auto *invalid : {"", "0", "0000", "-1", "+1", " 1", "1 ", "1x", "4294967296", "99999999999999999999999"})
+    {
+        EXPECT_FALSE(parse_serial(invalid).has_value()) << invalid;
+    }
+    EXPECT_FALSE(parse_serial(std::string_view{"12\0003", 4}).has_value());
+    using mpss::impl::yubikey::utils::max_serial_length;
+    EXPECT_EQ(std::uint32_t{1}, parse_serial(std::string(max_serial_length - 1, '0') + "1"));
+    EXPECT_FALSE(parse_serial(std::string(max_serial_length, '0') + "1"));
+}
+
+TEST(YubiKeyDeviceIdentifier, EnvironmentUsesTheSameDecimalRules)
+{
+    using mpss::impl::yubikey::utils::get_serial_from_env;
+    const char *value = std::getenv("MPSS_YUBIKEY_SERIAL"); // NOLINT(concurrency-mt-unsafe)
+    const std::optional<std::string> saved = value ? std::make_optional(std::string{value}) : std::nullopt;
+    SCOPE_GUARD({
+        if (saved)
+        {
+            setenv("MPSS_YUBIKEY_SERIAL", saved->c_str(), 1); // NOLINT(concurrency-mt-unsafe)
+        }
+        else
+        {
+            unsetenv("MPSS_YUBIKEY_SERIAL"); // NOLINT(concurrency-mt-unsafe)
+        }
+    });
+    for (const char *invalid : {"4294967296", "-1", "+1", " 1", "1 ", "1x", "0", ""})
+    {
+        ASSERT_EQ(0, setenv("MPSS_YUBIKEY_SERIAL", invalid, 1)); // NOLINT(concurrency-mt-unsafe)
+        EXPECT_FALSE(get_serial_from_env()) << invalid;
+    }
+    ASSERT_EQ(0, setenv("MPSS_YUBIKEY_SERIAL", "000123", 1)); // NOLINT(concurrency-mt-unsafe)
+    EXPECT_EQ(std::uint32_t{123}, get_serial_from_env());
+    ASSERT_EQ(0, setenv("MPSS_YUBIKEY_SERIAL", "4294967295", 1)); // NOLINT(concurrency-mt-unsafe)
+    EXPECT_EQ(std::uint32_t{0xFFFFFFFF}, get_serial_from_env());
+}
+
 // The record only protects a device if the authentication path consults it, which the tests above cannot
 // show. This drives a real operation instead. A passing run presents nothing to the device: the value is
 // fabricated and already recorded as refused, so the operation must fail without reaching the card. Only a
@@ -2600,7 +2859,7 @@ class YubiKeyPinGuard : public ::testing::Test
   protected:
     void SetUp() override
     {
-        serials_ = mpss::impl::yubikey::YubiKeyPIV::available_serials();
+        serials_ = mpss::impl::yubikey::YubiKeyPIV::available_serials().value_or(std::vector<std::uint32_t>{});
         if (serials_.empty())
         {
             GTEST_SKIP() << "Requires a connected YubiKey.";
@@ -2671,9 +2930,13 @@ class CountingHandler : public mpss::InteractionHandler
     {
     }
 
-    std::optional<mpss::SecureString> request_pin(const mpss::PinRequestContext & /*context*/) override
+    std::optional<mpss::SecureString> request_pin(const mpss::PinRequestContext &context) override
     {
         ++requests;
+        backend = context.target.backend_name;
+        device = context.target.device_id;
+        key_name = context.target.key_name;
+        reader = context.target.reader_name;
         if (throw_from_request)
         {
             throw std::runtime_error{"handler failure"};
@@ -2681,17 +2944,22 @@ class CountingHandler : public mpss::InteractionHandler
         return pin_;
     }
 
-    void notify_pin_result(mpss::PinResult result, int /*retries_remaining*/) override
+    void notify_pin_result(const mpss::InteractionContext &target, mpss::PinResult result,
+                           int /*retries_remaining*/) override
     {
+        EXPECT_EQ(backend, target.backend_name);
+        EXPECT_EQ(device, target.device_id);
+        EXPECT_EQ(key_name, target.key_name);
+        EXPECT_EQ(reader, target.reader_name);
         ++results;
         last_result = result;
     }
 
-    void notify_touch_needed() override
+    void notify_touch_needed(const mpss::InteractionContext & /*target*/) override
     {
     }
 
-    void notify_touch_complete(bool /*success*/) override
+    void notify_touch_complete(const mpss::InteractionContext & /*target*/, bool /*success*/) override
     {
     }
 
@@ -2700,6 +2968,10 @@ class CountingHandler : public mpss::InteractionHandler
     int results{0};
     bool throw_from_request{false};
     mpss::PinResult last_result{mpss::PinResult::ok};
+    std::string backend;
+    std::string device;
+    std::string key_name;
+    std::string reader;
     // NOLINTEND(misc-non-private-member-variables-in-classes)
 
   private:
@@ -2745,6 +3017,10 @@ TEST_F(YubiKeyPinGuard, EveryPinRequestIsAnsweredByExactlyOneResult)
     EXPECT_EQ(0, handle->sign_hash(hash, signature));
     EXPECT_EQ(withholding->requests, withholding->results);
     EXPECT_EQ(mpss::PinResult::not_attempted, withholding->last_result);
+    EXPECT_EQ("yubikey", withholding->backend);
+    EXPECT_EQ(std::to_string(serials_[0]), withholding->device);
+    EXPECT_EQ(key_name, withholding->key_name);
+    EXPECT_FALSE(withholding->reader.empty());
 
     // Cancelling is answered too, so a handler that cancels still hears back.
     auto cancelling = std::make_shared<CountingHandler>(std::nullopt);

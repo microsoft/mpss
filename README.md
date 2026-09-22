@@ -979,6 +979,11 @@ whatever suits the application.
 | `notify_touch_complete` | Yes | That operation finished; `success` is false if the touch timed out |
 | `notify_pin_result` | No | After every attempt, and after a request that never reached the device. The only report of success, lockout, or device error |
 
+`PinRequestContext::target` identifies the backend, device ID (the YubiKey serial number), key name, and reader used by the current connection.
+The notification methods receive the same target information as an `InteractionContext`.
+Use the device ID to select credentials and distinguish concurrent requests; a reader name is display information, not a stable or authenticated identity.
+Context strings are valid only during the callback; copy them when posting work to another thread.
+
 `request_pin` drives the retry loop. Returning a PIN makes one attempt; if it is wrong, MPSS calls
 again with `context.last_status` set to `wrong_pin` and `context.retries_remaining` giving the
 device's remaining tries, and the handler decides whether to ask again or give up by returning
@@ -1017,26 +1022,26 @@ public:
         return my_ui::prompt_for_pin(context.operation);  // std::nullopt if the user cancels.
 }
 
-void notify_touch_needed() override
+void notify_touch_needed(const mpss::InteractionContext &target) override
 {
-    my_ui::show_touch_prompt();
+    my_ui::show_touch_prompt(target.device_id);
 }
 
-void notify_touch_complete(bool success) override
+void notify_touch_complete(const mpss::InteractionContext &target, bool success) override
 {
-    my_ui::hide_touch_prompt(success);
+    my_ui::hide_touch_prompt(target.device_id, success);
 }
 
 // Optional, but the only place an outcome other than "wrong PIN" is reported.
-    void notify_pin_result(mpss::PinResult result, int retries_remaining) override
+    void notify_pin_result(const mpss::InteractionContext &target, mpss::PinResult result, int retries_remaining) override
 {
     if (mpss::PinResult::not_attempted == result)
     {
         // No attempt was made, so retries_remaining is unchanged.
-            my_ui::hide_pin_dialog();
+            my_ui::hide_pin_dialog(target.device_id);
     return;
     }
-        my_ui::report_pin_result(result, retries_remaining);  // ok, wrong_pin, locked, or error.
+        my_ui::report_pin_result(target.device_id, result, retries_remaining);  // ok, wrong_pin, locked, or error.
 }
 }
 ;
@@ -1062,33 +1067,40 @@ returns.
 Callers that cannot subclass a C++ interface can install the same four behaviors as plain function
 pointers through [mpss-openssl/interaction_handler.h](mpss-openssl/interaction_handler.h), which
 declares `mpss_request_pin_handler_t` and the three notification types.
+`mpss_set_interaction_handler` supplies this target metadata and an application-owned `user_data` pointer to all four callbacks.
 
 ### Device Selection
 
-MPSS selects the sole detected YubiKey automatically. With multiple devices, select a serial
-from `ykman list`:
+MPSS automatically selects the sole reachable YubiKey; select a serial explicitly when several are reachable.
+Use `get_available_devices("yubikey")` to list reachable serials.
 
-```bash
-export MPSS_YUBIKEY_SERIAL=18268739
+`KeyLocation` specifies the backend, key name, and optional device ID: a positive decimal serial for YubiKey, or no device ID for OS storage.
+`key->location()` reports the backend and device actually used.
+
+```cpp
+mpss::KeyLocation target{"yubikey", "my-key", "35489220"};
+auto key = mpss::KeyPair::Create(target, mpss::Algorithm::ecdsa_secp256r1_sha256);
+if (!key) {
+    // Report mpss::get_error().
+    return;
+}
+
+const auto actual_location = key->location();
+auto reopened = mpss::KeyPair::Open(actual_location);
 ```
 
-Creation, opening, and deletion by name obey this selection. Malformed serials are warned
-about and treated as unset. Existing `KeyPair` handles retain their serial, slot, and public key.
+`Open(location)` selects by location, and `Delete(location)` clears that name on the selected device.
+An unavailable explicit device fails rather than falling back to another serial.
 
-Creating, opening, and deleting by name all refuse when any detected reader added no device of its
-own. Such a reader may hold a YubiKey this process cannot reach, and the smart card layer reports
-that the same way as an empty reader or a card that is not a YubiKey. Two readers answering with
-one serial are refused on the same grounds: a device reachable on two readers and a card claiming
-another device's serial cannot be told apart, because the serial is asserted by the card. A hidden
-device would otherwise go uncounted by the refusal above, so a name held on more than one device
-would resolve to whichever one answered.
+Location-based calls ignore `MPSS_YUBIKEY_SERIAL`; omitting the device ID requests automatic selection.
+`MPSS_YUBIKEY_SERIAL` sets the default serial for calls that take a key name rather than a `KeyLocation`.
+Serials are decimal integers from 1 to 4294967295; leading zeros are accepted, with a 256-character input limit.
+An invalid environment value is warned about and ignored; an invalid explicit `device_id` fails the operation.
+Existing handles keep their selected device when the default changes.
+A serial identifies a target but does not authenticate hardware.
 
-These refusals apply when no device is selected. Setting `MPSS_YUBIKEY_SERIAL` names the device
-outright, so the operation proceeds without asking the reader scan whether it accounted for
-everything attached; MPSS still scans to find which reader answers for that serial. That is how to
-use these operations on a machine carrying other smart card readers, at the cost of the refusals
-above: a card asserting the selected serial is told apart from the genuine device only by the scan
-those refusals report on.
+YubiKey host-side signature verification uses an isolated OpenSSL context with the built-in default provider.
+It does not inherit the application's provider configuration or FIPS property selection.
 
 Each device has its own PIN, while `MPSS_YUBIKEY_PIN` holds a single value. MPSS declines to present
 a PIN that a device has already refused, and reports that as the reason the operation failed, so a
@@ -1107,7 +1119,7 @@ value MPSS has already seen refused, restart the process so that value is offere
 | `MPSS_YUBIKEY_PIN` | PIN used by the default handler | Device-valid PIN | Prompt when needed |
 | `MPSS_YUBIKEY_MGM_KEY` | Management key when not using PIN-protected mode | 32, 48, or 64 hex characters | Unset |
 | `MPSS_YUBIKEY_ALLOW_DEFAULT_MGM_KEY` | Permit factory-default management-key authentication | `1`, `true`, `yes`, `on` (case-insensitive) | Disabled |
-| `MPSS_YUBIKEY_SERIAL` | Device for by-name operations | Positive serial number | Sole detected device |
+| `MPSS_YUBIKEY_SERIAL` | Default YubiKey serial for name-based calls; `KeyLocation` calls ignore it | Positive serial number | Sole reachable device |
 | `MPSS_YUBIKEY_PINPOLICY` | New-key PIN policy | `default`, `never`, `once`, `always` | `once` |
 | `MPSS_YUBIKEY_TOUCHPOLICY` | New-key touch policy | `default`, `never`, `always`, `cached`, `auto` | `cached` |
 | `MPSS_YUBIKEY_ALLOW_POLICY_DOWNGRADE` | Permit environment-driven `never` policies | `1`, `true`, `yes`, `on` (case-insensitive) | Disabled |
@@ -1118,7 +1130,7 @@ value MPSS has already seen refused, restart the process so that value is offere
 | --- | --- |
 | Capacity | 20 [retired PIV slots](https://developers.yubico.com/PIV/Introduction/Certificate_slots.html); delete keys to free space |
 | Algorithms | P-256 and P-384; no P-521 |
-| Device access | Key operations require the device, including verification through a `KeyPair`. Standalone verification with an extracted public key does not |
+| Device access | Signing and storage operations require the selected device. Standalone verification with an extracted public key does not |
 | Authentication | Creation/deletion request a PIN only after authentication-related failure; other refusals do not trigger a PIN retry |
 | PIN lockout | A PIN the device refuses is not presented to it again for the lifetime of the process, so a stale `MPSS_YUBIKEY_PIN` cannot spend the device's remaining retries. See [Device Selection](#device-selection) |
 | PIN policy | MPSS reconnects per operation, so `once` need not cache the PIN across signing calls. `never` affects signing, not management authentication |

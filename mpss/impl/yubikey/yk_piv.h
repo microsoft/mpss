@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
+#include <optional>
 #include <shared_mutex>
 #include <span>
 #include <string>
@@ -40,17 +41,18 @@ class YubiKeyPIV
     /**
      * @brief Constructs a YubiKeyPIV object and connects to the YubiKey with the specified serial number.
      *
-     * Connects to the one reader that last answered for this serial rather than trying readers in
-     * turn, so that opening one device does not disturb a session another thread has on a different
-     * one. The serial is verified after connecting; a mapping that has gone stale costs one scan
-     * and one retry.
+     * Tries the readers that answered for this serial, verifying the serial after connecting.
+     * Stale routes cost at most one scan and retry. An expected key filters routes without PIN
+     * authentication. Without it, conflicting name bindings on reachable routes are refused.
+     * Cached readers avoid a scan that must wait for all active connections and touches to finish.
      *
      * If connection fails, the object is left in a disconnected state. All subsequent
      * operations will fail gracefully and return error values.
      *
      * @param serial The serial number of the target YubiKey.
      */
-    explicit YubiKeyPIV(std::uint32_t serial);
+    explicit YubiKeyPIV(std::uint32_t serial, std::string_view name = {},
+                        std::span<const std::byte> expected_public_key = {}, std::uint8_t slot = 0);
 
     /**
      * @brief Destruct the YubiKeyPIV. Automatically disconnects and performs clean-up.
@@ -73,13 +75,20 @@ class YubiKeyPIV
     }
 
     /**
-     * @brief Get the YubiKey serial number.
+     * @brief Get the serial number from the last successful connection, or zero before connecting.
      * @return The serial number.
      */
     [[nodiscard]]
     std::uint32_t get_serial() const noexcept
     {
         return serial_;
+    }
+
+    /** @brief Metadata for the current connection; views remain valid until it changes or is destroyed. */
+    [[nodiscard]]
+    InteractionContext interaction_context() const noexcept
+    {
+        return {.backend_name = "yubikey", .device_id = device_id_, .key_name = key_name_, .reader_name = reader_name_};
     }
 
     /**
@@ -269,14 +278,17 @@ class YubiKeyPIV
      * was read can be returned.
      *
      * Nothing prevents two slots from carrying the same label, so the scan visits every slot rather than stopping
-     * at the first match and refuses an ambiguous name instead of resolving it arbitrarily.
+     * at the first match and refuses an ambiguous name instead of resolving it arbitrarily. An
+     * expected public key restricts matching to slots carrying both that name and that key.
      *
      * @param name The key name to search for.
+     * @param expected_public_key Optional public key used to disambiguate slots sharing the name.
      * @return KeyProbeStatus::found with the slot info, KeyProbeStatus::not_found when every slot was read and none
      * matched, or KeyProbeStatus::operational_error when the name could neither be located nor ruled out, or when
-     * more than one slot carries it.
+     * more than one slot matches the name and optional expected key.
      */
-    KeyProbeResult<SlotInfo> find_slot_by_name(std::string_view name);
+    KeyProbeResult<SlotInfo> find_slot_by_name(std::string_view name,
+                                               std::span<const std::byte> expected_public_key = {});
 
     /**
      * @brief Outcome of clearing every slot that carries a name.
@@ -318,19 +330,15 @@ class YubiKeyPIV
     std::uint8_t find_free_slot();
 
     /**
-     * @brief List the serial numbers of all currently available YubiKeys.
+     * @brief List distinct serials that currently answer on reachable readers.
      *
      * Briefly connects to each smart card reader, reads the serial number, and disconnects. This is
      * a discovery method: it leaves no connection open, and it records which reader answered for
      * each serial, which is what lets a later connection address one reader directly.
      *
-     * @param[out] device_skipped Optional. Set when a listed reader added no device of its own,
-     * whether it refused the connection, would not identify what it holds, or answered with a
-     * serial another reader had already claimed, so the returned list is not a complete account of
-     * what is attached.
-     * @return A vector of serial numbers for all reachable YubiKeys.
+     * @return An empty list when no reader answers; nullopt when enumeration itself fails.
      */
-    static MPSS_DECOR std::vector<std::uint32_t> available_serials(bool *device_skipped = nullptr);
+    static MPSS_DECOR std::optional<std::vector<std::uint32_t>> available_serials();
 
   private:
     // Held for the life of the connection, so that one device serves one connection at a time and
@@ -346,7 +354,11 @@ class YubiKeyPIV
     std::unique_lock<std::mutex> device_lock_;
 
     ykpiv_state *state_{nullptr};
+    // Last successful connection metadata survives disconnect while another route is being tried.
     std::uint32_t serial_{0};
+    std::string device_id_;
+    std::string key_name_;
+    std::string reader_name_;
 
     // Set when authentication fell back to the publicly known factory-default management key, which
     // is evidence the device still carries factory credentials.
@@ -365,7 +377,16 @@ class YubiKeyPIV
     std::string describe_default_credentials();
 
     bool connect_to_reader(const std::string &reader, std::uint32_t target_serial);
-    bool connect_to_remembered_reader(std::uint32_t serial);
+    enum class ConnectionResult
+    {
+        connected,
+        unavailable,
+        resolution_failed,
+        conflicting_keys
+    };
+    ConnectionResult connect_to_cached_reader(std::uint32_t serial, std::string_view name,
+                                              std::span<const std::byte> expected_public_key, std::uint8_t slot);
+    std::optional<std::vector<std::vector<std::byte>>> keys_by_name(std::string_view name);
     void disconnect();
 
     /**

@@ -2,10 +2,12 @@
 // Licensed under the MIT license.
 
 #include "mpss-openssl/api.h"
+#include "mpss-openssl/interaction_handler.h"
 #include "mpss-openssl/provider/provider.h"
 #ifdef MPSS_BACKEND_YUBIKEY
 #include "mpss/impl/yubikey/yk_piv.h"
 #endif
+#include "mpss/interaction_handler.h"
 #include "mpss/key_policy.h"
 #include "mpss/mpss.h"
 #include "mpss/utils/scope_guard.h"
@@ -313,6 +315,133 @@ std::vector<unsigned char> SignDigest(OSSL_LIB_CTX *libctx, EVP_PKEY *key)
 namespace mpss_openssl::tests
 {
 using mpss::tests::test_key_name;
+
+#ifdef MPSS_BACKEND_YUBIKEY
+TEST(InteractionContextTest, CCallbacksReceiveTargetAndUserData)
+{
+    struct Observations
+    {
+        int requests{0};
+        int results{0};
+        int touches{0};
+        int completions{0};
+    } observations;
+    const auto previous = mpss::GetInteractionHandler();
+    SCOPE_GUARD(mpss::GetOrSetInteractionHandler(previous));
+    const auto check_target = [](const mpss_interaction_context_t *target) {
+        EXPECT_STREQ("yubikey", target->backend_name);
+        EXPECT_STREQ("35489220", target->device_id);
+        EXPECT_STREQ("my-key", target->key_name);
+        EXPECT_STREQ("reader", target->reader_name);
+    };
+    struct CallbackState
+    {
+        Observations *observed;
+        decltype(check_target) check;
+    } state{&observations, check_target};
+    mpss_set_interaction_handler(
+        [](const mpss_interaction_context_t *target, const char *operation, int status, int retries, char *pin,
+           size_t size, void *data) {
+            auto &callback = *static_cast<CallbackState *>(data);
+            callback.check(target);
+            ++callback.observed->requests;
+            EXPECT_STREQ("sign", operation);
+            EXPECT_EQ(MPSS_PIN_STATUS_FIRST_ATTEMPT, status);
+            EXPECT_EQ(3, retries);
+            EXPECT_EQ(MPSS_PIN_BUF_SIZE, size);
+            std::memcpy(pin, "unused-test-pin", sizeof("unused-test-pin"));
+            return true;
+        },
+        [](const mpss_interaction_context_t *target, int result, int retries, void *data) {
+            auto &callback = *static_cast<CallbackState *>(data);
+            callback.check(target);
+            ++callback.observed->results;
+            EXPECT_EQ(MPSS_PIN_RESULT_NOT_ATTEMPTED, result);
+            EXPECT_EQ(3, retries);
+        },
+        [](const mpss_interaction_context_t *target, void *data) {
+            auto &callback = *static_cast<CallbackState *>(data);
+            callback.check(target);
+            ++callback.observed->touches;
+        },
+        [](const mpss_interaction_context_t *target, bool success, void *data) {
+            auto &callback = *static_cast<CallbackState *>(data);
+            callback.check(target);
+            ++callback.observed->completions;
+            EXPECT_FALSE(success);
+        },
+        &state);
+
+    const auto handler = mpss::GetInteractionHandler();
+    const mpss::InteractionContext target{
+        std::string_view{"yubikey-tail"}.substr(0, 7), std::string_view{"35489220-tail"}.substr(0, 8),
+        std::string_view{"my-key-tail"}.substr(0, 6), std::string_view{"reader-tail"}.substr(0, 6)};
+    const std::optional<mpss::SecureString> pin = handler->request_pin(
+        {.operation = "sign", .last_status = mpss::PinStatus::first_attempt, .retries_remaining = 3, .target = target});
+    ASSERT_TRUE(pin.has_value());
+    EXPECT_STREQ("unused-test-pin", pin->c_str());
+    handler->notify_pin_result(target, mpss::PinResult::not_attempted, 3);
+    handler->notify_touch_needed(target);
+    handler->notify_touch_complete(target, false);
+    EXPECT_EQ(1, observations.requests);
+    EXPECT_EQ(1, observations.results);
+    EXPECT_EQ(1, observations.touches);
+    EXPECT_EQ(1, observations.completions);
+
+    mpss_set_interaction_handler(nullptr, nullptr, nullptr, nullptr, nullptr);
+    const auto empty = mpss::GetInteractionHandler();
+    EXPECT_FALSE(empty->request_pin({.operation = "sign",
+                                     .last_status = mpss::PinStatus::first_attempt,
+                                     .retries_remaining = -1,
+                                     .target = target}));
+    EXPECT_NO_THROW(empty->notify_pin_result(target, mpss::PinResult::not_attempted, -1));
+    EXPECT_NO_THROW(empty->notify_touch_needed(target));
+    EXPECT_NO_THROW(empty->notify_touch_complete(target, false));
+}
+
+TEST(InteractionContextTest, CppNotificationsReceiveTarget)
+{
+    const auto previous = mpss::GetInteractionHandler();
+    SCOPE_GUARD(mpss::GetOrSetInteractionHandler(previous));
+    int results = 0;
+    class TargetHandler : public mpss::InteractionHandler
+    {
+      public:
+        explicit TargetHandler(int &calls) : calls_{calls}
+        {
+        }
+        std::optional<mpss::SecureString> request_pin(const mpss::PinRequestContext &) override
+        {
+            return std::nullopt;
+        }
+        void notify_pin_result(const mpss::InteractionContext &target, mpss::PinResult, int) override
+        {
+            EXPECT_EQ("35489220", target.device_id);
+            ++calls_;
+        }
+        void notify_touch_needed(const mpss::InteractionContext &target) override
+        {
+            EXPECT_EQ("reader", target.reader_name);
+            ++calls_;
+        }
+        void notify_touch_complete(const mpss::InteractionContext &target, bool) override
+        {
+            EXPECT_EQ("my-key", target.key_name);
+            ++calls_;
+        }
+
+      private:
+        int &calls_;
+    };
+    mpss::GetOrSetInteractionHandler(std::make_shared<TargetHandler>(results));
+    const auto handler = mpss::GetInteractionHandler();
+    const mpss::InteractionContext target{"yubikey", "35489220", "my-key", "reader"};
+    handler->notify_pin_result(target, mpss::PinResult::not_attempted, -1);
+    handler->notify_touch_needed(target);
+    handler->notify_touch_complete(target, false);
+    EXPECT_EQ(3, results);
+}
+#endif
 
 TEST(CApiErrorContract, AvailabilityQueriesHonorTheContract)
 {
@@ -1247,7 +1376,8 @@ TEST_F(MPSSStore, AdvertisesGroupNameParam)
 #ifdef MPSS_BACKEND_YUBIKEY
 TEST_F(MPSSStore, ReopenByNameYubiKey)
 {
-    if (mpss::impl::yubikey::YubiKeyPIV::available_serials().empty())
+    const auto devices = mpss::get_available_devices("yubikey");
+    if (!devices || devices->empty())
     {
         GTEST_SKIP() << "YubiKey device not available";
     }

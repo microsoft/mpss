@@ -24,6 +24,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 #include <ykpiv/ykpiv.h>
@@ -50,7 +51,8 @@ struct DeviceLocks
     std::shared_mutex bus;
     std::mutex registry;
     std::map<std::uint32_t, std::unique_ptr<std::mutex>> by_serial;
-    std::map<std::uint32_t, std::string> reader_by_serial;
+    // Cached routes avoid reconnecting to unrelated devices and disturbing their authenticated sessions.
+    std::map<std::uint32_t, std::vector<std::string>> readers_by_serial;
 };
 
 [[nodiscard]]
@@ -79,34 +81,14 @@ std::mutex &device_mutex(std::uint32_t serial)
     return *device;
 }
 
-// A live connection holds the bus shared for as long as it lasts. None of these locks is recursive,
-// so opening a second connection or scanning from the same thread ends in undefined behavior or a
-// wait on a lock the thread itself holds. Both are refused, because the alternative is a hang with
-// nothing reported.
-thread_local int connection_depth = 0;
-
-[[nodiscard]]
-bool holds_connection() noexcept
-{
-    return 0 != connection_depth;
-}
+// Reject nested connections/scans on this thread: they would reacquire non-recursive locks it holds.
+thread_local bool thread_has_connection = false;
 
 // Connects to every reader in turn, records which one answers for each serial, and reports the
 // serials found. Connecting to a device disturbs what a session has established on it, so the
 // caller must already hold the bus exclusively.
-//
-// device_skipped reports that a listed reader added no device of its own, so a caller that has to
-// speak for every attached device knows this list is not all of them. That covers a reader that
-// will not connect, one that connects but will not state a serial, and one whose serial another
-// reader has already claimed; none of the three can be told apart from an attached device this
-// process cannot account for.
-std::optional<std::vector<std::uint32_t>> scan_readers_locked(bool *device_skipped)
+std::optional<std::vector<std::uint32_t>> scan_readers_locked()
 {
-    if (nullptr != device_skipped)
-    {
-        *device_skipped = false;
-    }
-
     ykpiv_state *state = nullptr;
     ykpiv_rc rc = ykpiv_init(&state, 0);
     if (YKPIV_OK != rc)
@@ -126,8 +108,7 @@ std::optional<std::vector<std::uint32_t>> scan_readers_locked(bool *device_skipp
     }
 
     std::vector<std::uint32_t> serials;
-    std::map<std::uint32_t, std::string> discovered;
-    bool skipped = false;
+    std::map<std::uint32_t, std::vector<std::string>> discovered;
 
     // A double NUL terminated list, so each name follows the one before it.
     for (const char *reader = reader_buf; '\0' != *reader; reader += std::strlen(reader) + 1)
@@ -142,10 +123,6 @@ std::optional<std::vector<std::uint32_t>> scan_readers_locked(bool *device_skipp
             // on to reuse. The next connect re-establishes the context this releases.
             ykpiv_disconnect(state);
 
-            // PC/SC reports an empty reader, a foreign card and a YubiKey another process is
-            // holding the same way, so a reader that will not connect leaves a device unaccounted
-            // for rather than ruled out.
-            skipped = true;
             mpss::utils::log_trace("Reader '{}': connection failed ({}).", reader, ykpiv_strerror(rc));
             continue;
         }
@@ -157,38 +134,24 @@ std::optional<std::vector<std::uint32_t>> scan_readers_locked(bool *device_skipp
         {
             mpss::utils::log_warning("Reader '{}': connected but failed to get serial ({}).", reader,
                                      ykpiv_strerror(rc));
-            skipped = true;
-            continue;
-        }
-
-        const auto seen = discovered.find(serial);
-        if (discovered.end() != seen)
-        {
-            // One device reachable on two readers and a second device claiming the first one's
-            // serial look the same from here, because the serial is asserted by the card. Either
-            // way this reader added no device of its own, so the list is not a complete account of
-            // what is attached.
-            mpss::utils::log_warning("Serial {} answers on both reader '{}' and reader '{}'.", serial, seen->second,
-                                     reader);
-            skipped = true;
             continue;
         }
 
         mpss::utils::log_trace("Found YubiKey with serial {} on reader '{}'.", serial, reader);
-        serials.push_back(serial);
-        discovered.emplace(serial, reader);
+        // Different readers can report the same serial; retain each route, but count the serial once.
+        std::vector<std::string> &routes = discovered[serial];
+        if (routes.empty())
+        {
+            serials.push_back(serial);
+        }
+        routes.emplace_back(reader);
     }
 
-    // Replaced rather than merged, so a serial that no longer answers stops being remembered.
     DeviceLocks &locks = device_locks();
     {
         const std::scoped_lock lock{locks.registry};
-        locks.reader_by_serial = std::move(discovered);
-    }
-
-    if (nullptr != device_skipped)
-    {
-        *device_skipped = skipped;
+        // Replace the snapshot: readers seen in earlier scans do not accumulate.
+        locks.readers_by_serial = std::move(discovered);
     }
 
     return serials;
@@ -197,16 +160,34 @@ std::optional<std::vector<std::uint32_t>> scan_readers_locked(bool *device_skipp
 // Which reader is remembered for a serial, if any. The caller must already hold the bus, so that a
 // scan cannot replace the mapping between reading it and connecting to what it named.
 [[nodiscard]]
-std::optional<std::string> cached_reader(std::uint32_t serial)
+std::vector<std::string> cached_readers(std::uint32_t serial)
 {
     DeviceLocks &locks = device_locks();
     const std::scoped_lock lock{locks.registry};
-    const auto entry = locks.reader_by_serial.find(serial);
-    if (locks.reader_by_serial.end() == entry)
+    const auto entry = locks.readers_by_serial.find(serial);
+    if (locks.readers_by_serial.end() == entry)
     {
-        return std::nullopt;
+        return {};
     }
     return entry->second;
+}
+
+void prefer_reader(std::uint32_t serial, const std::string &reader)
+{
+    DeviceLocks &locks = device_locks();
+    const std::scoped_lock lock{locks.registry};
+    const auto entry = locks.readers_by_serial.find(serial);
+    if (locks.readers_by_serial.end() == entry)
+    {
+        return;
+    }
+    std::vector<std::string> &routes = entry->second;
+    const auto found = std::ranges::find(routes, reader);
+    if (routes.end() != found)
+    {
+        // Move the successful reader to the front; preserve the order of all other routes.
+        std::rotate(routes.begin(), found, found + 1);
+    }
 }
 
 // Discovers which reader answers for each serial. Takes the bus exclusively, so the caller must
@@ -216,7 +197,7 @@ bool rescan_readers()
 {
     DeviceLocks &locks = device_locks();
     const std::unique_lock bus{locks.bus};
-    return scan_readers_locked(nullptr).has_value();
+    return scan_readers_locked().has_value();
 }
 
 } // namespace
@@ -394,50 +375,198 @@ std::size_t extract_public_point(const ykpiv_metadata &metadata, std::span<std::
 }
 } // namespace
 
-YubiKeyPIV::YubiKeyPIV(std::uint32_t serial)
+YubiKeyPIV::YubiKeyPIV(std::uint32_t serial, std::string_view name, std::span<const std::byte> expected_public_key,
+                       std::uint8_t slot)
+    : key_name_{name}
 {
-    if (holds_connection())
+    if (thread_has_connection)
     {
         mpss::utils::log_and_set_error("Cannot open a YubiKey connection from a thread that already holds one.");
         return;
     }
 
-    // Addressing one reader is what keeps opening a device from disturbing the session another
-    // thread has on a different one. Which reader that is comes from what a scan remembered, and is
-    // read while holding the bus, so a scan cannot replace it between the reading and the connect.
-    if (connect_to_remembered_reader(serial))
+    bool keep_connection = false;
+    SCOPE_GUARD({
+        // A constructor that throws has no destructor to close a partially established connection.
+        if (!keep_connection)
+        {
+            disconnect();
+        }
+    });
+
+    ConnectionResult result = connect_to_cached_reader(serial, name, expected_public_key, slot);
+    if (ConnectionResult::connected == result)
+    {
+        keep_connection = true;
+        return;
+    }
+    const std::string resolution_error =
+        ConnectionResult::resolution_failed == result ? mpss::utils::get_error() : std::string{};
+    if (ConnectionResult::conflicting_keys == result || !rescan_readers())
     {
         return;
     }
-
-    // Either nothing was remembered for this serial, or what was remembered no longer answers for
-    // it. A scan settles both, and needs the bus exclusively, so it runs with nothing held. One
-    // retry is enough: a device still absent after a fresh scan is absent.
-    if (!rescan_readers() || !connect_to_remembered_reader(serial))
+    result = connect_to_cached_reader(serial, name, expected_public_key, slot);
+    if (ConnectionResult::connected == result)
     {
-        mpss::utils::log_and_set_error("No YubiKey found with serial number {}.", serial);
+        keep_connection = true;
+    }
+    else if (ConnectionResult::unavailable == result)
+    {
+        if (!resolution_error.empty())
+        {
+            mpss::utils::set_error(resolution_error);
+        }
+        else if (0 != slot && !expected_public_key.empty())
+        {
+            mpss::utils::log_and_set_error("Key '{}' is no longer the key this handle opened.", name);
+        }
+        else
+        {
+            mpss::utils::log_and_set_error("No reachable YubiKey with serial {} satisfies the requested key identity.",
+                                           serial);
+        }
     }
 }
 
-bool YubiKeyPIV::connect_to_remembered_reader(std::uint32_t serial)
+YubiKeyPIV::ConnectionResult YubiKeyPIV::connect_to_cached_reader(std::uint32_t serial, std::string_view name,
+                                                                  std::span<const std::byte> expected_public_key,
+                                                                  std::uint8_t slot)
 {
+    using enum ConnectionResult;
+    // Success keeps the connection and locks; every other exit releases this attempt's resources.
+    bool keep_connection = false;
+    SCOPE_GUARD({
+        if (!keep_connection)
+        {
+            disconnect();
+            // Release any owned locks and clear their associations, including on partial acquisition.
+            device_lock_ = std::unique_lock<std::mutex>{};
+            bus_lock_ = std::shared_lock<std::shared_mutex>{};
+        }
+    });
     bus_lock_ = std::shared_lock{device_locks().bus};
 
-    const std::optional<std::string> reader = cached_reader(serial);
-    if (reader.has_value())
+    const std::vector<std::string> readers = cached_readers(serial);
+    if (readers.empty())
     {
-        device_lock_ = std::unique_lock{device_mutex(serial)};
-        if (connect_to_reader(reader.value(), serial))
+        return unavailable;
+    }
+    device_lock_ = std::unique_lock{device_mutex(serial)};
+
+    std::optional<std::vector<std::vector<std::byte>>> observed_keys;
+    std::string selected_reader;
+    std::string resolution_error;
+    for (const auto &reader : readers)
+    {
+        if (!connect_to_reader(reader, serial))
         {
-            return true;
+            continue;
         }
-        device_lock_ = std::unique_lock<std::mutex>{};
+        if (!expected_public_key.empty())
+        {
+            std::uint8_t target_slot = slot;
+            if (0 == target_slot)
+            {
+                const KeyProbeResult<SlotInfo> found = find_slot_by_name(name, expected_public_key);
+                if (KeyProbeStatus::found == found.status)
+                {
+                    target_slot = found.value.slot;
+                }
+                else if (KeyProbeStatus::operational_error == found.status)
+                {
+                    if (resolution_error.empty())
+                    {
+                        resolution_error = mpss::utils::get_error();
+                    }
+                    disconnect();
+                    continue;
+                }
+            }
+            SlotMetadata metadata;
+            if (0 != target_slot && read_slot_metadata(target_slot, metadata, /* probe */ true) &&
+                std::ranges::equal(metadata.public_key, expected_public_key))
+            {
+                prefer_reader(serial, reader);
+                keep_connection = true;
+                return connected;
+            }
+            mpss::utils::log_warning("Reader '{}' does not report the expected public key on serial {}.", reader,
+                                     serial);
+            disconnect();
+            continue;
+        }
+        if (name.empty() || 1 == readers.size())
+        {
+            prefer_reader(serial, reader);
+            keep_connection = true;
+            return connected;
+        }
+
+        // Without an expected key, routes claiming the same serial must agree about this name.
+        std::optional<std::vector<std::vector<std::byte>>> keys = keys_by_name(name);
+        disconnect();
+        if (!keys)
+        {
+            mpss::utils::log_warning("Reader '{}' could not resolve key '{}' on serial {}.", reader, name, serial);
+            continue;
+        }
+        if (observed_keys && *observed_keys != *keys)
+        {
+            mpss::utils::log_and_set_error("Readers reporting serial {} disagree about key '{}'.", serial, name);
+            return conflicting_keys;
+        }
+        observed_keys = std::move(keys);
+        if (selected_reader.empty())
+        {
+            selected_reader = reader;
+        }
     }
 
-    // Nothing is held on the way out, so a scan can take the bus exclusively without waiting on
-    // this.
-    bus_lock_ = std::shared_lock<std::shared_mutex>{};
-    return false;
+    if (observed_keys && connect_to_reader(selected_reader, serial))
+    {
+        const std::optional<std::vector<std::vector<std::byte>>> confirmed = keys_by_name(name);
+        if (confirmed && *confirmed == *observed_keys)
+        {
+            prefer_reader(serial, selected_reader);
+            keep_connection = true;
+            return connected;
+        }
+        mpss::utils::log_and_set_error("The reader's key binding changed while connecting to serial {}.", serial);
+        return conflicting_keys;
+    }
+    if (!resolution_error.empty())
+    {
+        mpss::utils::set_error(std::move(resolution_error));
+        return resolution_failed;
+    }
+    return unavailable;
+}
+
+std::optional<std::vector<std::vector<std::byte>>> YubiKeyPIV::keys_by_name(std::string_view name)
+{
+    std::vector<std::vector<std::byte>> keys;
+    for (const auto slot : usable_slots)
+    {
+        const KeyProbeResult<std::string> label = read_slot_label(slot);
+        if (KeyProbeStatus::operational_error == label.status)
+        {
+            return std::nullopt;
+        }
+        if (KeyProbeStatus::found != label.status || label.value != name)
+        {
+            continue;
+        }
+        SlotMetadata metadata;
+        if (!read_slot_metadata(slot, metadata, /* probe */ true))
+        {
+            return std::nullopt;
+        }
+        keys.push_back(std::move(metadata.public_key));
+    }
+    // Compare the same collection of binary public keys regardless of which slot holds each one.
+    std::ranges::sort(keys);
+    return keys;
 }
 
 YubiKeyPIV::~YubiKeyPIV()
@@ -449,6 +578,8 @@ bool YubiKeyPIV::connect_to_reader(const std::string &reader, std::uint32_t targ
 {
     // Built before the state exists, so that an allocation failure has nothing to strand.
     const std::string exact_reader = std::string("@") + reader;
+    std::string connected_reader = reader;
+    std::string connected_device = std::to_string(target_serial);
 
     ykpiv_state *state = nullptr;
     ykpiv_rc rc = ykpiv_init(&state, 0);
@@ -470,8 +601,7 @@ bool YubiKeyPIV::connect_to_reader(const std::string &reader, std::uint32_t targ
     rc = ykpiv_get_serial(state, &serial);
     if (YKPIV_OK != rc || serial != target_serial)
     {
-        // Whatever answers this reader is not what the caller asked for, so what was remembered has
-        // gone stale.
+        // The cached route is stale: this reader now answers for a different serial.
         ykpiv_disconnect(state);
         ykpiv_done(state);
         mpss::utils::log_debug("Reader '{}' no longer answers for serial {}.", reader, target_serial);
@@ -481,7 +611,9 @@ bool YubiKeyPIV::connect_to_reader(const std::string &reader, std::uint32_t targ
     // Ownership moves to the object before anything that can throw runs.
     state_ = state;
     serial_ = serial;
-    ++connection_depth;
+    reader_name_ = std::move(connected_reader);
+    device_id_ = std::move(connected_device);
+    thread_has_connection = true;
 
     try
     {
@@ -490,7 +622,7 @@ bool YubiKeyPIV::connect_to_reader(const std::string &reader, std::uint32_t targ
     catch (...)
     {
         // Throwing out of here leaves the constructor incomplete, so no destructor would run to
-        // give back the connection or the depth this just took.
+        // give back the connection or clear this thread's connection flag.
         disconnect();
         throw;
     }
@@ -500,12 +632,13 @@ bool YubiKeyPIV::connect_to_reader(const std::string &reader, std::uint32_t targ
 
 void YubiKeyPIV::disconnect()
 {
+    // Route probing closes card sessions while keeping both locks until the entire attempt ends.
     if (nullptr != state_)
     {
         ykpiv_disconnect(state_);
         ykpiv_done(state_);
         state_ = nullptr;
-        --connection_depth;
+        thread_has_connection = false;
     }
 }
 
@@ -1385,7 +1518,8 @@ YubiKeyPIV::DeleteByNameResult YubiKeyPIV::delete_keys_by_name(std::string_view 
     return result;
 }
 
-KeyProbeResult<YubiKeyPIV::SlotInfo> YubiKeyPIV::find_slot_by_name(std::string_view name)
+KeyProbeResult<YubiKeyPIV::SlotInfo> YubiKeyPIV::find_slot_by_name(std::string_view name,
+                                                                   std::span<const std::byte> expected_public_key)
 {
     if (nullptr == state_)
     {
@@ -1417,6 +1551,19 @@ KeyProbeResult<YubiKeyPIV::SlotInfo> YubiKeyPIV::find_slot_by_name(std::string_v
         {
             continue;
         }
+        if (!expected_public_key.empty())
+        {
+            SlotMetadata metadata;
+            if (!read_slot_metadata(slot, metadata, /* probe */ true))
+            {
+                undetermined = true;
+                continue;
+            }
+            if (!std::ranges::equal(metadata.public_key, expected_public_key))
+            {
+                continue;
+            }
+        }
 
         if (0 != match_count)
         {
@@ -1429,8 +1576,17 @@ KeyProbeResult<YubiKeyPIV::SlotInfo> YubiKeyPIV::find_slot_by_name(std::string_v
 
     if (match_count > 1)
     {
-        mpss::utils::log_and_set_error("Refusing to resolve key '{}': {} slots share this name ({}).", name,
-                                       match_count, match_slot_names);
+        if (expected_public_key.empty())
+        {
+            mpss::utils::log_and_set_error("Refusing to resolve key '{}': {} slots share this name ({}).", name,
+                                           match_count, match_slot_names);
+        }
+        else
+        {
+            mpss::utils::log_and_set_error(
+                "Refusing to resolve key '{}': {} slots share this name and expected public key ({}).", name,
+                match_count, match_slot_names);
+        }
         return {.status = KeyProbeStatus::operational_error, .value = {}};
     }
 
@@ -1454,7 +1610,7 @@ KeyProbeResult<YubiKeyPIV::SlotInfo> YubiKeyPIV::find_slot_by_name(std::string_v
         return {.status = KeyProbeStatus::not_found, .value = {}};
     }
 
-    // Exactly one slot carries the name. Now get the algorithm from metadata.
+    // Exactly one slot matches. Now get the algorithm from metadata.
     unsigned char metadata_buf[YKPIV_OBJ_MAX_SIZE];
     std::size_t metadata_len = sizeof(metadata_buf);
     ykpiv_rc rc = ykpiv_get_metadata(state_, match_slot, metadata_buf, &metadata_len);
@@ -1511,24 +1667,19 @@ std::uint8_t YubiKeyPIV::find_free_slot()
     return 0;
 }
 
-std::vector<std::uint32_t> YubiKeyPIV::available_serials(bool *device_skipped)
+std::optional<std::vector<std::uint32_t>> YubiKeyPIV::available_serials()
 {
-    if (nullptr != device_skipped)
-    {
-        *device_skipped = false;
-    }
-
-    if (holds_connection())
+    if (thread_has_connection)
     {
         mpss::utils::log_and_set_error("Cannot list YubiKeys from a thread that holds a connection.");
-        return {};
+        return std::nullopt;
     }
 
     // Listing serials connects to every reader in turn, and connecting to a device disturbs what a
     // session has established on it, a verified PIN among that. Connections take the bus shared and
     // this takes it exclusively, so no session is open anywhere while this scans.
     const std::unique_lock bus{device_locks().bus};
-    return scan_readers_locked(device_skipped).value_or(std::vector<std::uint32_t>{});
+    return scan_readers_locked();
 }
 
 namespace
@@ -1668,7 +1819,8 @@ bool pin_already_rejected(std::uint32_t serial, std::string_view pin)
 
 bool authenticate_pin_interactive(YubiKeyPIV &piv, std::string_view context)
 {
-    const auto handler = mpss::GetInteractionHandler();
+    const std::shared_ptr<InteractionHandler> handler = mpss::GetInteractionHandler();
+    const InteractionContext target = piv.interaction_context();
     mpss::SecureString last_failed_pin;
     mpss::PinStatus status = mpss::PinStatus::first_attempt;
     int retries = -1;
@@ -1677,11 +1829,11 @@ bool authenticate_pin_interactive(YubiKeyPIV &piv, std::string_view context)
     // Every way out of the loop reports a result, so a handler that opened UI while answering a request
     // always learns to take it down. These paths are already reporting a failure, and one of them runs
     // after the handler itself threw, so a throwing notification must not replace the real error.
-    const auto report_not_attempted = [&handler, &retries]() noexcept {
+    const auto report_not_attempted = [&handler, &retries, &target]() noexcept {
         try
         {
             const mpss::utils::InteractionHandlerScope in_handler;
-            handler->notify_pin_result(mpss::PinResult::not_attempted, retries);
+            handler->notify_pin_result(target, mpss::PinResult::not_attempted, retries);
         }
         catch (...) // NOLINT(bugprone-empty-catch) - see above; nothing useful remains to report.
         {
@@ -1695,7 +1847,8 @@ bool authenticate_pin_interactive(YubiKeyPIV &piv, std::string_view context)
         try
         {
             const mpss::utils::InteractionHandlerScope in_handler;
-            pin_opt = handler->request_pin({.operation = context, .last_status = status, .retries_remaining = retries});
+            pin_opt = handler->request_pin(
+                {.operation = context, .last_status = status, .retries_remaining = retries, .target = target});
         }
         catch (const std::exception &e)
         {
@@ -1739,7 +1892,7 @@ bool authenticate_pin_interactive(YubiKeyPIV &piv, std::string_view context)
         }
         {
             const mpss::utils::InteractionHandlerScope in_handler;
-            handler->notify_pin_result(result, retries);
+            handler->notify_pin_result(target, result, retries);
         }
 
         if (mpss::PinResult::ok == result)

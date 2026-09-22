@@ -32,6 +32,13 @@ bool is_affirmative_environment_value(std::string_view value);
  */
 std::optional<std::uint32_t> get_serial_from_env();
 
+// Match the reference format's device-ID bound while retaining support for leading zeros.
+inline constexpr std::size_t max_serial_length = 256;
+
+/** @brief Parse 1-max_serial_length decimal characters as a nonzero uint32_t serial; leading zeros are accepted. */
+[[nodiscard]]
+std::optional<std::uint32_t> parse_serial(std::string_view serial);
+
 /**
  * @brief Get the YubiKey management key from the environment variable MPSS_YUBIKEY_MGM_KEY.
  *

@@ -23,6 +23,7 @@ install(
         "${CMAKE_CURRENT_LIST_DIR}/interaction_handler.h"
         "${CMAKE_CURRENT_LIST_DIR}/key_info.h"
         "${CMAKE_CURRENT_LIST_DIR}/key_policy.h"
+        "${CMAKE_CURRENT_LIST_DIR}/key_reference.h"
         "${CMAKE_CURRENT_LIST_DIR}/log.h"
         "${CMAKE_CURRENT_LIST_DIR}/log_c.h"
         "${CMAKE_CURRENT_LIST_DIR}/mpss.h"

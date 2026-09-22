@@ -156,7 +156,8 @@ class TerminalInteractionHandler : public mpss::InteractionHandler
         }
 
         // Prompt on terminal.
-        std::cerr << "Enter YubiKey PIN (" << context.operation << "): " << std::flush;
+        std::cerr << "Enter PIN for YubiKey " << context.target.device_id << " (" << context.operation
+                  << "): " << std::flush;
         auto pin = read_secure_line();
 #ifndef _WIN32
         // On Unix, echo is disabled via termios and Enter does not produce visible output.
@@ -166,12 +167,12 @@ class TerminalInteractionHandler : public mpss::InteractionHandler
         return pin;
     }
 
-    void notify_touch_needed() override
+    void notify_touch_needed(const mpss::InteractionContext &target) override
     {
-        std::cerr << "Touch your YubiKey now ... " << std::flush;
+        std::cerr << "Touch YubiKey " << target.device_id << " now ... " << std::flush;
     }
 
-    void notify_touch_complete(bool success) override
+    void notify_touch_complete(const mpss::InteractionContext & /*target*/, bool success) override
     {
         // NOLINTNEXTLINE(performance-avoid-endl) - flush is intentional for interactive terminal output.
         std::cerr << (success ? "done." : "not touched.") << std::endl;

@@ -19,6 +19,7 @@ YubiKeyKeyPair::YubiKeyKeyPair(std::string_view name, Algorithm algorithm, std::
     : KeyPair{algorithm, StorageTier::yubikey_piv}, name_{name}, slot_{slot}, serial_{serial},
       public_key_{public_key.begin(), public_key.end()}
 {
+    device_id_ = std::to_string(serial);
 }
 
 bool YubiKeyKeyPair::is_opened_key(std::span<const std::byte> slot_key) const
@@ -52,7 +53,7 @@ bool YubiKeyKeyPair::do_delete_key()
     const std::scoped_lock lifecycle{mpss::utils::name_mutex(name_)};
 
     mpss::utils::log_trace("Deleting YubiKey key '{}' in slot {}.", name_, utils::get_slot_name(slot_));
-    YubiKeyPIV piv{serial_};
+    YubiKeyPIV piv{serial_, name_, public_key_, slot_};
     if (!piv.is_connected())
     {
         mpss::utils::log_trace("Cannot delete key '{}': YubiKey connection failed.", name_);
@@ -107,7 +108,7 @@ std::size_t YubiKeyKeyPair::do_sign_hash(std::span<const std::byte> hash, std::s
     mpss::utils::log_trace("Signing hash with YubiKey key '{}' in slot {}, hash size {}.", name_,
                            utils::get_slot_name(slot_), hash.size());
 
-    YubiKeyPIV piv{serial_};
+    YubiKeyPIV piv{serial_, name_, public_key_, slot_};
     if (!piv.is_connected())
     {
         mpss::utils::log_trace("Cannot sign with key '{}': YubiKey connection failed.", name_);
@@ -174,7 +175,7 @@ std::size_t YubiKeyKeyPair::do_sign_hash(std::span<const std::byte> hash, std::s
     if (needs_touch)
     {
         const mpss::utils::InteractionHandlerScope in_handler;
-        handler->notify_touch_needed();
+        handler->notify_touch_needed(piv.interaction_context());
     }
 
     const std::size_t written = piv.sign(slot_, hash, algorithm(), sig);
@@ -182,7 +183,7 @@ std::size_t YubiKeyKeyPair::do_sign_hash(std::span<const std::byte> hash, std::s
     if (needs_touch)
     {
         const mpss::utils::InteractionHandlerScope in_handler;
-        handler->notify_touch_complete(0 != written);
+        handler->notify_touch_complete(piv.interaction_context(), 0 != written);
     }
 
     if (0 != written)
@@ -229,7 +230,7 @@ bool YubiKeyKeyPair::do_verify(std::span<const std::byte> hash, std::span<const 
 std::size_t YubiKeyKeyPair::do_extract_key(std::span<std::byte> public_key) const
 {
     mpss::utils::log_trace("Extracting public key from YubiKey slot {}.", utils::get_slot_name(slot_));
-    YubiKeyPIV piv{serial_};
+    YubiKeyPIV piv{serial_, name_, public_key_, slot_};
     if (!piv.is_connected())
     {
         mpss::utils::log_trace("Cannot extract public key for '{}': YubiKey connection failed.", name_);

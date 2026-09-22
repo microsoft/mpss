@@ -63,6 +63,7 @@ class YubiKeyKeyPair : public mpss::KeyPair
 
     std::string name_;
     std::uint8_t slot_{0};
+    // Native libykpiv identifier; device_id_ exposes its decimal form through the generic API.
     std::uint32_t serial_{0};
     std::vector<std::byte> public_key_;
 };

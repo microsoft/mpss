@@ -5,6 +5,7 @@
 #include "mpss/log.h"
 #include "tests/compat_env.h"
 #include <array>
+#include <cstdint>
 #include <cstdlib>
 #ifdef __ANDROID__
 #include <format>
@@ -12,6 +13,7 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 #ifdef __ANDROID__
 #include <android/log.h>
 #endif
@@ -134,7 +136,8 @@ class YubiKeyEnvironment : public ::testing::Environment
         // removable hardware, while the backend guard re-enumerates on every call: a device that
         // is briefly unreachable here makes the machine look single-device, so nothing is pinned,
         // and every later operation is then refused once that device answers again.
-        const auto serials = mpss::impl::yubikey::YubiKeyPIV::available_serials();
+        const auto serials =
+            mpss::impl::yubikey::YubiKeyPIV::available_serials().value_or(std::vector<std::uint32_t>{});
         if (!serials.empty())
         {
             auto_selected_ = true;
