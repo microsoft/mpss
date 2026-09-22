@@ -14,6 +14,8 @@
 #include "mpss/key_info.h"
 #include "mpss/key_policy.h"
 #include "mpss/mpss.h"
+#include <algorithm>
+#include <array>
 #include <cstring>
 #include <cwchar>
 #include <gmock-win32.h>
@@ -21,6 +23,7 @@
 #include <gtest/gtest.h>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include <Windows.h>
 #include <ncrypt.h>
@@ -42,6 +45,11 @@ MOCK_STDCALL_FUNC(SECURITY_STATUS, NCryptFinalizeKey, NCRYPT_KEY_HANDLE, DWORD);
 MOCK_STDCALL_FUNC(SECURITY_STATUS, NCryptGetProperty, NCRYPT_HANDLE, LPCWSTR, PBYTE, DWORD, DWORD *, DWORD);
 MOCK_STDCALL_FUNC(SECURITY_STATUS, NCryptDeleteKey, NCRYPT_KEY_HANDLE, DWORD);
 MOCK_STDCALL_FUNC(SECURITY_STATUS, NCryptFreeObject, NCRYPT_HANDLE);
+MOCK_STDCALL_FUNC(SECURITY_STATUS, NCryptExportKey, NCRYPT_KEY_HANDLE, NCRYPT_KEY_HANDLE, LPCWSTR, NCryptBufferDesc *,
+                  PBYTE, DWORD, DWORD *, DWORD);
+MOCK_STDCALL_FUNC(SECURITY_STATUS, NCryptSignHash, NCRYPT_KEY_HANDLE, VOID *, PBYTE, DWORD, PBYTE, DWORD, DWORD *,
+                  DWORD);
+MOCK_STDCALL_FUNC(SECURITY_STATUS, NCryptVerifySignature, NCRYPT_KEY_HANDLE, VOID *, PBYTE, DWORD, PBYTE, DWORD, DWORD);
 
 namespace
 {
@@ -325,6 +333,155 @@ class WindowsKeyCreation : public ::testing::Test
             });
     }
 };
+
+class WindowsKeyReference : public WindowsKeyCreation
+{
+  protected:
+    void SetUp() override
+    {
+        WindowsKeyCreation::SetUp();
+        EXPECT_MODULE_FUNC_CALL(NCryptExportKey, _, _, _, _, _, _, _, _)
+            .Times(AnyNumber())
+            .WillRepeatedly(Return(status_failure));
+        EXPECT_MODULE_FUNC_CALL(NCryptSignHash, _, _, _, _, _, _, _, _)
+            .Times(AnyNumber())
+            .WillRepeatedly(Return(status_failure));
+        EXPECT_MODULE_FUNC_CALL(NCryptVerifySignature, _, _, _, _, _, _, _)
+            .Times(AnyNumber())
+            .WillRepeatedly(Return(status_failure));
+    }
+
+    void TearDown() override
+    {
+        RESTORE_MODULE_FUNC(NCryptExportKey);
+        RESTORE_MODULE_FUNC(NCryptSignHash);
+        RESTORE_MODULE_FUNC(NCryptVerifySignature);
+        VERIFY_AND_CLEAR_MODULE_FUNC(NCryptExportKey);
+        VERIFY_AND_CLEAR_MODULE_FUNC(NCryptSignHash);
+        VERIFY_AND_CLEAR_MODULE_FUNC(NCryptVerifySignature);
+        WindowsKeyCreation::TearDown();
+    }
+
+    static std::vector<std::byte> PublicKey()
+    {
+        constexpr std::array<unsigned char, 65> point{
+            0x04, 0x6b, 0x17, 0xd1, 0xf2, 0xe1, 0x2c, 0x42, 0x47, 0xf8, 0xbc, 0xe6, 0xe5, 0x63, 0xa4, 0x40, 0xf2,
+            0x77, 0x03, 0x7d, 0x81, 0x2d, 0xeb, 0x33, 0xa0, 0xf4, 0xa1, 0x39, 0x45, 0xd8, 0x98, 0xc2, 0x96, 0x4f,
+            0xe3, 0x42, 0xe2, 0xfe, 0x1a, 0x7f, 0x9b, 0x8e, 0xe7, 0xeb, 0x4a, 0x7c, 0x0f, 0x9e, 0x16, 0x2b, 0xce,
+            0x33, 0x57, 0x6b, 0x31, 0x5e, 0xce, 0xcb, 0xb6, 0x40, 0x68, 0x37, 0xbf, 0x51, 0xf5};
+        const auto bytes = std::as_bytes(std::span{point});
+        return {bytes.begin(), bytes.end()};
+    }
+
+    static void ExportPublicKey(const std::vector<std::byte> &point)
+    {
+        const BCRYPT_ECCKEY_BLOB header{BCRYPT_ECDSA_PUBLIC_P256_MAGIC, 32};
+        std::vector<std::byte> blob(sizeof(header) + point.size() - 1);
+        std::memcpy(blob.data(), &header, sizeof(header));
+        std::copy(point.begin() + 1, point.end(), blob.begin() + sizeof(header));
+        EXPECT_MODULE_FUNC_CALL(NCryptExportKey, _, _, _, _, _, _, _, _)
+            .Times(AnyNumber())
+            .WillRepeatedly([blob = std::move(blob)](NCRYPT_KEY_HANDLE, NCRYPT_KEY_HANDLE, LPCWSTR, NCryptBufferDesc *,
+                                                     PBYTE out, DWORD size, DWORD *written, DWORD) -> SECURITY_STATUS {
+                *written = static_cast<DWORD>(blob.size());
+                if (nullptr != out)
+                {
+                    if (size < blob.size())
+                    {
+                        return status_failure;
+                    }
+                    std::memcpy(out, blob.data(), blob.size());
+                }
+                return ERROR_SUCCESS;
+            });
+    }
+};
+
+TEST_F(WindowsKeyReference, InvalidBackendSignatureIsNotReturnedToTheCaller)
+{
+    KeyLivesIn(tpm_provider_handle);
+    const auto public_key = PublicKey();
+    ExportPublicKey(public_key);
+    const mpss::KeyReference reference{
+        {"os", "mock_bound_key", std::nullopt}, mpss::Algorithm::ecdsa_secp256r1_sha256, public_key};
+    auto key = mpss::KeyPair::Open(reference);
+    ASSERT_NE(nullptr, key);
+    const HMODULE ncrypt = GetModuleHandleW(L"ncrypt.dll");
+    ASSERT_NE(nullptr, ncrypt);
+    const auto real_open =
+        reinterpret_cast<decltype(&::NCryptOpenStorageProvider)>(GetProcAddress(ncrypt, "NCryptOpenStorageProvider"));
+    const auto real_free = reinterpret_cast<decltype(&::NCryptFreeObject)>(GetProcAddress(ncrypt, "NCryptFreeObject"));
+    const auto real_verify =
+        reinterpret_cast<decltype(&::NCryptVerifySignature)>(GetProcAddress(ncrypt, "NCryptVerifySignature"));
+    ASSERT_NE(nullptr, real_open);
+    ASSERT_NE(nullptr, real_free);
+    ASSERT_NE(nullptr, real_verify);
+    SECURITY_STATUS verification_status = status_failure;
+    EXPECT_MODULE_FUNC_CALL(NCryptVerifySignature, _, _, _, _, _, _, _)
+        .Times(1)
+        .WillOnce([real_verify, &verification_status](NCRYPT_KEY_HANDLE handle, VOID *padding, PBYTE hash,
+                                                      DWORD hash_size, PBYTE signature, DWORD signature_size,
+                                                      DWORD flags) -> SECURITY_STATUS {
+            verification_status = real_verify(handle, padding, hash, hash_size, signature, signature_size, flags);
+            return verification_status;
+        });
+    // Resolve DLL exports directly so real calls cannot re-enter the patched import table.
+    EXPECT_MODULE_FUNC_CALL(NCryptOpenStorageProvider, _, _, _)
+        .Times(1)
+        .WillOnce([real_open](NCRYPT_PROV_HANDLE *provider, LPCWSTR name, DWORD flags) -> SECURITY_STATUS {
+            return real_open(provider, name, flags);
+        });
+    EXPECT_MODULE_FUNC_CALL(NCryptFreeObject, _)
+        .Times(AnyNumber())
+        .WillRepeatedly([real_free](NCRYPT_HANDLE handle) -> SECURITY_STATUS {
+            if (fake_key_handle == handle)
+            {
+                return ERROR_SUCCESS;
+            }
+            return real_free(handle);
+        });
+    EXPECT_MODULE_FUNC_CALL(NCryptSignHash, _, _, _, _, _, _, _, _)
+        .Times(2)
+        .WillRepeatedly([](NCRYPT_KEY_HANDLE, VOID *, PBYTE, DWORD, PBYTE out, DWORD size, DWORD *written,
+                           DWORD) -> SECURITY_STATUS {
+            *written = 64;
+            if (nullptr != out)
+            {
+                if (64 > size)
+                {
+                    return status_failure;
+                }
+                std::fill_n(out, 64, BYTE{0});
+            }
+            return ERROR_SUCCESS;
+        });
+    const std::vector<std::byte> hash(32, std::byte{0x2a});
+    std::vector<std::byte> signature(key->sign_hash_size(), std::byte{0x5a});
+    const auto untouched = signature;
+    EXPECT_EQ(0, key->sign_hash(hash, signature));
+    EXPECT_EQ(static_cast<SECURITY_STATUS>(NTE_BAD_SIGNATURE), verification_status);
+    EXPECT_THAT(mpss::get_error(), HasSubstr("does not verify against the referenced public key"));
+    EXPECT_TRUE(mpss::has_error());
+    EXPECT_EQ(untouched, signature);
+}
+
+TEST_F(WindowsKeyReference, ChangedBackendPublicKeyDoesNotReplaceTheReferencePin)
+{
+    KeyLivesIn(tpm_provider_handle);
+    auto public_key = PublicKey();
+    ExportPublicKey(public_key);
+    const mpss::KeyReference reference{
+        {"os", "mock_bound_extract", std::nullopt}, mpss::Algorithm::ecdsa_secp256r1_sha256, public_key};
+    auto key = mpss::KeyPair::Open(reference);
+    ASSERT_NE(nullptr, key);
+    public_key.back() ^= std::byte{1};
+    ExportPublicKey(public_key);
+    std::vector<std::byte> output(key->extract_key_size(), std::byte{0x5a});
+    const auto untouched = output;
+    EXPECT_EQ(0, key->extract_key(output));
+    EXPECT_TRUE(mpss::has_error());
+    EXPECT_EQ(untouched, output);
+}
 
 // Scenario: the TPM-backed platform provider accepts the create.
 // Expected behavior: the key reports TPM protection and is hardware-backed.

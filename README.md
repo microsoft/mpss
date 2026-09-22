@@ -1085,13 +1085,20 @@ if (!key) {
     return;
 }
 
-const auto actual_location = key->location();
-auto reopened = mpss::KeyPair::Open(actual_location);
+mpss::KeyReference reference{
+    key->location(), key->algorithm(), std::vector<std::byte>(key->extract_key_size())};
+if (key->extract_key(reference.public_key) != reference.public_key.size()) {
+    // Do not save an incomplete reference.
+    return;
+}
+
+// Persist reference in trusted application storage, then reopen the same key later.
+auto reopened = mpss::KeyPair::Open(reference);
 ```
 
-`Open(location)` selects by location, and `Delete(location)` clears that name on the selected device.
-An unavailable explicit device fails rather than falling back to another serial.
-
+`Open(location)` selects by location only; `Open(reference)` also requires the expected algorithm and public key.
+A missing target or key mismatch fails without creating a key, changing the expected public key, or falling back to another device.
+`Delete(location)` clears that name on the selected device; for deletion tied to a particular public key, open its reference and use the resulting handle's `delete_key()`.
 Location-based calls ignore `MPSS_YUBIKEY_SERIAL`; omitting the device ID requests automatic selection.
 `MPSS_YUBIKEY_SERIAL` sets the default serial for calls that take a key name rather than a `KeyLocation`.
 Serials are decimal integers from 1 to 4294967295; leading zeros are accepted, with a 256-character input limit.

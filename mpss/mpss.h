@@ -186,6 +186,15 @@ class MPSS_DECOR KeyPair
     KeyPair &operator=(KeyPair &&) = delete;
 
     /**
+     * @brief Captures the resolved location, algorithm and public key for later reopening.
+     *
+     * May access the backend, but does not sign a challenge. Returns nullopt on failure and
+     * reports the error through get_error(). The result owns its data independently of this handle.
+     */
+    [[nodiscard]]
+    std::optional<KeyReference> reference() const;
+
+    /**
      * @brief Get the key pair @ref Algorithm.
      */
     [[nodiscard]]
@@ -243,6 +252,15 @@ class MPSS_DECOR KeyPair
     /** @brief Opens a location using the same device-selection rules as @ref Create. */
     [[nodiscard]]
     static std::unique_ptr<KeyPair> Open(const KeyLocation &location);
+
+    /**
+     * @brief Opens only the referenced algorithm and public key, without signing or prompting.
+     *
+     * Public bytes use the format returned by @ref extract_key. Successful signatures through the
+     * returned handle are checked against this expected key using host-side verification.
+     */
+    [[nodiscard]]
+    static std::unique_ptr<KeyPair> Open(const KeyReference &reference);
 
     /** @brief Clears every key under the name in the selected storage, without falling back. */
     [[nodiscard]]
@@ -454,6 +472,7 @@ class MPSS_DECOR KeyPair
     bool released_{false};
     bool release_result_{true};
     std::string key_name_;
+    std::vector<std::byte> expected_public_key_;
 };
 
 } // namespace mpss

@@ -75,6 +75,21 @@ KeyLocation KeyPair::location() const
     return {.backend_name = backend_name_, .name = key_name_, .device_id = device_id_};
 }
 
+std::optional<KeyReference> KeyPair::reference() const
+{
+    KeyReference result{location(), algorithm(), std::vector<std::byte>(extract_key_size())};
+    const auto written = extract_key(result.public_key);
+    if (0 == written || result.public_key.size() != written)
+    {
+        if (!has_error())
+        {
+            utils::log_and_set_error("Failed to capture the key-reference public key.");
+        }
+        return std::nullopt;
+    }
+    return result;
+}
+
 std::unique_ptr<KeyPair> KeyPair::Create(const KeyLocation &location, Algorithm algorithm, KeyPolicy policy)
 {
     clear_error();
@@ -97,6 +112,47 @@ std::unique_ptr<KeyPair> KeyPair::Open(const KeyLocation &location)
     }
     const std::scoped_lock lifecycle{utils::name_mutex(location.name)};
     return clear_error_on_success(impl::open_key(location));
+}
+
+std::unique_ptr<KeyPair> KeyPair::Open(const KeyReference &reference)
+{
+    clear_error();
+    if (utils::in_interaction_handler())
+    {
+        utils::log_and_set_error("MPSS cannot be called from an interaction handler.");
+        return nullptr;
+    }
+    const std::size_t key_size = utils::get_public_key_size(reference.algorithm);
+    if (0 == key_size || reference.public_key.size() != key_size)
+    {
+        utils::log_and_set_error("The key reference has an unsupported algorithm or invalid public key size.");
+        return nullptr;
+    }
+
+    std::vector<std::byte> expected = reference.public_key;
+    const std::scoped_lock lifecycle{utils::name_mutex(reference.location.name)};
+    auto key = impl::open_key(reference.location, expected);
+    if (nullptr == key)
+    {
+        return nullptr;
+    }
+    if (key->algorithm() != reference.algorithm)
+    {
+        utils::log_and_set_error("The opened key does not match the referenced algorithm.");
+        return nullptr;
+    }
+    std::vector<std::byte> actual(key_size);
+    if (key_size != key->extract_key(actual))
+    {
+        return nullptr;
+    }
+    if (actual != expected)
+    {
+        utils::log_and_set_error("The opened key does not match the referenced public key.");
+        return nullptr;
+    }
+    key->expected_public_key_ = std::move(expected);
+    return clear_error_on_success(std::move(key));
 }
 
 bool KeyPair::Delete(const KeyLocation &location)
@@ -410,7 +466,34 @@ std::size_t KeyPair::sign_hash(std::span<const std::byte> hash, std::span<std::b
     {
         return 0;
     }
-    return clear_error_on_success(do_sign_hash(hash, sig));
+    if (expected_public_key_.empty())
+    {
+        return clear_error_on_success(do_sign_hash(hash, sig));
+    }
+
+    std::vector<std::byte> signature(utils::get_max_signature_size(algorithm()));
+    const std::size_t written = do_sign_hash(hash, signature);
+    if (0 == written)
+    {
+        return 0;
+    }
+    if (written > signature.size())
+    {
+        utils::log_and_set_error("The backend returned an invalid signature size.");
+        return 0;
+    }
+    const auto result = std::span<const std::byte>{signature}.first(written);
+    clear_error();
+    if (!impl::verify(backend_name_, hash, expected_public_key_, algorithm(), result))
+    {
+        if (!has_error())
+        {
+            utils::log_and_set_error("The signature does not verify against the referenced public key.");
+        }
+        return 0;
+    }
+    std::copy_n(signature.begin(), written, sig.begin());
+    return clear_error_on_success(written);
 }
 
 bool KeyPair::verify(std::span<const std::byte> hash, std::span<const std::byte> sig) const
@@ -462,7 +545,23 @@ std::size_t KeyPair::extract_key(std::span<std::byte> public_key) const
     {
         return 0;
     }
-    return clear_error_on_success(do_extract_key(public_key));
+    if (expected_public_key_.empty())
+    {
+        return clear_error_on_success(do_extract_key(public_key));
+    }
+    std::vector<std::byte> actual(expected_public_key_.size());
+    const std::size_t written = do_extract_key(actual);
+    if (0 == written)
+    {
+        return 0;
+    }
+    if (written != expected_public_key_.size() || actual != expected_public_key_)
+    {
+        utils::log_and_set_error("The public key does not match the referenced public key.");
+        return 0;
+    }
+    std::copy(actual.begin(), actual.end(), public_key.begin());
+    return clear_error_on_success(written);
 }
 
 KeyPair::KeyPair(Algorithm algorithm, StorageTier storage_tier)

@@ -1609,6 +1609,78 @@ TEST(KeyLocationTest, OSStorageRejectsDeviceSelection)
     EXPECT_TRUE(mpss::has_error());
 }
 
+TEST(KeyReferenceTest, RejectsUnsupportedAlgorithmAndInvalidPublicKeySize)
+{
+    KeyReference reference{{"unknown-backend", "key", std::nullopt}, unsupported, {}};
+    EXPECT_EQ(nullptr, KeyPair::Open(reference));
+    EXPECT_NE(std::string::npos, mpss::get_error().find("public key size"));
+
+    reference.algorithm = ecdsa_secp256r1_sha256;
+    for (const std::size_t size : {std::size_t{0}, std::size_t{64}, std::size_t{66}})
+    {
+        reference.public_key.resize(size);
+        EXPECT_EQ(nullptr, KeyPair::Open(reference));
+        EXPECT_NE(std::string::npos, mpss::get_error().find("public key size"));
+    }
+}
+
+TEST_F(MPSS, ResolvedLocationAndReferenceRoundTrip)
+{
+    if (!mpss::is_algorithm_available(ecdsa_secp256r1_sha256))
+    {
+        GTEST_SKIP() << "Algorithm not supported by current backend";
+    }
+    const std::string name = test_key_name("reference_roundtrip");
+    auto original = KeyPair::Create(name, ecdsa_secp256r1_sha256);
+    ASSERT_NE(nullptr, original) << mpss::get_error();
+    SCOPE_GUARD(static_cast<void>(original->delete_key()));
+
+    const auto location = original->location();
+    EXPECT_EQ(name, location.name);
+    EXPECT_EQ(std::string{original->backend_name()}, location.backend_name);
+    EXPECT_EQ("yubikey" == location.backend_name, location.device_id.has_value());
+
+    const auto captured = original->reference();
+    ASSERT_TRUE(captured.has_value()) << mpss::get_error();
+    KeyReference reference = *captured;
+    EXPECT_EQ(location.name, reference.location.name);
+    EXPECT_EQ(location.device_id, reference.location.device_id);
+    auto reopened = KeyPair::Open(reference);
+    ASSERT_NE(nullptr, reopened) << mpss::get_error();
+    EXPECT_EQ(location.device_id, reopened->location().device_id);
+    EXPECT_EQ(location.backend_name, reopened->location().backend_name);
+    EXPECT_EQ(location.name, reopened->location().name);
+
+    auto wrong_key = reference;
+    wrong_key.public_key.back() ^= std::byte{1};
+    EXPECT_EQ(nullptr, KeyPair::Open(wrong_key));
+    EXPECT_TRUE(mpss::has_error());
+
+    auto wrong_algorithm = reference;
+    wrong_algorithm.algorithm = ecdsa_secp384r1_sha384;
+    wrong_algorithm.public_key.resize(97);
+    EXPECT_EQ(nullptr, KeyPair::Open(wrong_algorithm));
+    EXPECT_TRUE(mpss::has_error());
+
+    const auto expected = reference.public_key;
+    reference.public_key.assign(reference.public_key.size(), std::byte{0});
+    std::vector<std::byte> extracted(expected.size());
+    ASSERT_EQ(extracted.size(), reopened->extract_key(extracted));
+    EXPECT_EQ(expected, extracted);
+    const std::vector<std::byte> hash(32, std::byte{0x5A});
+    std::vector<std::byte> signature(reopened->sign_hash_size());
+    const auto written = reopened->sign_hash(hash, signature);
+    ASSERT_GT(written, std::size_t{0}) << mpss::get_error();
+    ASSERT_LE(written, signature.size());
+    EXPECT_TRUE(mpss::verify(hash, expected, reopened->algorithm(),
+                             std::span<const std::byte>{signature}.first(written), location.backend_name));
+    EXPECT_TRUE(reopened->release_key());
+    EXPECT_FALSE(reopened->reference().has_value());
+    EXPECT_TRUE(mpss::has_error());
+    EXPECT_EQ(location.device_id, reopened->location().device_id);
+    EXPECT_EQ(location.name, reopened->location().name);
+}
+
 TEST(BackendTest, CreateKeyWithExplicitBackend)
 {
     const char *const default_backend = mpss::get_default_backend_name();
@@ -2401,6 +2473,73 @@ TEST_F(YubiKeySlotBinding, LabelDoesNotResolveAfterSlotKeyIsReplaced)
     EXPECT_FALSE(opened);
 }
 
+TEST_F(YubiKeySlotBinding, ReferenceDisambiguatesOnlySlotsWithTheRequestedName)
+{
+    using mpss::impl::KeyProbeStatus;
+    using mpss::impl::yubikey::YubiKeyPIV;
+
+    const KeyLocation first{"yubikey", test_key_name("duplicate_label_a"), std::to_string(serials_[0])};
+    const KeyLocation second{"yubikey", test_key_name("duplicate_label_b"), first.device_id};
+    auto key_a = KeyPair::Create(first, ecdsa_secp256r1_sha256);
+    if (nullptr == key_a)
+    {
+        GTEST_SKIP() << "Connected YubiKey cannot create keys in its current state.";
+    }
+    SCOPE_GUARD(static_cast<void>(key_a->delete_key()));
+    auto key_b = KeyPair::Create(second, ecdsa_secp256r1_sha256);
+    ASSERT_NE(nullptr, key_b) << mpss::get_error();
+    SCOPE_GUARD(static_cast<void>(key_b->delete_key()));
+
+    KeyReference reference_a{key_a->location(), key_a->algorithm(), std::vector<std::byte>(key_a->extract_key_size())};
+    KeyReference reference_b{key_b->location(), key_b->algorithm(), std::vector<std::byte>(key_b->extract_key_size())};
+    ASSERT_EQ(reference_a.public_key.size(), key_a->extract_key(reference_a.public_key));
+    ASSERT_EQ(reference_b.public_key.size(), key_b->extract_key(reference_b.public_key));
+    ASSERT_NE(reference_a.public_key, reference_b.public_key);
+
+    reference_b.location.name = first.name;
+    EXPECT_EQ(nullptr, KeyPair::Open(reference_b));
+    EXPECT_TRUE(mpss::has_error());
+
+    {
+        YubiKeyPIV piv{serials_[0]};
+        ASSERT_TRUE(piv.is_connected());
+        const auto slot_a = piv.find_slot_by_name(first.name);
+        const auto slot_b = piv.find_slot_by_name(second.name);
+        ASSERT_EQ(KeyProbeStatus::found, slot_a.status);
+        ASSERT_EQ(KeyProbeStatus::found, slot_b.status);
+
+        if (!piv.authenticate_mgm_key())
+        {
+            ASSERT_TRUE(mpss::impl::yubikey::authenticate_pin_interactive(piv, "label test key"));
+            ASSERT_TRUE(piv.authenticate_mgm_key()) << mpss::get_error();
+        }
+        ASSERT_TRUE(piv.write_slot_label(slot_b.value.slot, first.name)) << mpss::get_error();
+
+        EXPECT_EQ(KeyProbeStatus::operational_error, piv.find_slot_by_name(first.name).status);
+        EXPECT_NE(std::string::npos, mpss::get_error().find("slots share this name"));
+        const auto matching_a = piv.find_slot_by_name(first.name, reference_a.public_key);
+        const auto matching_b = piv.find_slot_by_name(first.name, reference_b.public_key);
+        ASSERT_EQ(KeyProbeStatus::found, matching_a.status);
+        ASSERT_EQ(KeyProbeStatus::found, matching_b.status);
+        EXPECT_EQ(slot_a.value.slot, matching_a.value.slot);
+        EXPECT_EQ(slot_b.value.slot, matching_b.value.slot);
+        EXPECT_EQ(KeyProbeStatus::not_found, piv.find_slot_by_name(second.name, reference_b.public_key).status);
+    }
+
+    EXPECT_EQ(nullptr, KeyPair::Open(first));
+    EXPECT_NE(std::string::npos, mpss::get_error().find("slots share this name"));
+    auto opened_a = KeyPair::Open(reference_a);
+    ASSERT_NE(nullptr, opened_a) << mpss::get_error();
+    auto opened_b = KeyPair::Open(reference_b);
+    ASSERT_NE(nullptr, opened_b) << mpss::get_error();
+
+    std::vector<std::byte> public_key(reference_a.public_key.size());
+    ASSERT_EQ(public_key.size(), opened_a->extract_key(public_key));
+    EXPECT_EQ(reference_a.public_key, public_key);
+    ASSERT_EQ(public_key.size(), opened_b->extract_key(public_key));
+    EXPECT_EQ(reference_b.public_key, public_key);
+}
+
 // A scan cannot run from a thread that already holds a connection, since connecting to each reader
 // in turn would disturb the session that thread established. The refusal must report that nothing
 // was established about any device, which is not the same answer as no device being attached.
@@ -2608,6 +2747,63 @@ TEST_F(MultiYubiKeyTest, OpenKeyFindsKeyOnNonFirstDevice)
 
     // Clean up. The opened handle has the correct serial stored, so delete_key targets the right device.
     opened->delete_key();
+}
+
+TEST_F(MultiYubiKeyTest, SameNameUsesIndependentLocationsWithoutEnvironmentSwitching)
+{
+    const auto name = test_key_name("two_device_locations");
+    const KeyLocation first{"yubikey", name, std::to_string(serials_[0])};
+    const KeyLocation second{"yubikey", name, std::to_string(serials_[1])};
+    auto key_a = KeyPair::Create(first, ecdsa_secp256r1_sha256);
+    ASSERT_NE(nullptr, key_a) << mpss::get_error();
+    bool first_deleted = false;
+    SCOPE_GUARD({
+        if (!first_deleted)
+        {
+            static_cast<void>(key_a->delete_key());
+        }
+    });
+    auto key_b = KeyPair::Create(second, ecdsa_secp256r1_sha256);
+    ASSERT_NE(nullptr, key_b) << mpss::get_error();
+    SCOPE_GUARD(static_cast<void>(key_b->delete_key()));
+
+    KeyReference reference_a{key_a->location(), key_a->algorithm(), std::vector<std::byte>(key_a->extract_key_size())};
+    KeyReference reference_b{key_b->location(), key_b->algorithm(), std::vector<std::byte>(key_b->extract_key_size())};
+    ASSERT_EQ(reference_a.public_key.size(), key_a->extract_key(reference_a.public_key));
+    ASSERT_EQ(reference_b.public_key.size(), key_b->extract_key(reference_b.public_key));
+    EXPECT_NE(reference_a.public_key, reference_b.public_key);
+    auto bound_a = KeyPair::Open(reference_a);
+    auto bound_b = KeyPair::Open(reference_b);
+    ASSERT_NE(nullptr, bound_a) << mpss::get_error();
+    ASSERT_NE(nullptr, bound_b) << mpss::get_error();
+
+    const std::vector<std::byte> hash(32, std::byte{0x32});
+    std::array<std::vector<std::byte>, 2> signatures{std::vector<std::byte>(bound_a->sign_hash_size()),
+                                                     std::vector<std::byte>(bound_b->sign_hash_size())};
+    std::array<std::size_t, 2> written{};
+    std::array<std::string, 2> errors;
+    const auto sign = [&](std::size_t index) {
+        const auto &key = (0 == index) ? bound_a : bound_b;
+        written[index] = key->sign_hash(hash, signatures[index]);
+        errors[index] = mpss::get_error();
+    };
+    std::jthread thread_a(sign, std::size_t{0});
+    std::jthread thread_b(sign, std::size_t{1});
+    thread_a.join();
+    thread_b.join();
+    for (std::size_t index = 0; index < written.size(); ++index)
+    {
+        ASSERT_GT(written[index], std::size_t{0}) << errors[index];
+        ASSERT_LE(written[index], signatures[index].size());
+        const auto &reference = (0 == index) ? reference_a : reference_b;
+        EXPECT_TRUE(mpss::verify(hash, reference.public_key, reference.algorithm,
+                                 std::span<const std::byte>{signatures[index]}.first(written[index]), "yubikey"));
+    }
+
+    first_deleted = KeyPair::Delete(first);
+    EXPECT_TRUE(first_deleted);
+    EXPECT_EQ(nullptr, KeyPair::Open(first));
+    EXPECT_NE(nullptr, KeyPair::Open(second));
 }
 
 TEST_F(MultiYubiKeyTest, KeysOnDifferentDevicesAreIndependent)

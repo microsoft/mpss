@@ -25,4 +25,12 @@ struct KeyLocation
     std::optional<std::string> device_id;
 };
 
+/** @brief A location bound to the algorithm and public bytes returned by KeyPair::extract_key. */
+struct KeyReference
+{
+    KeyLocation location;
+    Algorithm algorithm{Algorithm::unsupported};
+    std::vector<std::byte> public_key;
+};
+
 } // namespace mpss
