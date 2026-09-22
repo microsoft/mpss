@@ -154,7 +154,8 @@ removed.
 The OS-native core uses system APIs. Additional dependencies are supplied by vcpkg:
 [GoogleTest](https://github.com/google/googletest) for tests,
 [libykpiv](https://developers.yubico.com/yubico-piv-tool/) and OpenSSL for YubiKey support,
-and [OpenSSL](https://github.com/openssl/openssl) 3.2 or later for the provider.
+OpenSSL 3.0 or later for optional C++ key-reference serialization,
+and [OpenSSL](https://github.com/openssl/openssl) 3.2 or later for the provider (which includes serialization).
 
 The [vcpkg port](ports/mpss/) targets desktop platforms. Build iOS and Android directly from
 source as described below; those builds also use vcpkg for dependencies.
@@ -581,6 +582,7 @@ For device setup and backend selection, see [Using MPSS with YubiKey PIV](#using
 | `MPSS_BUILD_MPSS_OPENSSL_STATIC=ON` | Build the OpenSSL provider as a static library. |
 | `MPSS_BUILD_MPSS_OPENSSL_SHARED=ON` | Build the OpenSSL provider as a shared library. |
 | `MPSS_BACKEND_YUBIKEY=ON` | Enable the YubiKey PIV backend. |
+| `MPSS_WITH_SERIALIZATION=ON` | Enable C++ key-reference DER/PEM serialization using OpenSSL's crypto library, without requiring the provider. Off by default; either provider build enables it automatically. |
 | `MPSS_ENABLE_HARDENING=OFF` | Disable security hardening compile and link flags (default is `ON`). |
 | `BUILD_SHARED_LIBS=ON` | Select shared core and provider libraries when no explicit MPSS library-type option is enabled. Explicit options take precedence. |
 
@@ -590,6 +592,26 @@ On desktop builds, run `bin/mpss_tests` from the build directory (`bin\Debug\mps
 `bin\Release\mpss_tests.exe` with Visual Studio). When enabled, run `mpss_win32_mock_tests.exe`
 separately from the same configuration directory; shared-core builds do **not** create it, even
 with `MPSS_BUILD_WIN32_MOCK_TESTS=ON`.
+
+#### Selecting features through vcpkg
+
+When installing MPSS through its vcpkg port, `mpss[serialization]` enables C++ key-reference serialization without building the provider.
+`mpss[openssl]` builds the provider and includes serialization automatically.
+Both use the same OpenSSL dependency; YubiKey support already requires OpenSSL but does not itself enable serialization.
+
+When configuring this checkout directly, the `VCPKG_MANIFEST_FEATURES` list also enables the corresponding MPSS capabilities (`openssl`, `serialization`, `yubikey`, and `tests`).
+Separate multiple features with semicolons and quote the argument, including in PowerShell:
+
+```powershell
+cmake -S . -B build "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" "-DVCPKG_MANIFEST_FEATURES=openssl;serialization"
+```
+
+Here `serialization` is redundant because `openssl` implies it; specifying just `serialization` does not enable the provider.
+If neither provider library type is selected, the `openssl` feature chooses the same static/shared linkage as the core.
+Manifest features are additive requests: a listed feature enables its capability even if the corresponding CMake option is `OFF`.
+Removing a feature restores the explicitly configured CMake options; implied settings are not written back to their cache entries.
+Conversely, selecting MPSS's CMake options requests the necessary vcpkg dependencies automatically.
+Without the vcpkg toolchain, OpenSSL must already be discoverable by `find_package`.
 
 ## Using the MPSS Core Library
 
@@ -732,6 +754,56 @@ What the handle recorded still answers, as it does after releasing: `algorithm`,
 
 That is deliberately different from reporting the key as missing, since a caller told a key is absent will reasonably try to create it.
 Open the name again to get a handle to whatever holds it now.
+
+### Serializing Key References
+
+`KeyPair::reference()` captures the handle's resolved location, algorithm, and public key into an owning `KeyReference`.
+This operation is available in every core build and may access the device, but does not sign a challenge.
+
+With `MPSS_WITH_SERIALIZATION` enabled, include `mpss/serialization.h` to encode and decode references as DER or PEM.
+The public functions use C++ types only; no OpenSSL handles or provider registration are needed.
+Link the usual core CMake target, which carries the required crypto-library linkage.
+The generated `mpss/config.h` defines `MPSS_WITH_SERIALIZATION` when these functions are available, and the installed CMake package exposes the same variable.
+
+```cpp
+#include <mpss/mpss.h>
+#include <mpss/serialization.h>
+
+auto reference = key_pair->reference();
+if (!reference) {
+    // Report mpss::get_error().
+    return;
+}
+auto pem = mpss::encode_key_reference_pem(*reference);
+if (!pem) {
+    // Report mpss::get_error().
+    return;
+}
+
+// Save *pem, then later parse it without accessing any backend.
+auto restored = mpss::decode_key_reference_pem(*pem);
+if (!restored) {
+    // Report mpss::get_error().
+    return;
+}
+auto reopened = mpss::KeyPair::Open(*restored);
+if (!reopened) {
+    // Report a missing key or mpss::get_error().
+    return;
+}
+```
+
+`encode_key_reference_der` returns an optional `std::vector<std::byte>`; `decode_key_reference_der` accepts `std::span<const std::byte>`.
+Both decoders return an optional `KeyReference`, and all four functions report failures through `mpss::get_error()`.
+Encoding and decoding are offline: they validate field syntax, algorithms, and public keys, but do not check backend availability, resolve environment defaults, or open a key.
+Encoding preserves the supplied identity rather than replacing it with whatever currently occupies the location.
+Backend-specific device rules are enforced when the reference is opened.
+
+The C++ codec uses public-key-bound version 1 ASN.1 references under the `MPSS KEY REFERENCE` label; the provider's legacy reference format is separate.
+Output uses 64-character Base64 lines and LF line endings.
+The C++ PEM decoder accepts one document with optional surrounding ASCII whitespace, up to 8192 bytes in total; DER input is limited to 4096 bytes and must contain exactly one canonical reference.
+Neither format contains private key material or credentials.
+Protect the reference's integrity: successful decoding does not establish trust in its public key or authenticate a physical device.
 
 ### Key Policies
 

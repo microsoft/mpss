@@ -11,6 +11,10 @@ if(NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 
     if(TARGET ${mpss_TARGET})
         list(APPEND mpss_TESTS_FILES "${CMAKE_CURRENT_LIST_DIR}/mpss_tests.cpp")
+        if(MPSS_WITH_SERIALIZATION)
+            list(APPEND mpss_TESTS_FILES "${CMAKE_CURRENT_LIST_DIR}/serialization_tests.cpp")
+            list(APPEND mpss_TESTS_LINK_LIBRARIES OpenSSL::Crypto)
+        endif()
     endif()
     if(TARGET ${mpss_openssl_TARGET})
         list(APPEND mpss_TESTS_FILES
@@ -113,6 +117,9 @@ set(mpss_TESTS_SOURCES test_entry.cpp test_runner.cpp)
 # Conditionally add tests depending on what the installed mpss provides.
 if(MPSS_CORE_FOUND)
     list(APPEND mpss_TESTS_SOURCES mpss_tests.cpp)
+    if(MPSS_WITH_SERIALIZATION)
+        list(APPEND mpss_TESTS_SOURCES serialization_tests.cpp)
+    endif()
 endif()
 if(MPSS_OPENSSL_FOUND)
     list(APPEND mpss_TESTS_SOURCES
@@ -123,6 +130,9 @@ endif()
 
 add_executable(mpss_tests ${mpss_TESTS_SOURCES})
 target_link_libraries(mpss_tests PRIVATE GTest::gtest)
+if(MPSS_WITH_SERIALIZATION)
+    target_link_libraries(mpss_tests PRIVATE OpenSSL::Crypto)
+endif()
 
 # Link against the best available mpss target. mpss-openssl pulls in mpss
 # transitively through its PUBLIC dependency, so we only need one link.

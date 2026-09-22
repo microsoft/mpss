@@ -6,4 +6,5 @@
 #cmakedefine MPSS_CORE_IS_SHARED
 #cmakedefine MPSS_OPENSSL_IS_SHARED
 #cmakedefine MPSS_BACKEND_YUBIKEY
+#cmakedefine MPSS_WITH_SERIALIZATION
 #cmakedefine MPSS_ENABLE_HARDENING

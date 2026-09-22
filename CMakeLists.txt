@@ -10,11 +10,24 @@ option(MPSS_BUILD_MPSS_OPENSSL_STATIC "Build the OpenSSL provider static library
 option(MPSS_BUILD_MPSS_OPENSSL_SHARED "Build the mpss OpenSSL provider shared library." NO)
 option(MPSS_BUILD_TESTS "Build the test suite." NO)
 option(MPSS_BACKEND_YUBIKEY "Build with YubiKey PIV backend." NO)
+option(MPSS_WITH_SERIALIZATION "Build key-reference DER and PEM serialization using OpenSSL." NO)
 option(MPSS_ENABLE_HARDENING "Enable security hardening compile and link flags." YES)
 
 # Drives the provider fallbacks, which real hardware cannot be made to fail on demand.
 # Windows and a static backend only.
 option(MPSS_BUILD_WIN32_MOCK_TESTS "Build the gmock-win32 NCrypt mock test executable." NO)
+
+# Manifest features are additive requests, including when configuring this checkout directly.
+# Use normal variables so removing a feature does not latch its implied options in the cache.
+if("serialization" IN_LIST VCPKG_MANIFEST_FEATURES)
+    set(MPSS_WITH_SERIALIZATION ON)
+endif()
+if("yubikey" IN_LIST VCPKG_MANIFEST_FEATURES)
+    set(MPSS_BACKEND_YUBIKEY ON)
+endif()
+if("tests" IN_LIST VCPKG_MANIFEST_FEATURES)
+    set(MPSS_BUILD_TESTS ON)
+endif()
 
 # If BUILD_SHARED_LIBS is set and no explicit library type options were provided,
 # default to building shared libraries. Explicit -D options take precedence.
@@ -40,6 +53,15 @@ elseif(NOT MPSS_BUILD_MPSS_CORE_STATIC AND NOT MPSS_BUILD_MPSS_CORE_SHARED)
     set(MPSS_BUILD_MPSS_CORE_STATIC ON CACHE BOOL "Build the static mpss core library." FORCE)
 endif()
 
+if("openssl" IN_LIST VCPKG_MANIFEST_FEATURES
+    AND NOT MPSS_BUILD_MPSS_OPENSSL_STATIC AND NOT MPSS_BUILD_MPSS_OPENSSL_SHARED)
+    if(MPSS_BUILD_MPSS_CORE_SHARED)
+        set(MPSS_BUILD_MPSS_OPENSSL_SHARED ON)
+    else()
+        set(MPSS_BUILD_MPSS_OPENSSL_STATIC ON)
+    endif()
+endif()
+
 if(MPSS_BUILD_MPSS_OPENSSL_STATIC AND MPSS_BUILD_MPSS_OPENSSL_SHARED)
     message(FATAL_ERROR "Cannot build both static and shared mpss-openssl libraries.")
 endif()
@@ -59,7 +81,11 @@ endif()
 
 # Enable openssl feature in vcpkg if we are building mpss-openssl.
 if(MPSS_BUILD_MPSS_OPENSSL_STATIC OR MPSS_BUILD_MPSS_OPENSSL_SHARED)
+    set(MPSS_WITH_SERIALIZATION ON)
     list(APPEND VCPKG_MANIFEST_FEATURES "openssl")
+endif()
+if(MPSS_WITH_SERIALIZATION)
+    list(APPEND VCPKG_MANIFEST_FEATURES "serialization")
 endif()
 
 # Where to look for additional modules we may have.
@@ -69,6 +95,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 if(MPSS_BACKEND_YUBIKEY)
     list(APPEND VCPKG_MANIFEST_FEATURES "yubikey")
 endif()
+list(REMOVE_DUPLICATES VCPKG_MANIFEST_FEATURES)
 
 get_filename_component(mpss_TOOLCHAIN_FILENAME "${CMAKE_TOOLCHAIN_FILE}" NAME)
 if(CMAKE_SYSTEM_NAME STREQUAL "Android"
@@ -433,6 +460,10 @@ if(TARGET ${mpss_TARGET})
     # dependencies (e.g., libykpiv, OpenSSL) at their final link stage.
     target_link_libraries(${mpss_TARGET} PUBLIC ${mpss_LINK_LIBRARIES})
 
+    if(MPSS_WITH_SERIALIZATION)
+        find_package(OpenSSL 3 REQUIRED COMPONENTS Crypto)
+        target_link_libraries(${mpss_TARGET} PRIVATE OpenSSL::Crypto)
+    endif()
 
     # For debug builds, append "_debug" to the library names.
     set_target_properties(${mpss_TARGET} PROPERTIES DEBUG_POSTFIX "_debug")

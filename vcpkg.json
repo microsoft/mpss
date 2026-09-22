@@ -3,10 +3,16 @@
   "version": "2.0.0",
   "description": "A multi-platform C++ library for hardware-backed digital signature key storage and signing.",
   "license": "MIT",
-  "dependencies": [],
+  "builtin-baseline": "30ef65cad98f08e7197c9a1656fbd871bcb72f2d",
   "features": {
     "openssl": {
-      "description": "Build the OpenSSL provider.",
+      "description": "Build the OpenSSL provider, including key-reference serialization.",
+      "dependencies": [
+        "openssl"
+      ]
+    },
+    "serialization": {
+      "description": "Enable C++ key-reference DER and PEM serialization without requiring the provider.",
       "dependencies": [
         "openssl"
       ]
@@ -24,6 +30,5 @@
         "yubico-piv-tool"
       ]
     }
-  },
-  "builtin-baseline": "30ef65cad98f08e7197c9a1656fbd871bcb72f2d"
+  }
 }

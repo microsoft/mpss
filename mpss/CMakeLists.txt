@@ -12,6 +12,9 @@ list(APPEND mpss_SOURCE_FILES
     "${CMAKE_CURRENT_LIST_DIR}/mpss.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/stdout_log.cpp"
 )
+if(MPSS_WITH_SERIALIZATION)
+    list(APPEND mpss_SOURCE_FILES "${CMAKE_CURRENT_LIST_DIR}/serialization.cpp")
+endif()
 
 add_subdirectory(impl)
 add_subdirectory(utils)
@@ -28,6 +31,7 @@ install(
         "${CMAKE_CURRENT_LIST_DIR}/log_c.h"
         "${CMAKE_CURRENT_LIST_DIR}/mpss.h"
         "${CMAKE_CURRENT_LIST_DIR}/secure_types.h"
+        "${CMAKE_CURRENT_LIST_DIR}/serialization.h"
         "${CMAKE_CURRENT_LIST_DIR}/storage_tier.h"
     DESTINATION
         "${mpss_INCLUDES_INSTALL_DIR}/mpss"

@@ -12,6 +12,7 @@
 #   - MPSS_INCLUDES_DIR : Directory where the MPSS include files are.
 #   - MPSS_CONFIG_DIR : Directory where the MPSS config files are.
 #   - MPSS_BACKEND_YUBIKEY : YES if MPSS was built with the YubiKey PIV backend.
+#   - MPSS_WITH_SERIALIZATION : YES if key-reference serialization is available.
 #   - MPSS_AVAILABLE_TARGETS : Contains a list of available MPSS targets.
 #   - MPSS_VERSION : The full version number.
 #   - MPSS_VERSION_MAJOR : The major version number.
@@ -73,11 +74,12 @@ if(MPSS_CORE_SHARED_FOUND OR MPSS_CORE_STATIC_FOUND)
 
     # Expose whether the YubiKey backend was enabled at build time.
     set(MPSS_BACKEND_YUBIKEY @MPSS_BACKEND_YUBIKEY@)
+    set(MPSS_WITH_SERIALIZATION @MPSS_WITH_SERIALIZATION@)
 
-    # When MPSS was built with the YubiKey backend, it has PUBLIC dependencies
-    # on OpenSSL and libykpiv that consumers must resolve.
+    if(MPSS_BACKEND_YUBIKEY OR MPSS_WITH_SERIALIZATION)
+        find_dependency(OpenSSL 3 REQUIRED COMPONENTS Crypto)
+    endif()
     if(MPSS_BACKEND_YUBIKEY)
-        find_dependency(OpenSSL 3 REQUIRED)
         find_dependency(unofficial-libykpiv CONFIG REQUIRED)
     endif()
 endif()

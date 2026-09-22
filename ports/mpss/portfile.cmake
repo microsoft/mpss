@@ -22,6 +22,7 @@ endif()
 vcpkg_check_features(OUT_FEATURE_OPTIONS FEATURE_OPTIONS
     FEATURES
         openssl    MPSS_BUILD_MPSS_OPENSSL_${LIBRARY_LINKAGE}
+        serialization MPSS_WITH_SERIALIZATION
         yubikey    MPSS_BACKEND_YUBIKEY
 )
 
