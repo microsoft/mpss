@@ -8,6 +8,7 @@
 #include "mpss-openssl/utils/names.h"
 #include "mpss-openssl/utils/ossl_ptr.h"
 #include "mpss-openssl/utils/utils.h"
+#include "mpss/serialization.h"
 #include <openssl/bio.h>
 #include <openssl/core_dispatch.h>
 #include <openssl/err.h>
@@ -191,12 +192,6 @@ catch (...)
     return 0;
 }
 
-int write_reference_pem(BIO *out, const byte_vector &body)
-{
-    return PEM_write_bio(out, mpss_key_reference_pem_label, /* header */ nullptr,
-                         reinterpret_cast<const unsigned char *>(body.data()), static_cast<long>(body.size()));
-}
-
 extern "C" int mpss_reference_pem_encoder_encode(void *ctx, OSSL_CORE_BIO *cout, const void *obj_raw,
                                                  [[maybe_unused]] const OSSL_PARAM obj_abstract[], int selection,
                                                  [[maybe_unused]] OSSL_PASSPHRASE_CALLBACK *cb,
@@ -214,13 +209,16 @@ try
         return 0;
     }
 
-    // Persist the backend the key was actually opened on, not the one the caller happened to name.
-    // Leaving it empty makes the reference resolve through whatever the default backend is at load
-    // time, which can differ later and reach a different key of the same name.
-    const std::string_view backend{pkey->key_pair->backend_name()};
-    byte_vector body;
-    if (!mpss_build_key_load_reference(backend, *pkey->name, body))
+    const auto reference = pkey->key_pair->reference();
+    if (!reference)
     {
+        ERR_raise_data(ERR_LIB_PROV, ERR_R_OPERATION_FAIL, "%s", mpss::get_error().c_str());
+        return 0;
+    }
+    const auto pem = mpss::encode_key_reference_pem(*reference);
+    if (!pem)
+    {
+        ERR_raise_data(ERR_LIB_PROV, ERR_R_OPERATION_FAIL, "%s", mpss::get_error().c_str());
         return 0;
     }
 
@@ -230,7 +228,8 @@ try
         return 0;
     }
 
-    return write_reference_pem(out.get(), body);
+    const int size = static_cast<int>(pem->size());
+    return size == BIO_write(out.get(), pem->data(), size) ? 1 : 0;
 }
 catch (...)
 {

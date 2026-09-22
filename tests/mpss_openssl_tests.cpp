@@ -4,22 +4,23 @@
 #include "mpss-openssl/api.h"
 #include "mpss-openssl/interaction_handler.h"
 #include "mpss-openssl/provider/provider.h"
-#ifdef MPSS_BACKEND_YUBIKEY
-#include "mpss/impl/yubikey/yk_piv.h"
-#endif
 #include "mpss/interaction_handler.h"
 #include "mpss/key_policy.h"
 #include "mpss/mpss.h"
+#include "mpss/serialization.h"
 #include "mpss/utils/scope_guard.h"
 #include "openssl_raii.h"
+#include "tests/compat_env.h"
 #include "tests/test_key_names.h"
 #include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <gtest/gtest.h>
 #include <memory>
+#include <openssl/asn1.h>
 #include <openssl/bio.h>
 #include <openssl/buffer.h>
 #include <openssl/core.h>
@@ -36,10 +37,12 @@
 #include <openssl/ssl.h>
 #include <openssl/store.h>
 #include <openssl/x509.h>
+#include <optional>
 #include <random>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 using namespace std::string_view_literals;
@@ -163,16 +166,6 @@ std::string reference_fixture_key_name()
     return mpss::tests::test_key_name("mpss_reference_pem_fixture");
 }
 
-// A load reference is "<backend>\0<key_name>"; an empty backend selects the default one. Built here
-// rather than with the provider's builder, so the expected bytes independently pin the wire format.
-std::string LoadReference(std::string_view backend, std::string_view key_name)
-{
-    std::string body(backend);
-    body.push_back('\0');
-    body.append(key_name);
-    return body;
-}
-
 std::string Base64(std::string_view raw)
 {
     bio_ptr sink(BIO_new(BIO_s_mem()));
@@ -193,7 +186,7 @@ std::string Base64(std::string_view raw)
 
     BUF_MEM *mem = nullptr;
     BIO_get_mem_ptr(chain.get(), &mem);
-    if (nullptr == mem)
+    if (nullptr == mem || 0 == mem->length)
     {
         return {};
     }
@@ -205,13 +198,93 @@ std::string ReferencePem(std::string_view base64_body)
     return "-----BEGIN MPSS KEY REFERENCE-----\n" + std::string(base64_body) + "\n-----END MPSS KEY REFERENCE-----\n";
 }
 
-std::string ReferencePemFor(std::string_view backend, std::string_view key_name)
+std::string LegacyReferencePemFor(std::string_view backend, std::string_view key_name)
 {
-    return ReferencePem(Base64(LoadReference(backend, key_name)));
+    std::string body(backend);
+    body.push_back('\0');
+    body.append(key_name);
+    return ReferencePem(Base64(body));
+}
+
+std::string PublicKeyDer(EVP_PKEY *key)
+{
+    unsigned char *der = nullptr;
+    const int size = i2d_PUBKEY(key, &der);
+    SCOPE_GUARD(OPENSSL_free(der));
+    return 0 < size ? std::string{reinterpret_cast<const char *>(der), static_cast<std::size_t>(size)} : std::string{};
+}
+
+// Construct fixtures with OpenSSL's generic DER writer, independently of the provider's schema.
+std::string DerValue(int tag, std::string_view content, bool constructed = false, int tag_class = V_ASN1_UNIVERSAL)
+{
+    const int size = ASN1_object_size(constructed ? 1 : 0, static_cast<int>(content.size()), tag);
+    if (0 >= size)
+    {
+        return {};
+    }
+    std::string encoded(static_cast<std::size_t>(size), '\0');
+    auto *cursor = reinterpret_cast<unsigned char *>(encoded.data());
+    ASN1_put_object(&cursor, constructed ? 1 : 0, static_cast<int>(content.size()), tag, tag_class);
+    std::memcpy(cursor, content.data(), content.size());
+    return encoded;
+}
+
+std::string DerInteger(std::int64_t value)
+{
+    ASN1_INTEGER *integer = ASN1_INTEGER_new();
+    if (nullptr == integer)
+    {
+        return {};
+    }
+    SCOPE_GUARD(ASN1_INTEGER_free(integer));
+    if (1 != ASN1_INTEGER_set_int64(integer, value))
+    {
+        return {};
+    }
+    unsigned char *der = nullptr;
+    const int size = i2d_ASN1_INTEGER(integer, &der);
+    SCOPE_GUARD(OPENSSL_free(der));
+    return 0 < size ? std::string{reinterpret_cast<const char *>(der), static_cast<std::size_t>(size)} : std::string{};
+}
+
+std::string BoundReference(std::string_view backend, std::string_view name, std::string_view device,
+                           std::string_view spki, std::int64_t version = 1)
+{
+    std::string body = DerInteger(version) + DerValue(V_ASN1_UTF8STRING, backend) + DerValue(V_ASN1_UTF8STRING, name);
+    if (!device.empty())
+    {
+        body += DerValue(0, DerValue(V_ASN1_UTF8STRING, device), true, V_ASN1_CONTEXT_SPECIFIC);
+    }
+    body += spki;
+    return DerValue(V_ASN1_SEQUENCE, body, true);
+}
+
+std::string InternalLocatorReference(std::string_view backend, std::string_view name, bool use_defaults)
+{
+    const std::string body = DerValue(V_ASN1_BOOLEAN, use_defaults ? "\xff"sv : "\0"sv) +
+                             DerValue(V_ASN1_UTF8STRING, backend) + DerValue(V_ASN1_UTF8STRING, name);
+    return DerValue(0, DerValue(V_ASN1_SEQUENCE, body, true), true, V_ASN1_CONTEXT_SPECIFIC);
+}
+
+std::string ReferenceBody(const std::string &pem)
+{
+    const bio_ptr bio(BIO_new_mem_buf(pem.data(), static_cast<int>(pem.size())));
+    char *name = nullptr;
+    char *header = nullptr;
+    unsigned char *body = nullptr;
+    long size = 0;
+    SCOPE_GUARD(OPENSSL_free(name));
+    SCOPE_GUARD(OPENSSL_free(header));
+    SCOPE_GUARD(OPENSSL_free(body));
+    if (!bio || 1 != PEM_read_bio(bio.get(), &name, &header, &body, &size) || 0 >= size)
+    {
+        return {};
+    }
+    return {reinterpret_cast<const char *>(body), static_cast<std::size_t>(size)};
 }
 
 evp_pkey_ptr GenerateKey(OSSL_LIB_CTX *libctx, const std::string &key_name, const char *backend = nullptr,
-                         std::uint64_t key_policy = MPSS_KEY_POLICY_NONE)
+                         std::uint64_t key_policy = MPSS_KEY_POLICY_NONE, const char *device_id = nullptr)
 {
     evp_pkey_ctx_ptr ctx(EVP_PKEY_CTX_new_from_name(libctx, "EC", "provider=mpss"));
     if (nullptr == ctx || 1 != EVP_PKEY_keygen_init(ctx.get()))
@@ -219,7 +292,7 @@ evp_pkey_ptr GenerateKey(OSSL_LIB_CTX *libctx, const std::string &key_name, cons
         return nullptr;
     }
 
-    OSSL_PARAM params[5];
+    OSSL_PARAM params[6];
     int count = 0;
     params[count++] = OSSL_PARAM_construct_utf8_string("mpss_key_name", const_cast<char *>(key_name.c_str()), 0);
     params[count++] = OSSL_PARAM_construct_utf8_string("mpss_algorithm", const_cast<char *>(mpss_p256_algorithm), 0);
@@ -230,6 +303,10 @@ evp_pkey_ptr GenerateKey(OSSL_LIB_CTX *libctx, const std::string &key_name, cons
     if (MPSS_KEY_POLICY_NONE != key_policy)
     {
         params[count++] = OSSL_PARAM_construct_uint64("mpss_key_policy", &key_policy);
+    }
+    if (nullptr != device_id)
+    {
+        params[count++] = OSSL_PARAM_construct_utf8_string("mpss_device_id", const_cast<char *>(device_id), 0);
     }
     params[count] = OSSL_PARAM_END;
     if (1 != EVP_PKEY_CTX_set_params(ctx.get(), params))
@@ -1039,14 +1116,23 @@ class MPSSStore : public ::testing::Test
 
     // Open "mpss:<key_name>" through OSSL_STORE, optionally selecting a backend via the mpss_backend
     // ctx parameter, and return the reopened key (or nullptr if none was produced).
-    EVP_PKEY *store_open_key(const std::string &key_name, const char *backend)
+    EVP_PKEY *store_open_key(const std::string &key_name, const char *backend, const char *device_id = nullptr)
     {
         const std::string uri = "mpss:" + key_name;
-        OSSL_PARAM backend_params[] = {
-            OSSL_PARAM_construct_utf8_string("mpss_backend", const_cast<char *>(nullptr != backend ? backend : ""), 0),
-            OSSL_PARAM_construct_end()};
+        OSSL_PARAM backend_params[3]{};
+        int count = 0;
+        if (nullptr != backend)
+        {
+            backend_params[count++] = OSSL_PARAM_construct_utf8_string("mpss_backend", const_cast<char *>(backend), 0);
+        }
+        if (nullptr != device_id)
+        {
+            backend_params[count++] =
+                OSSL_PARAM_construct_utf8_string("mpss_device_id", const_cast<char *>(device_id), 0);
+        }
+        backend_params[count] = OSSL_PARAM_END;
         OSSL_STORE_CTX *store = OSSL_STORE_open_ex(uri.c_str(), libctx, "provider=mpss", nullptr, nullptr,
-                                                   nullptr != backend ? backend_params : nullptr, nullptr, nullptr);
+                                                   backend_params, nullptr, nullptr);
         if (nullptr == store)
         {
             return nullptr;
@@ -1071,14 +1157,22 @@ class MPSSStore : public ::testing::Test
 
     // Delete "mpss:<key_name>" through OSSL_STORE_delete, optionally selecting a backend via the
     // mpss_backend parameter. Returns the OSSL_STORE_delete result (1 on success, 0 otherwise).
-    int store_delete_key(const std::string &key_name, const char *backend)
+    int store_delete_key(const std::string &key_name, const char *backend, const char *device_id = nullptr)
     {
         const std::string uri = "mpss:" + key_name;
-        OSSL_PARAM backend_params[] = {
-            OSSL_PARAM_construct_utf8_string("mpss_backend", const_cast<char *>(nullptr != backend ? backend : ""), 0),
-            OSSL_PARAM_construct_end()};
-        return OSSL_STORE_delete(uri.c_str(), libctx, "provider=mpss", nullptr, nullptr,
-                                 nullptr != backend ? backend_params : nullptr);
+        OSSL_PARAM backend_params[3]{};
+        int count = 0;
+        if (nullptr != backend)
+        {
+            backend_params[count++] = OSSL_PARAM_construct_utf8_string("mpss_backend", const_cast<char *>(backend), 0);
+        }
+        if (nullptr != device_id)
+        {
+            backend_params[count++] =
+                OSSL_PARAM_construct_utf8_string("mpss_device_id", const_cast<char *>(device_id), 0);
+        }
+        backend_params[count] = OSSL_PARAM_END;
+        return OSSL_STORE_delete(uri.c_str(), libctx, "provider=mpss", nullptr, nullptr, backend_params);
     }
 
     // Create a key (optionally on an explicit backend / with a key policy), close it, reopen it by
@@ -1374,6 +1468,42 @@ TEST_F(MPSSStore, AdvertisesGroupNameParam)
 }
 
 #ifdef MPSS_BACKEND_YUBIKEY
+TEST_F(MPSSStore, HostVerificationDoesNotSelectTheMpssProvider)
+{
+    const evp_pkey_ptr key(EVP_PKEY_Q_keygen(libctx, "provider=default", "EC", SN_X9_62_prime256v1));
+    ASSERT_NE(nullptr, key);
+    const evp_pkey_ctx_ptr signing(EVP_PKEY_CTX_new_from_pkey(libctx, key.get(), "provider=default"));
+    ASSERT_NE(nullptr, signing);
+    ASSERT_EQ(1, EVP_PKEY_sign_init(signing.get()));
+    ASSERT_EQ(1, EVP_PKEY_CTX_set_signature_md(signing.get(), EVP_sha256()));
+    const std::array<unsigned char, 32> hash{};
+    std::size_t written = 0;
+    ASSERT_EQ(1, EVP_PKEY_sign(signing.get(), nullptr, &written, hash.data(), hash.size()));
+    std::vector<unsigned char> signature(written);
+    ASSERT_EQ(1, EVP_PKEY_sign(signing.get(), signature.data(), &written, hash.data(), hash.size()));
+    signature.resize(written);
+    std::array<unsigned char, 65> public_key{};
+    ASSERT_EQ(1, EVP_PKEY_get_octet_string_param(key.get(), OSSL_PKEY_PARAM_PUB_KEY, public_key.data(),
+                                                 public_key.size(), &written));
+    ASSERT_EQ(public_key.size(), written);
+
+    OSSL_LIB_CTX *verification_context = OSSL_LIB_CTX_new();
+    ASSERT_NE(nullptr, verification_context);
+    SCOPE_GUARD(OSSL_LIB_CTX_free(verification_context));
+    OSSL_PROVIDER *null_provider = OSSL_PROVIDER_load(verification_context, "null");
+    ASSERT_NE(nullptr, null_provider);
+    SCOPE_GUARD(OSSL_PROVIDER_unload(null_provider));
+    ASSERT_EQ(1, EVP_set_default_properties(verification_context, "provider=unavailable"));
+    OSSL_LIB_CTX *previous_context = OSSL_LIB_CTX_set0_default(verification_context);
+    SCOPE_GUARD(OSSL_LIB_CTX_set0_default(previous_context));
+
+    EXPECT_TRUE(mpss::verify(std::as_bytes(std::span{hash}), std::as_bytes(std::span{public_key}),
+                             mpss::Algorithm::ecdsa_secp256r1_sha256, std::as_bytes(std::span{signature}), "yubikey"));
+    signature.back() ^= 1;
+    EXPECT_FALSE(mpss::verify(std::as_bytes(std::span{hash}), std::as_bytes(std::span{public_key}),
+                              mpss::Algorithm::ecdsa_secp256r1_sha256, std::as_bytes(std::span{signature}), "yubikey"));
+}
+
 TEST_F(MPSSStore, ReopenByNameYubiKey)
 {
     const auto devices = mpss::get_available_devices("yubikey");
@@ -1395,9 +1525,7 @@ TEST_F(MPSSStore, ReopenByNameYubiKey)
 }
 #endif // MPSS_BACKEND_YUBIKEY
 
-// Scenario: OpenSSL decodes an MPSS reference PEM naming a persisted key.
-// Expected behavior: the key is reopened by name and is usable for signing.
-TEST_F(MPSSStore, ReferencePemDecoderReopensKeyByName)
+TEST_F(MPSSStore, ReferencePemDecoderRejectsLegacyFormatForExistingKey)
 {
     if (!mpss_is_algorithm_available(mpss_p256_algorithm))
     {
@@ -1415,9 +1543,20 @@ TEST_F(MPSSStore, ReferencePemDecoderReopensKeyByName)
     }
     key.reset();
 
-    evp_pkey_ptr decoded = DecodeReferencePem(libctx, ReferencePemFor("", key_name));
-    ASSERT_NE(nullptr, decoded.get());
-    EXPECT_FALSE(SignDigest(libctx, decoded.get()).empty());
+    for (const std::string_view backend : {std::string_view{}, std::string_view{mpss::get_default_backend_name()}})
+    {
+        SCOPED_TRACE(backend);
+        const evp_pkey_ptr opened(store_open_key(key_name, backend.empty() ? nullptr : backend.data()));
+        ASSERT_NE(nullptr, opened);
+        ERR_clear_error();
+        EXPECT_EQ(nullptr, DecodeReferencePem(libctx, LegacyReferencePemFor(backend, key_name)).get());
+        bool bad_encoding = false;
+        for (unsigned long error = ERR_get_error(); 0 != error; error = ERR_get_error())
+        {
+            bad_encoding |= ERR_LIB_PROV == ERR_GET_LIB(error) && PROV_R_BAD_ENCODING == ERR_GET_REASON(error);
+        }
+        EXPECT_TRUE(bad_encoding);
+    }
 }
 
 struct MalformedLoadReference
@@ -1434,16 +1573,12 @@ class MPSSReferencePemRejects : public MPSSStore, public ::testing::WithParamInt
 // Expected behavior: it decodes to no key.
 TEST_P(MPSSReferencePemRejects, MalformedLoadReferenceDecodesToNoKey)
 {
-    if (!mpss_is_algorithm_available(mpss_p256_algorithm))
-    {
-        GTEST_SKIP() << "Algorithm not supported by current backend";
-    }
-
     EXPECT_EQ(nullptr, DecodeReferencePem(libctx, ReferencePem(Base64(GetParam().body))).get());
 }
 
 INSTANTIATE_TEST_SUITE_P(MalformedLoadReferences, MPSSReferencePemRejects,
-                         ::testing::Values(MalformedLoadReference{"KeyDoesNotExist", "\0mpss_absent_key"sv},
+                         ::testing::Values(MalformedLoadReference{"LegacyDefaultBackend", "\0mpss_absent_key"sv},
+                                           MalformedLoadReference{"LegacyExplicitBackend", "os\0mpss_absent_key"sv},
                                            MalformedLoadReference{"NoSeparator", "ab"sv},
                                            MalformedLoadReference{"SecondSeparator", "os\0extra\0name"sv}),
                          [](const ::testing::TestParamInfo<MalformedLoadReference> &info) {
@@ -1491,6 +1626,284 @@ TEST_F(MPSSStore, ReferencePemDecoderRejectsForeignPem)
                            .get());
 }
 
+TEST_F(MPSSStore, BoundReferenceRejectsMalformedDerBeforeOpening)
+{
+    const evp_pkey_ptr public_key(EVP_PKEY_Q_keygen(libctx, "provider=default", "EC", SN_X9_62_prime256v1));
+    ASSERT_NE(nullptr, public_key);
+    const std::string spki = PublicKeyDer(public_key.get());
+    ASSERT_FALSE(spki.empty());
+    const std::string valid = BoundReference("os", "mpss_bound_parse_only", "", spki);
+    std::vector<std::string> malformed;
+    std::vector<std::string> unsupported_bodies;
+    for (std::size_t size = 0; valid.size() > size; ++size)
+    {
+        malformed.push_back(valid.substr(0, size));
+    }
+    unsupported_bodies.push_back(BoundReference("os", "name", "", spki, 0));
+    unsupported_bodies.push_back(BoundReference("os", "name", "", spki, 2));
+    malformed.push_back(BoundReference("os", "name", "", spki, -1));
+    malformed.emplace_back("\x30\x84\x7f\xff\xff\xff", 6);
+    malformed.push_back(valid + "trailing");
+    malformed.push_back(valid + valid);
+    malformed.push_back(std::string(4097, 'x'));
+    malformed.push_back(std::string(10000, 'x'));
+    malformed.push_back(BoundReference("", "name", "", spki));
+    malformed.push_back(BoundReference("os", "", "", spki));
+    malformed.push_back(BoundReference(std::string(65, 'x'), "name", "", spki));
+    malformed.push_back(BoundReference("os", std::string(65, 'x'), "", spki));
+    malformed.push_back(BoundReference("yubikey", "name", std::string(257, '1'), spki));
+    malformed.push_back(BoundReference("os", "a\0b"sv, "", spki));
+    malformed.push_back(BoundReference("os", "a\nb", "", spki));
+    malformed.push_back(BoundReference("os", "name", "1\0ignored"sv, spki));
+    malformed.push_back(BoundReference("os", "name", "", ""));
+    malformed.push_back(BoundReference("os", "name", "", spki.substr(0, spki.size() - 1)));
+    malformed.push_back(BoundReference("os", "name", "", spki + "trailing"));
+    std::string invalid_public = spki;
+    ASSERT_LE(64U, invalid_public.size());
+    invalid_public.replace(invalid_public.size() - 64, 64, 64, '\0');
+    malformed.push_back(BoundReference("os", "name", "", invalid_public));
+    const std::string prefix = DerInteger(1) + DerValue(V_ASN1_UTF8STRING, "os") + DerValue(V_ASN1_UTF8STRING, "name");
+    const std::string device = DerValue(0, DerValue(V_ASN1_UTF8STRING, "123"), true, V_ASN1_CONTEXT_SPECIFIC);
+    malformed.push_back(DerValue(V_ASN1_SEQUENCE, prefix + device + device + spki, true));
+    malformed.push_back(DerValue(V_ASN1_SEQUENCE, prefix + spki + DerInteger(42), true));
+    malformed.push_back(DerValue(V_ASN1_SEQUENCE, prefix + spki + device, true));
+    malformed.push_back(DerValue(V_ASN1_SEQUENCE, prefix + DerValue(V_ASN1_OCTET_STRING, spki), true));
+    malformed.push_back(
+        DerValue(V_ASN1_SEQUENCE,
+                 prefix + DerValue(0, DerValue(V_ASN1_UTF8STRING, ""), true, V_ASN1_CONTEXT_SPECIFIC) + spki, true));
+    malformed.push_back(DerValue(
+        V_ASN1_SEQUENCE,
+        DerInteger(1) + DerValue(V_ASN1_OCTET_STRING, "os") + DerValue(V_ASN1_UTF8STRING, "name") + spki, true));
+    malformed.push_back(DerValue(V_ASN1_SEQUENCE,
+                                 DerValue(V_ASN1_INTEGER, "\x01\0\0\0\0\0\0\0\0"sv) +
+                                     DerValue(V_ASN1_UTF8STRING, "os") + DerValue(V_ASN1_UTF8STRING, "name") + spki,
+                                 true));
+    const std::string fields = prefix + spki;
+    malformed.push_back(std::string{"\x30\x80", 2} + fields + std::string(2, '\0')); // BER indefinite length.
+    ASSERT_LT(fields.size(), 256U);
+    std::string nonminimal{"\x30\x82\0", 3};
+    nonminimal.push_back(static_cast<char>(fields.size()));
+    malformed.push_back(nonminimal + fields);
+    malformed.push_back(InternalLocatorReference("os", "name", false));
+    malformed.push_back(InternalLocatorReference("", "name", true));
+    malformed.push_back(InternalLocatorReference("yubikey", "name", true));
+    malformed.push_back(std::string{"MPSS-REF\0\0", 10} + std::string(28, '\0'));
+    const evp_pkey_ptr unsupported(EVP_PKEY_Q_keygen(libctx, "provider=default", "ED25519"));
+    ASSERT_NE(nullptr, unsupported);
+    unsupported_bodies.push_back(BoundReference("os", "name", "", PublicKeyDer(unsupported.get())));
+    ASSERT_EQ(1, EVP_PKEY_set_utf8_string_param(public_key.get(), OSSL_PKEY_PARAM_EC_ENCODING,
+                                                OSSL_PKEY_EC_ENCODING_EXPLICIT));
+    unsupported_bodies.push_back(BoundReference("os", "name", "", PublicKeyDer(public_key.get())));
+
+    for (std::size_t i = 0; malformed.size() > i; ++i)
+    {
+        SCOPED_TRACE(i);
+        ERR_clear_error();
+        EXPECT_EQ(nullptr, DecodeReferencePem(libctx, ReferencePem(Base64(malformed[i]))).get());
+        bool bad_encoding = false;
+        for (unsigned long error = ERR_get_error(); 0 != error; error = ERR_get_error())
+        {
+            bad_encoding |= ERR_LIB_PROV == ERR_GET_LIB(error) && PROV_R_BAD_ENCODING == ERR_GET_REASON(error);
+        }
+        EXPECT_TRUE(bad_encoding);
+    }
+    for (const auto &body : unsupported_bodies)
+    {
+        ERR_clear_error();
+        EXPECT_EQ(nullptr, DecodeReferencePem(libctx, ReferencePem(Base64(body))).get());
+        bool not_supported = false;
+        for (unsigned long error = ERR_get_error(); 0 != error; error = ERR_get_error())
+        {
+            not_supported |= ERR_LIB_PROV == ERR_GET_LIB(error) && PROV_R_NOT_SUPPORTED == ERR_GET_REASON(error);
+        }
+        EXPECT_TRUE(not_supported);
+    }
+}
+
+TEST_F(MPSSStore, ForeignPrivatePemContinuesDecoderChain)
+{
+    const evp_pkey_ptr key(EVP_PKEY_Q_keygen(libctx, "provider=default", "EC", SN_X9_62_prime256v1));
+    ASSERT_NE(nullptr, key);
+    const bio_ptr pem(BIO_new(BIO_s_mem()));
+    ASSERT_NE(nullptr, pem);
+    ASSERT_EQ(1, PEM_write_bio_PrivateKey(pem.get(), key.get(), nullptr, nullptr, 0, nullptr, nullptr));
+    const evp_pkey_ptr decoded(PEM_read_bio_PrivateKey_ex(pem.get(), nullptr, nullptr, nullptr, libctx, nullptr));
+    ASSERT_NE(nullptr, decoded);
+    EXPECT_EQ(1, EVP_PKEY_eq(key.get(), decoded.get()));
+    EXPECT_STREQ("default", OSSL_PROVIDER_get0_name(EVP_PKEY_get0_provider(decoded.get())));
+}
+
+TEST_F(MPSSStore, BoundReferenceRejectsUnknownBackendAndInvalidDevice)
+{
+    const evp_pkey_ptr public_key(EVP_PKEY_Q_keygen(libctx, "provider=default", "EC", SN_X9_62_prime256v1));
+    ASSERT_NE(nullptr, public_key);
+    const std::string spki = PublicKeyDer(public_key.get());
+    ASSERT_FALSE(spki.empty());
+    for (const auto &[backend, device] :
+         {std::pair{"unknown-backend", ""}, std::pair{"os", "1"}, std::pair{"yubikey", "not-a-device"},
+          std::pair{"yubikey", "0"}, std::pair{"yubikey", "4294967296"}})
+    {
+        SCOPED_TRACE(backend);
+        SCOPED_TRACE(device);
+        const std::string body = BoundReference(backend, "mpss_bound_invalid_location", device, spki);
+        EXPECT_EQ(nullptr, DecodeReferencePem(libctx, ReferencePem(Base64(body))).get());
+    }
+    ERR_clear_error();
+}
+
+TEST_F(MPSSStore, DeviceParameterRejectsInvalidLocations)
+{
+    const std::string name = test_key_name("mpss_invalid_device");
+    EXPECT_EQ(nullptr, GenerateKey(libctx, name, "os", MPSS_KEY_POLICY_NONE, "1"));
+    EXPECT_EQ(nullptr, evp_pkey_ptr(store_open_key(name, "os", "1")));
+    EXPECT_EQ(0, store_delete_key(name, "os", "1"));
+    EXPECT_EQ(nullptr, GenerateKey(libctx, name, "unknown-backend", MPSS_KEY_POLICY_NONE, ""));
+    EXPECT_EQ(nullptr, evp_pkey_ptr(store_open_key(name, "unknown-backend", "")));
+    EXPECT_EQ(0, store_delete_key(name, "unknown-backend", ""));
+    mpss_clear_error();
+    EXPECT_FALSE(mpss_delete_key_at(nullptr));
+    EXPECT_TRUE(mpss_has_error());
+    const std::string null_location_error = mpss::get_error();
+    EXPECT_NE(std::string::npos, null_location_error.find("Invalid key name"));
+    EXPECT_FALSE(mpss_is_algorithm_available("unsupported-algorithm"));
+    ASSERT_NE(null_location_error, mpss::get_error());
+    EXPECT_FALSE(mpss_delete_key_at(nullptr));
+    EXPECT_EQ(null_location_error, mpss::get_error());
+    for (const mpss_key_location_t location :
+         {mpss_key_location_t{nullptr, name.c_str(), nullptr}, mpss_key_location_t{"os", nullptr, nullptr},
+          mpss_key_location_t{"os", name.c_str(), ""}, mpss_key_location_t{"os", name.c_str(), "1"}})
+    {
+        EXPECT_FALSE(mpss_delete_key_at(&location));
+    }
+    const evp_pkey_ctx_ptr ctx(EVP_PKEY_CTX_new_from_name(libctx, "EC", "provider=mpss"));
+    ASSERT_NE(nullptr, ctx);
+    ASSERT_EQ(1, EVP_PKEY_keygen_init(ctx.get()));
+    char embedded_nul[] = {'1', '\0', '2'};
+    std::array<char, 257> oversized{};
+    std::fill(oversized.begin(), oversized.end(), '1');
+    int wrong_type = 1;
+    for (const auto param : {OSSL_PARAM_construct_utf8_string("mpss_device_id", nullptr, 0),
+                             OSSL_PARAM_construct_utf8_string("mpss_device_id", embedded_nul, sizeof(embedded_nul)),
+                             OSSL_PARAM_construct_utf8_string("mpss_device_id", oversized.data(), oversized.size()),
+                             OSSL_PARAM_construct_int("mpss_device_id", &wrong_type)})
+    {
+        const OSSL_PARAM params[]{param, OSSL_PARAM_END};
+        EXPECT_EQ(0, EVP_PKEY_CTX_set_params(ctx.get(), params));
+    }
+    ERR_clear_error();
+}
+
+TEST_F(MPSSStore, BoundReferenceRejectsReplacementAndNeverCreates)
+{
+    if (!mpss_is_algorithm_available_in_backend(mpss_p256_algorithm, "os"))
+    {
+        GTEST_SKIP() << "Algorithm not supported by OS backend";
+    }
+    const std::string name = test_key_name("mpss_bound_replacement");
+    const mpss_key_location_t location{"os", name.c_str(), nullptr};
+    ASSERT_TRUE(mpss_delete_key_at(&location));
+    SCOPE_GUARD(mpss_delete_key_at(&location));
+    evp_pkey_ptr key = GenerateKey(libctx, name, "os", MPSS_KEY_POLICY_NONE, "");
+    ASSERT_NE(nullptr, key);
+    const std::string pem = EncodeReferencePem(key.get());
+    ASSERT_FALSE(pem.empty());
+    const std::string spki = PublicKeyDer(key.get());
+    const auto *cursor = reinterpret_cast<const unsigned char *>(spki.data());
+    const evp_pkey_ptr public_key(
+        d2i_PUBKEY_ex(nullptr, &cursor, static_cast<long>(spki.size()), libctx, "provider=default"));
+    ASSERT_NE(nullptr, public_key);
+    ASSERT_EQ(1, EVP_PKEY_set_utf8_string_param(public_key.get(), OSSL_PKEY_PARAM_EC_POINT_CONVERSION_FORMAT,
+                                                OSSL_PKEY_EC_POINT_CONVERSION_FORMAT_COMPRESSED));
+    const std::string equivalent = BoundReference("os", name, "", PublicKeyDer(public_key.get()));
+    evp_pkey_ptr normalized = DecodeReferencePem(libctx, ReferencePem(Base64(equivalent)));
+    ASSERT_NE(nullptr, normalized);
+    EXPECT_EQ(spki, PublicKeyDer(normalized.get()));
+    normalized.reset();
+    char device[2]{};
+    std::size_t written = 0;
+    ASSERT_EQ(1, EVP_PKEY_get_utf8_string_param(key.get(), "mpss_device_id", device, sizeof(device), &written));
+    EXPECT_STREQ("", device);
+    evp_pkey_ptr opened(store_open_key(name, "os", ""));
+    ASSERT_NE(nullptr, opened);
+    EXPECT_EQ(PublicKeyDer(key.get()), PublicKeyDer(opened.get()));
+    opened.reset();
+    key.reset();
+    ASSERT_EQ(1, store_delete_key(name, "os", ""));
+
+    EXPECT_EQ(nullptr, DecodeReferencePem(libctx, pem).get());
+    EXPECT_EQ(nullptr, mpss::KeyPair::Open(mpss::KeyLocation{"os", name, std::nullopt}));
+
+    key = GenerateKey(libctx, name, "os", MPSS_KEY_POLICY_NONE, "");
+    ASSERT_NE(nullptr, key);
+    EXPECT_EQ(nullptr, DecodeReferencePem(libctx, pem).get());
+    EXPECT_EQ(nullptr, DecodeReferencePem(libctx, LegacyReferencePemFor("os", name)).get());
+    EXPECT_NE(nullptr, DecodeReferencePem(libctx, EncodeReferencePem(key.get())).get());
+}
+
+#ifdef MPSS_BACKEND_YUBIKEY
+TEST_F(MPSSStore, DeviceParameterReportsAndPersistsActualDevice)
+{
+    const auto devices = mpss::get_available_devices("yubikey");
+    if (!devices || devices->empty())
+    {
+        GTEST_SKIP() << "YubiKey device not available";
+    }
+    const std::string device_id = devices->front();
+    const std::string name = test_key_name("mpss_reference_device");
+    const mpss_key_location_t location{"yubikey", name.c_str(), device_id.c_str()};
+    ASSERT_TRUE(mpss_delete_key_at(&location));
+    SCOPE_GUARD(mpss_delete_key_at(&location));
+    evp_pkey_ptr key =
+        GenerateKey(libctx, name, "yubikey", MPSS_KEY_POLICY_YUBIKEY_TOUCH_NEVER | MPSS_KEY_POLICY_YUBIKEY_PIN_ONCE,
+                    device_id.c_str());
+    if (!key)
+    {
+        GTEST_SKIP() << "YubiKey key creation unavailable: " << mpss_get_error();
+    }
+    std::array<char, 32> actual{};
+    std::size_t written = 0;
+    ASSERT_EQ(1, EVP_PKEY_get_utf8_string_param(key.get(), "mpss_device_id", actual.data(), actual.size(), &written));
+    EXPECT_EQ(device_id, actual.data());
+    const std::string pem = EncodeReferencePem(key.get());
+    EXPECT_EQ(BoundReference("yubikey", name, device_id, PublicKeyDer(key.get())), ReferenceBody(pem));
+    const evp_pkey_ptr opened(store_open_key(name, "yubikey", device_id.c_str()));
+    ASSERT_NE(nullptr, opened);
+    EXPECT_EQ(PublicKeyDer(key.get()), PublicKeyDer(opened.get()));
+    const evp_pkey_ptr decoded = DecodeReferencePem(libctx, pem);
+    ASSERT_NE(nullptr, decoded);
+    EXPECT_FALSE(SignDigest(libctx, decoded.get()).empty());
+
+    const char *configured = std::getenv("MPSS_YUBIKEY_SERIAL"); // NOLINT(concurrency-mt-unsafe)
+    const std::optional<std::string> saved =
+        nullptr == configured ? std::nullopt : std::optional<std::string>{configured};
+    SCOPE_GUARD({
+        if (saved)
+        {
+            setenv("MPSS_YUBIKEY_SERIAL", saved->c_str(), 1); // NOLINT(concurrency-mt-unsafe)
+        }
+        else
+        {
+            unsetenv("MPSS_YUBIKEY_SERIAL"); // NOLINT(concurrency-mt-unsafe)
+        }
+    });
+    std::uint32_t absent_serial = 1;
+    while (std::ranges::find(*devices, std::to_string(absent_serial)) != devices->end())
+    {
+        ++absent_serial;
+    }
+    const std::string absent_id = std::to_string(absent_serial);
+    ASSERT_EQ(0, setenv("MPSS_YUBIKEY_SERIAL", absent_id.c_str(), 1)); // NOLINT(concurrency-mt-unsafe)
+    EXPECT_EQ(nullptr, evp_pkey_ptr(store_open_key(name, "yubikey")));
+    EXPECT_NE(nullptr, evp_pkey_ptr(store_open_key(name, "yubikey", device_id.c_str())));
+    if (1 == devices->size())
+    {
+        EXPECT_NE(nullptr, evp_pkey_ptr(store_open_key(name, "yubikey", "")));
+    }
+    EXPECT_NE(nullptr, DecodeReferencePem(libctx, pem));
+    ERR_clear_error();
+}
+#endif
+
 // Scenario: a persisted provider key is exported to a reference PEM and imported back.
 // Expected behavior: the export matches the on-the-wire format byte for byte, and the re-imported
 // key is usable for signing.
@@ -1514,15 +1927,37 @@ TEST_F(MPSSStore, ReferencePemEncoderCarriesNameAndRoundTrips)
     // The reference pins the backend the key was opened on, even though the caller never named one,
     // so it cannot later resolve through a different default.
     const std::string pem = EncodeReferencePem(key.get());
-    EXPECT_EQ(ReferencePemFor(mpss::get_default_backend_name(), key_name), pem);
-    EXPECT_NE(ReferencePemFor("", key_name), pem);
+    std::array<char, 257> device{};
+    std::size_t device_size = 0;
+    ASSERT_EQ(1,
+              EVP_PKEY_get_utf8_string_param(key.get(), "mpss_device_id", device.data(), device.size(), &device_size));
+    EXPECT_EQ(BoundReference(mpss::get_default_backend_name(), key_name, device.data(), PublicKeyDer(key.get())),
+              ReferenceBody(pem));
     EXPECT_EQ(std::string::npos, pem.find("PRIVATE KEY"));
+    const auto cpp_reference = mpss::decode_key_reference_pem(pem);
+    ASSERT_TRUE(cpp_reference.has_value()) << mpss::get_error();
+    auto cpp_key = mpss::KeyPair::Open(*cpp_reference);
+    ASSERT_NE(nullptr, cpp_key) << mpss::get_error();
+    const auto captured = cpp_key->reference();
+    ASSERT_TRUE(captured.has_value()) << mpss::get_error();
+    const auto cpp_pem = mpss::encode_key_reference_pem(*captured);
+    ASSERT_TRUE(cpp_pem.has_value()) << mpss::get_error();
+    EXPECT_EQ(pem, *cpp_pem);
+    EXPECT_NE(nullptr, DecodeReferencePem(libctx, *cpp_pem));
+    cpp_key.reset();
 
     // The encoder advertises only the private-key selection, keeping public-key material out of the
     // reference path.
     EXPECT_TRUE(EncodeReferencePem(key.get(), EVP_PKEY_PUBLIC_KEY).empty());
 
     key.reset();
+    OSSL_LIB_CTX *application_context = OSSL_LIB_CTX_new();
+    ASSERT_NE(nullptr, application_context);
+    SCOPE_GUARD(OSSL_LIB_CTX_free(application_context));
+    ASSERT_EQ(1, EVP_set_default_properties(application_context, "provider=unavailable"));
+    OSSL_LIB_CTX *previous_context = OSSL_LIB_CTX_set0_default(application_context);
+    SCOPE_GUARD(OSSL_LIB_CTX_set0_default(previous_context));
+
     evp_pkey_ptr decoded = DecodeReferencePem(libctx, pem);
     ASSERT_NE(nullptr, decoded.get());
     EXPECT_FALSE(SignDigest(libctx, decoded.get()).empty());
@@ -1583,10 +2018,11 @@ TEST_F(MPSSStore, ReferencePemCarriesExplicitBackend)
         GTEST_SKIP() << "MPSS provider key generation on the os backend failed: " << mpss_get_error();
     }
 
-    EXPECT_EQ(ReferencePemFor("os", key_name), EncodeReferencePem(key.get()));
+    const std::string pem = EncodeReferencePem(key.get());
+    EXPECT_EQ(BoundReference("os", key_name, "", PublicKeyDer(key.get())), ReferenceBody(pem));
 
     key.reset();
-    evp_pkey_ptr decoded = DecodeReferencePem(libctx, ReferencePemFor("os", key_name));
+    evp_pkey_ptr decoded = DecodeReferencePem(libctx, pem);
     ASSERT_NE(nullptr, decoded.get());
     EXPECT_FALSE(SignDigest(libctx, decoded.get()).empty());
 }

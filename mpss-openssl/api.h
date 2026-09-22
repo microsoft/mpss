@@ -60,6 +60,31 @@ extern "C"
 #endif
 
     /**
+     * @brief A concrete backend and key name, with an optional backend-specific device identifier.
+     *
+     * backend_name and key_name must be non-null, non-empty strings. A NULL device_id requests
+     * automatic selection without consulting environment defaults; an empty device_id is invalid.
+     *
+     * The provider's "mpss_device_id" UTF8 parameter uses an empty string for explicit automatic
+     * selection instead. Omitting that parameter uses the default serial. It is
+     * settable for generation and store operations, and gettable as the resolved key's device ID
+     * (empty when the backend has no device identifier).
+     */
+    typedef struct mpss_key_location
+    {
+        const char *backend_name;
+        const char *key_name;
+        const char *device_id;
+    } mpss_key_location_t;
+
+    /**
+     * @brief Deletes the key at a location without consulting environment selection defaults.
+     * @param[in] location Non-null location. Device identifiers are locators, not authentication.
+     * @return True if deletion succeeds, false for an invalid location or storage failure.
+     */
+    MPSS_OPENSSL_DECOR bool mpss_delete_key_at(const mpss_key_location_t *location);
+
+    /**
      * @brief Deletes every key stored under the given name from safe storage.
      *
      * Does not require the name to resolve to a single usable key, so it also clears a name that

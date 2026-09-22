@@ -8,6 +8,7 @@
 #include "mpss-openssl/utils/names.h"
 #include "mpss-openssl/utils/ossl_ptr.h"
 #include "mpss-openssl/utils/utils.h"
+#include <array>
 #include <cstddef>
 #include <cstring>
 #include <openssl/bio.h>
@@ -26,9 +27,6 @@ namespace
 
 using namespace ::mpss_openssl::provider;
 using namespace ::mpss_openssl::utils;
-
-// mpss only issues EC keys, so a decoded reference is always an "EC" key object.
-constexpr const char *mpss_reference_object_data_type = "EC";
 
 // OSSL_FUNC_decoder_decode: 1 continues the decoder chain, 0 aborts it for every decoder.
 constexpr int decoder_continue = 1;
@@ -104,46 +102,104 @@ reference_parse_status parse_reference_input(OSSL_LIB_CTX *libctx, OSSL_CORE_BIO
     {
         return reference_parse_status::not_our_pem;
     }
-
     ERR_set_mark();
+
+    constexpr std::string_view begin = "-----BEGIN MPSS KEY REFERENCE-----";
+    constexpr std::string_view end = "-----END MPSS KEY REFERENCE-----";
+    std::array<char, 512> line{};
+    std::string encoded;
+    std::size_t scanned = 0;
+    bool recognized = false;
+    bool complete = false;
+    while (mpss_max_reference_pem_size > scanned)
+    {
+        const int count = BIO_gets(in.get(), line.data(), static_cast<int>(line.size()));
+        if (0 >= count)
+        {
+            break;
+        }
+        const std::string_view piece{line.data(), static_cast<std::size_t>(count)};
+        scanned += piece.size();
+        std::string_view trimmed = piece;
+        while (!trimmed.empty() && ('\r' == trimmed.back() || '\n' == trimmed.back()))
+        {
+            trimmed.remove_suffix(1);
+        }
+        if (!recognized)
+        {
+            if (!trimmed.starts_with("-----BEGIN "))
+            {
+                continue;
+            }
+            if (begin != trimmed)
+            {
+                ERR_pop_to_mark();
+                return reference_parse_status::not_our_pem;
+            }
+            recognized = true;
+            ERR_clear_last_mark();
+        }
+        if (mpss_max_reference_pem_size < scanned)
+        {
+            break;
+        }
+        encoded.append(piece);
+        if (end == trimmed)
+        {
+            complete = true;
+            break;
+        }
+    }
+    if (!recognized)
+    {
+        ERR_pop_to_mark();
+        return reference_parse_status::not_our_pem;
+    }
+    if (!complete)
+    {
+        ERR_raise(ERR_LIB_PROV, PROV_R_BAD_ENCODING);
+        return reference_parse_status::invalid_mpss_reference;
+    }
+    bio_ptr bounded(BIO_new_mem_buf(encoded.data(), static_cast<int>(encoded.size())));
+    if (!bounded)
+    {
+        ERR_raise(ERR_LIB_PROV, ERR_R_MALLOC_FAILURE);
+        return reference_parse_status::invalid_mpss_reference;
+    }
 
     char *pem_name = nullptr;
     char *pem_header = nullptr;
     unsigned char *pem_data = nullptr;
     long pem_data_len = 0;
-    const int pem_read = PEM_read_bio(in.get(), &pem_name, &pem_header, &pem_data, &pem_data_len);
+    const int pem_read = PEM_read_bio(bounded.get(), &pem_name, &pem_header, &pem_data, &pem_data_len);
     if (0 >= pem_read)
     {
-        // Discard the probe's errors and let the chain continue.
-        ERR_pop_to_mark();
-        return reference_parse_status::not_our_pem;
+        ERR_raise(ERR_LIB_PROV, PROV_R_BAD_ENCODING);
+        return reference_parse_status::invalid_mpss_reference;
     }
 
-    // PEM_read_bio allocates all three on success, including the header we never read.
     const openssl_buf_ptr<char> pem_name_owner(pem_name);
     const openssl_buf_ptr<char> pem_header_owner(pem_header);
     const openssl_buf_ptr<unsigned char> pem_data_owner(pem_data);
 
-    const bool is_mpss_reference =
-        nullptr != pem_name && 0 == std::strcmp(pem_name, mpss_key_reference_pem_label) && pem_data_len >= 0;
+    const bool is_mpss_reference = nullptr != pem_name && 0 == std::strcmp(pem_name, mpss_key_reference_pem_label) &&
+                                   0 <= pem_data_len &&
+                                   mpss_max_reference_size >= static_cast<std::size_t>(pem_data_len) &&
+                                   nullptr != pem_header && '\0' == *pem_header;
     if (!is_mpss_reference)
     {
-        ERR_pop_to_mark();
-        return reference_parse_status::not_our_pem;
+        ERR_raise(ERR_LIB_PROV, PROV_R_BAD_ENCODING);
+        return reference_parse_status::invalid_mpss_reference;
     }
 
-    // Our object: keep any genuine parse errors.
-    ERR_clear_last_mark();
-
     const std::span<const unsigned char> body{pem_data, static_cast<std::size_t>(pem_data_len)};
-    std::string backend;
-    std::string key_name;
-    if (!mpss_parse_key_load_reference(body, backend, key_name))
+    mpss_load_reference parsed;
+    mpss_reference_error error = mpss_reference_error::malformed;
+    if (!mpss_parse_key_load_reference(body, parsed, error) || mpss_reference_kind::bound != parsed.kind)
     {
-        // This aborts the whole decoder chain, so it must leave the caller something to report.
-        // Nothing below raises on its own, and the mark was cleared just above.
-        ERR_raise_data(ERR_LIB_PROV, PROV_R_BAD_ENCODING, "PEM label \"%s\" does not carry a usable key load reference",
-                       mpss_key_reference_pem_label);
+        ERR_raise_data(ERR_LIB_PROV,
+                       mpss_reference_error::unsupported == error ? PROV_R_NOT_SUPPORTED : PROV_R_BAD_ENCODING,
+                       "PEM label \"%s\" does not carry a usable key load reference", mpss_key_reference_pem_label);
         return reference_parse_status::invalid_mpss_reference;
     }
 
@@ -152,9 +208,9 @@ reference_parse_status parse_reference_input(OSSL_LIB_CTX *libctx, OSSL_CORE_BIO
     return reference_parse_status::ok;
 }
 
-extern "C" int mpss_decoder_decode(void *ctx, OSSL_CORE_BIO *cin, [[maybe_unused]] int selection,
-                                   OSSL_CALLBACK *object_cb, void *object_cbarg,
-                                   [[maybe_unused]] OSSL_PASSPHRASE_CALLBACK *pw_cb, [[maybe_unused]] void *pw_cbarg)
+extern "C" int mpss_decoder_decode(void *ctx, OSSL_CORE_BIO *cin, int selection, OSSL_CALLBACK *object_cb,
+                                   void *object_cbarg, [[maybe_unused]] OSSL_PASSPHRASE_CALLBACK *pw_cb,
+                                   [[maybe_unused]] void *pw_cbarg)
 try
 {
     mpss_decoder_ctx *dctx = static_cast<mpss_decoder_ctx *>(ctx);
@@ -162,6 +218,10 @@ try
     {
         ERR_raise(ERR_LIB_PROV, ERR_R_PASSED_NULL_PARAMETER);
         return decoder_hard_error;
+    }
+    if (0 != selection && 0 == (selection & OSSL_KEYMGMT_SELECT_PRIVATE_KEY))
+    {
+        return decoder_continue;
     }
 
     byte_vector reference;
@@ -178,8 +238,7 @@ try
     int object_type = OSSL_OBJECT_PKEY;
     const OSSL_PARAM params[] = {
         OSSL_PARAM_construct_int(OSSL_OBJECT_PARAM_TYPE, &object_type),
-        OSSL_PARAM_construct_utf8_string(OSSL_OBJECT_PARAM_DATA_TYPE,
-                                         const_cast<char *>(mpss_reference_object_data_type), 0),
+        OSSL_PARAM_construct_utf8_string(OSSL_OBJECT_PARAM_DATA_TYPE, const_cast<char *>(ec_data_type), 0),
         OSSL_PARAM_construct_octet_string(OSSL_OBJECT_PARAM_REFERENCE, reference.data(), reference.size()),
         OSSL_PARAM_END};
     // object_cb consumes the reference synchronously, so the local outlives the call.

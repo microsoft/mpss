@@ -12,8 +12,10 @@
 #include <openssl/err.h>
 #include <openssl/params.h>
 #include <openssl/store.h>
+#include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 
 namespace mpss_openssl::provider
 {
@@ -25,6 +27,7 @@ struct mpss_store_ctx
 {
     std::string key_name;
     std::string backend;
+    std::optional<std::string> device_id;
     int expected_type = 0;
     bool loaded = false;
 };
@@ -104,7 +107,13 @@ try
     // target backend and key name into it (see mpss_build_key_load_reference). The blob only needs to
     // outlive the synchronous object callback below, so a local is sufficient.
     byte_vector reference;
-    if (!mpss_build_key_load_reference(ctx->backend, ctx->key_name, reference))
+    const bool built =
+        ctx->device_id ? mpss_build_key_load_reference(
+                             mpss::KeyLocation{ctx->backend.empty() ? mpss::get_default_backend_name() : ctx->backend,
+                                               ctx->key_name, ctx->device_id->empty() ? std::nullopt : ctx->device_id},
+                             reference)
+                       : mpss_build_key_load_reference(ctx->backend, ctx->key_name, reference);
+    if (!built)
     {
         return 0;
     }
@@ -133,7 +142,8 @@ extern "C" const OSSL_PARAM *mpss_store_settable_ctx_params([[maybe_unused]] voi
 try
 {
     static const OSSL_PARAM settable[] = {OSSL_PARAM_int(OSSL_STORE_PARAM_EXPECT, nullptr),
-                                          OSSL_PARAM_utf8_string("mpss_backend", nullptr, 0), OSSL_PARAM_END};
+                                          OSSL_PARAM_utf8_string("mpss_backend", nullptr, 0),
+                                          OSSL_PARAM_utf8_string("mpss_device_id", nullptr, 0), OSSL_PARAM_END};
     return settable;
 }
 catch (...)
@@ -162,14 +172,20 @@ try
     const OSSL_PARAM *p = OSSL_PARAM_locate_const(params, "mpss_backend");
     if (nullptr != p)
     {
-        const char *value_str = nullptr;
-        // OSSL_PARAM_get_utf8_string_ptr returns success with *value_str == nullptr for a NULL-data
-        // param, so guard before assigning into std::string (operator=(nullptr) is UB via strlen).
-        if (!OSSL_PARAM_get_utf8_string_ptr(p, &value_str) || nullptr == value_str)
+        if (!get_utf8_parameter(p, ctx->backend))
         {
             return 0;
         }
-        ctx->backend = value_str;
+    }
+    p = OSSL_PARAM_locate_const(params, "mpss_device_id");
+    if (nullptr != p)
+    {
+        std::string value;
+        if (!get_utf8_parameter(p, value))
+        {
+            return 0;
+        }
+        ctx->device_id = std::move(value);
     }
 
     // The expected-object-type hint carries an OSSL_STORE_INFO_* value; mpss_store_load uses it to
@@ -247,14 +263,24 @@ try
     const OSSL_PARAM *p = (nullptr != params) ? OSSL_PARAM_locate_const(params, "mpss_backend") : nullptr;
     if (nullptr != p)
     {
-        const char *value_str = nullptr;
-        // OSSL_PARAM_get_utf8_string_ptr returns success with *value_str == nullptr for a NULL-data
-        // param, so guard before assigning into std::string (operator=(nullptr) is UB via strlen).
-        if (!OSSL_PARAM_get_utf8_string_ptr(p, &value_str) || nullptr == value_str)
+        if (!get_utf8_parameter(p, backend))
         {
             return 0;
         }
-        backend = value_str;
+    }
+
+    p = (nullptr != params) ? OSSL_PARAM_locate_const(params, "mpss_device_id") : nullptr;
+    if (nullptr != p)
+    {
+        std::string device_id;
+        if (!get_utf8_parameter(p, device_id))
+        {
+            return 0;
+        }
+        const mpss::KeyLocation location{backend.empty() ? mpss::get_default_backend_name() : backend,
+                                         std::string{key_name},
+                                         device_id.empty() ? std::nullopt : std::make_optional(device_id)};
+        return mpss::KeyPair::Delete(location) ? 1 : 0;
     }
 
     // Clear the name (default backend when none is given). A name that holds nothing already

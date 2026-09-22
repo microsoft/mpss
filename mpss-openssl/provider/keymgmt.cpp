@@ -12,6 +12,7 @@
 #include <openssl/core_names.h>
 #include <openssl/err.h>
 #include <openssl/params.h>
+#include <openssl/proverr.h>
 #include <span>
 #include <utility>
 
@@ -89,12 +90,14 @@ struct mpss_keymgmt_gen_ctx
     std::string key_name;
     std::string mpss_algorithm;
     std::optional<std::string> mpss_backend = std::nullopt;
+    std::optional<std::string> device_id = std::nullopt;
     std::uint64_t key_policy = 0;
     int selection{0};
 };
 
 mpss_key::mpss_key(std::string_view key_name, std::optional<std::string> &mpss_algorithm,
-                   const std::optional<std::string> &mpss_backend, mpss::KeyPolicy policy)
+                   const std::optional<std::string> &mpss_backend, mpss::KeyPolicy policy,
+                   const std::optional<std::string> &device_id)
 {
     // This constructor has a dual purpose. If mpss_algorithm is empty, it tries to open the key with the given name. If
     // mpss_algorithm is not empty, it tries to create a new key with the given name and algorithm.
@@ -108,7 +111,14 @@ mpss_key::mpss_key(std::string_view key_name, std::optional<std::string> &mpss_a
     if (!mpss_algorithm)
     {
         // If mpss_algorithm is empty, just try to open the key.
-        if (mpss_backend)
+        if (device_id)
+        {
+            const mpss::KeyLocation location{mpss_backend && !mpss_backend->empty() ? *mpss_backend
+                                                                                    : mpss::get_default_backend_name(),
+                                             std::string{key_name}, device_id->empty() ? std::nullopt : device_id};
+            key_pair = mpss::KeyPair::Open(location);
+        }
+        else if (mpss_backend)
         {
             key_pair = mpss::KeyPair::Open(key_name, mpss_backend.value());
         }
@@ -137,7 +147,14 @@ mpss_key::mpss_key(std::string_view key_name, std::optional<std::string> &mpss_a
         // Now try to create the key and save the algorithm in a local variable.
         if (mpss::Algorithm::unsupported != algorithm)
         {
-            if (mpss_backend)
+            if (device_id)
+            {
+                const mpss::KeyLocation location{
+                    mpss_backend && !mpss_backend->empty() ? *mpss_backend : mpss::get_default_backend_name(),
+                    std::string{key_name}, device_id->empty() ? std::nullopt : device_id};
+                key_pair = mpss::KeyPair::Create(location, algorithm, policy);
+            }
+            else if (mpss_backend)
             {
                 key_pair = mpss::KeyPair::Create(key_name, algorithm, mpss_backend.value(), policy);
             }
@@ -160,6 +177,22 @@ mpss_key::mpss_key(std::string_view key_name, std::optional<std::string> &mpss_a
 
     // Try to read the algorithm, group, and hash names from the key.
     name = key_name;
+    sig_name = try_get_signature_scheme(key_pair);
+    group_name = try_get_ec_group(key_pair);
+    hash_name = try_get_hash_func(key_pair);
+    alg_name = try_get_algorithm_name(key_pair);
+}
+
+mpss_key::mpss_key(std::unique_ptr<mpss::KeyPair> opened_key) : key_pair(std::move(opened_key))
+{
+    if (!key_pair)
+    {
+        return;
+    }
+    const mpss::KeyLocation location = key_pair->location();
+    name = location.name;
+    mpss_backend = location.backend_name;
+    mpss_algorithm = key_pair->algorithm_info().type_str;
     sig_name = try_get_signature_scheme(key_pair);
     group_name = try_get_ec_group(key_pair);
     hash_name = try_get_hash_func(key_pair);
@@ -295,10 +328,10 @@ extern "C" const OSSL_PARAM *mpss_keymgmt_gen_settable_params([[maybe_unused]] v
                                                               [[maybe_unused]] void *provctx)
 try
 {
-    static const OSSL_PARAM ret[] = {OSSL_PARAM_utf8_string("mpss_key_name", nullptr, 0),
-                                     OSSL_PARAM_utf8_string("mpss_algorithm", nullptr, 0),
-                                     OSSL_PARAM_utf8_string("mpss_backend", nullptr, 0),
-                                     OSSL_PARAM_uint64("mpss_key_policy", nullptr), OSSL_PARAM_END};
+    static const OSSL_PARAM ret[] = {
+        OSSL_PARAM_utf8_string("mpss_key_name", nullptr, 0), OSSL_PARAM_utf8_string("mpss_algorithm", nullptr, 0),
+        OSSL_PARAM_utf8_string("mpss_backend", nullptr, 0),  OSSL_PARAM_utf8_string("mpss_device_id", nullptr, 0),
+        OSSL_PARAM_uint64("mpss_key_policy", nullptr),       OSSL_PARAM_END};
 
     return ret;
 }
@@ -318,50 +351,55 @@ try
     {
         return 0;
     }
+    if (nullptr == params)
+    {
+        return 1;
+    }
 
     const OSSL_PARAM *p = OSSL_PARAM_locate_const(params, "mpss_key_name");
     if (nullptr != p)
     {
-        const char *value_str = nullptr;
-        // OSSL_PARAM_get_utf8_string_ptr returns success with *value_str == nullptr for a NULL-data
-        // param, so guard before assigning into std::string (operator=(nullptr) is UB via strlen).
-        if (!OSSL_PARAM_get_utf8_string_ptr(p, &value_str) || nullptr == value_str)
+        if (!get_utf8_parameter(p, ctx->key_name))
         {
             return 0;
         }
-        ctx->key_name = value_str;
     }
 
     p = OSSL_PARAM_locate_const(params, "mpss_algorithm");
     if (nullptr != p)
     {
-        const char *value_str = nullptr;
-        // OSSL_PARAM_get_utf8_string_ptr returns success with *value_str == nullptr for a NULL-data
-        // param, so guard before assigning into std::string (operator=(nullptr) is UB via strlen).
-        if (!OSSL_PARAM_get_utf8_string_ptr(p, &value_str) || nullptr == value_str)
+        if (!get_utf8_parameter(p, ctx->mpss_algorithm))
         {
             return 0;
         }
-        ctx->mpss_algorithm = value_str;
     }
 
     p = OSSL_PARAM_locate_const(params, "mpss_backend");
     if (nullptr != p)
     {
-        const char *value_str = nullptr;
-        // OSSL_PARAM_get_utf8_string_ptr returns success with *value_str == nullptr for a NULL-data
-        // param, so guard before assigning into std::string (operator=(nullptr) is UB via strlen).
-        if (!OSSL_PARAM_get_utf8_string_ptr(p, &value_str) || nullptr == value_str)
+        std::string value;
+        if (!get_utf8_parameter(p, value))
         {
             return 0;
         }
-        ctx->mpss_backend = value_str;
+        ctx->mpss_backend = std::move(value);
     }
 
     p = OSSL_PARAM_locate_const(params, "mpss_key_policy");
     if (nullptr != p && !OSSL_PARAM_get_uint64(p, &ctx->key_policy))
     {
         return 0;
+    }
+
+    p = OSSL_PARAM_locate_const(params, "mpss_device_id");
+    if (nullptr != p)
+    {
+        std::string value;
+        if (!get_utf8_parameter(p, value))
+        {
+            return 0;
+        }
+        ctx->device_id = std::move(value);
     }
 
     return 1;
@@ -378,6 +416,7 @@ try
     static const OSSL_PARAM ret[] = {OSSL_PARAM_utf8_string("mpss_key_name", nullptr, 0),
                                      OSSL_PARAM_utf8_string("mpss_algorithm", nullptr, 0),
                                      OSSL_PARAM_utf8_string("mpss_backend", nullptr, 0),
+                                     OSSL_PARAM_utf8_string("mpss_device_id", nullptr, 0),
                                      OSSL_PARAM_int("is_hardware_backed", nullptr),
                                      OSSL_PARAM_int("storage_tier", nullptr),
                                      OSSL_PARAM_utf8_string("storage_description", nullptr, 0),
@@ -416,6 +455,7 @@ try
     const std::string key_name = key->name.value_or("");
     const std::string mpss_algorithm = key->mpss_algorithm.value_or("");
     const char *mpss_backend = key->has_valid_key() ? key->key_pair->backend_name() : "";
+    const std::string device_id = key->has_valid_key() ? key->key_pair->location().device_id.value_or("") : "";
     std::int32_t bits = 0;
     std::int32_t security_bits = 0;
     const std::string mandatory_digest{key->hash_name.value_or("")};
@@ -445,6 +485,10 @@ try
         return 0;
     }
     if ((p = OSSL_PARAM_locate(params, "mpss_backend")) && !OSSL_PARAM_set_utf8_string(p, mpss_backend))
+    {
+        return 0;
+    }
+    if ((p = OSSL_PARAM_locate(params, "mpss_device_id")) && !OSSL_PARAM_set_utf8_string(p, device_id.c_str()))
     {
         return 0;
     }
@@ -555,7 +599,7 @@ try
     // Set up the new mpss_key struct with the right info.
     std::optional<std::string> mpss_algorithm = ctx->mpss_algorithm;
     const auto policy = static_cast<mpss::KeyPolicy>(ctx->key_policy);
-    mpss_key *pkey = mpss_new<mpss_key>(ctx->key_name, mpss_algorithm, ctx->mpss_backend, policy);
+    mpss_key *pkey = mpss_new<mpss_key>(ctx->key_name, mpss_algorithm, ctx->mpss_backend, policy, ctx->device_id);
     if (nullptr == pkey)
     {
         return nullptr;
@@ -621,36 +665,43 @@ catch (...)
 extern "C" void *mpss_keymgmt_load(const void *reference, std::size_t reference_sz)
 try
 {
-    // The store loader delivers a load reference (not key material). We parse it for a backend name
-    // (empty means default) and the key name, and reopen the existing key.
     if (nullptr == reference || 0 == reference_sz)
     {
         return nullptr;
     }
-    std::string backend_name;
-    std::string key_name;
+    mpss_load_reference parsed;
+    mpss_reference_error error = mpss_reference_error::malformed;
     if (!mpss_parse_key_load_reference(
-            std::span<const unsigned char>(static_cast<const unsigned char *>(reference), reference_sz), backend_name,
-            key_name))
+            std::span<const unsigned char>(static_cast<const unsigned char *>(reference), reference_sz), parsed, error))
     {
+        ERR_raise(ERR_LIB_PROV,
+                  mpss_reference_error::unsupported == error ? PROV_R_NOT_SUPPORTED : PROV_R_BAD_ENCODING);
         return nullptr;
     }
 
-    std::optional<std::string> no_algorithm = std::nullopt;
-    const std::optional<std::string> backend =
-        backend_name.empty() ? std::nullopt : std::make_optional(std::move(backend_name));
-    mpss_key *pkey = mpss_new<mpss_key>(key_name, no_algorithm, backend, mpss::KeyPolicy::none);
-    if (nullptr == pkey)
+    std::unique_ptr<mpss::KeyPair> opened;
+    if (mpss_reference_kind::bound == parsed.kind)
     {
-        return nullptr;
+        opened = mpss::KeyPair::Open(parsed.key);
     }
+    else if (mpss_reference_kind::default_locator == parsed.kind)
+    {
+        opened = parsed.key.location.backend_name.empty()
+                     ? mpss::KeyPair::Open(parsed.key.location.name)
+                     : mpss::KeyPair::Open(parsed.key.location.name, parsed.key.location.backend_name);
+    }
+    else
+    {
+        opened = mpss::KeyPair::Open(parsed.key.location);
+    }
+    mpss_ptr<mpss_key> pkey{mpss_new<mpss_key>(std::move(opened))};
     if (!pkey->has_valid_key())
     {
-        mpss_delete(pkey);
+        ERR_raise_data(ERR_LIB_PROV, ERR_R_OPERATION_FAIL, "%s", mpss::get_error().c_str());
         return nullptr;
     }
 
-    return pkey;
+    return pkey.release();
 }
 catch (...)
 {

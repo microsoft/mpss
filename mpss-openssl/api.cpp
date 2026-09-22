@@ -7,6 +7,7 @@
 #include <mpss/mpss.h>
 #include <mutex>
 #include <openssl/err.h>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -44,6 +45,25 @@ bool mpss_delete_key_from_backend(const char *key_name, const char *backend_name
 try
 {
     return mpss_openssl::utils::delete_key(as_view(key_name), as_view(backend_name));
+}
+catch (...)
+{
+    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    return false;
+}
+
+bool mpss_delete_key_at(const mpss_key_location_t *location)
+try
+{
+    if (nullptr == location)
+    {
+        ERR_raise(ERR_LIB_PROV, ERR_R_PASSED_NULL_PARAMETER);
+        return mpss::KeyPair::Delete(mpss::KeyLocation{});
+    }
+    const mpss::KeyLocation value{
+        std::string{as_view(location->backend_name)}, std::string{as_view(location->key_name)},
+        nullptr == location->device_id ? std::nullopt : std::make_optional(std::string{location->device_id})};
+    return mpss::KeyPair::Delete(value);
 }
 catch (...)
 {

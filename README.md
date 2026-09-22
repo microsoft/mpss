@@ -799,7 +799,7 @@ Encoding and decoding are offline: they validate field syntax, algorithms, and p
 Encoding preserves the supplied identity rather than replacing it with whatever currently occupies the location.
 Backend-specific device rules are enforced when the reference is opened.
 
-The C++ codec uses public-key-bound version 1 ASN.1 references under the `MPSS KEY REFERENCE` label; the provider's legacy reference format is separate.
+The C++ and provider encoders share one implementation and produce identical [key reference PEMs](#7-loading-a-key-from-a-key-reference-pem) for the same reference.
 Output uses 64-character Base64 lines and LF line endings.
 The C++ PEM decoder accepts one document with optional surrounding ASCII whitespace, up to 8192 bytes in total; DER input is limited to 4096 bytes and must contain exactly one canonical reference.
 Neither format contains private key material or credentials.
@@ -1432,6 +1432,7 @@ X509_free(cert);
 | `mpss_key_name` | UTF-8 string | Yes | A persistent name, unique within the selected backend, containing 1-64 printable ASCII characters. The YubiKey backend reserves `"(available)"`. |
 | `mpss_algorithm` | UTF-8 string | Yes | Algorithm suite, e.g., `"ecdsa_secp256r1_sha256"` |
 | `mpss_backend` | UTF-8 string | No | Backend name; defaults to the selected backend. List names with `mpss_get_available_backends()` |
+| `mpss_device_id` | UTF-8 string | No | Exact backend-specific device ID. For YubiKey, a decimal serial. An empty string requests automatic selection without the environment default; omission uses the default serial |
 | `mpss_key_policy` | uint64 | No | `MPSS_KEY_POLICY_*` fields from `api.h`; defaults to `NONE`. The backend must enforce the requested policy |
 
 **Gettable parameters** (queried via `EVP_PKEY_get_params` on an existing key):
@@ -1441,11 +1442,17 @@ X509_free(cert);
 | `mpss_key_name` | UTF-8 string | The key's persistent name. |
 | `mpss_algorithm` | UTF-8 string | The key's algorithm suite (canonical form). |
 | `mpss_backend` | UTF-8 string | The backend that created or opened the key. |
+| `mpss_device_id` | UTF-8 string | The device actually used, as a canonical decimal serial for YubiKey; empty for backends without device IDs. Read-only on an existing key |
 | `is_hardware_backed` | int | The core `KeyInfo` boolean, exposed as `1` or `0`. See [Threat Model](#threat-model) for what it reports; on Windows only TPM keys report `1`. |
 | `storage_tier` | int | The exact tier, as the number of the corresponding `mpss::StorageTier`. The numbers are fixed and only ever appended to, and `MPSS_STORAGE_TIER_*` in `mpss-openssl/api.h` names them; a value those constants do not name is a tier newer than the consumer's headers, so fall back to the two parameters that are answered for every tier. |
 | `storage_description` | UTF-8 string | Human-readable description of the storage location (e.g., `"Keychain"`, `"YubiKey PIV"`). Intended for display; compare `storage_tier` rather than this string. |
 
 The standard OpenSSL parameters `OSSL_PKEY_PARAM_GROUP_NAME`, `OSSL_PKEY_PARAM_BITS`, `OSSL_PKEY_PARAM_SECURITY_BITS`, `OSSL_PKEY_PARAM_MANDATORY_DIGEST`, and `OSSL_PKEY_PARAM_DEFAULT_DIGEST` are also supported.
+
+`mpss_device_id` is also accepted by `OSSL_STORE_open_ex` and `OSSL_STORE_delete`.
+Supply it with `mpss_backend` to select a particular device without changing process-wide defaults.
+Retrieve the actual serial from a generated or opened key with `EVP_PKEY_get_utf8_string_param(pkey, "mpss_device_id", ...)`.
+The returned device metadata remains associated with that key; a setter cannot retarget an existing `EVP_PKEY`.
 
 #### 5. Certificate Authority and Certificate Chain Creation
 
@@ -1476,7 +1483,13 @@ OSSL_STORE_delete("mpss:my-old-key", libctx, "provider=mpss", nullptr, nullptr, 
 
 bool cleared = mpss_delete_key("my-old-key");
 // Or: mpss_delete_key_from_backend("my-old-key", "yubikey");
+
+mpss_key_location_t location{"yubikey", "my-old-key", "35489220"};
+bool cleared_on_device = mpss_delete_key_at(&location);
 ```
+
+For `mpss_delete_key_at`, a null device ID requests automatic selection without consulting the serial environment variable.
+An explicitly selected device that cannot be reached is an error, not proof that the name is absent.
 
 Do not use handles to deleted keys. Freeing an `EVP_PKEY` alone does not delete the stored key.
 Deletion is irreversible but does not prevent verification of existing signatures or certificates.
@@ -1484,16 +1497,42 @@ MPSS does not provide key-name enumeration.
 
 #### 7. Loading a Key from a Key Reference PEM
 
-For applications that load keys from files, use a **key reference PEM**. It contains a
-backend and key name, not private key material:
+For applications that load keys from files, use a **key reference PEM**.
+The PEM body is a DER-encoded ASN.1 structure containing a format version, the resolved backend and key name, an optional device ID, and the expected public key as SubjectPublicKeyInfo (SPKI).
+They contain no private key material, PIN, management key, or reader name.
+The device ID is backend-specific: a YubiKey reference records its actual serial, while an operating-system key needs no device ID.
 
 ```
 -----BEGIN MPSS KEY REFERENCE-----
-b3MAbXkta2V5
+... base64-encoded reference ...
 -----END MPSS KEY REFERENCE-----
 ```
 
-The body is base64-encoded `<backend>\0<key_name>` (`os\0my-key` above).
+The encoder below produces the reference; applications should not construct its binary representation manually.
+Encoding reads the key's public metadata and can fail if the backing device or storage is unavailable.
+It does not request a proof-of-possession signature.
+
+The version 1 ASN.1 schema is:
+
+```asn1
+MPSSKeyReference ::= SEQUENCE {
+    version    INTEGER,                         -- must be 1
+    backend    UTF8String,
+    keyName    UTF8String,
+    deviceId   [0] EXPLICIT UTF8String OPTIONAL,
+    publicKey  SubjectPublicKeyInfo
+}
+```
+
+OpenSSL's ASN.1 templates handle encoding and decoding; there is no MPSS-specific length header or reference-kind field in the file.
+Backend and key names must contain 1-64 printable ASCII bytes; an optional device ID must contain 1-256 printable ASCII bytes and satisfy the selected backend's device-ID rules.
+The decoded reference is limited to 4096 bytes and the PEM input to 8192 bytes.
+Non-DER encodings, trailing data, extra fields, missing public keys, unsupported versions, and invalid public keys are rejected before opening a key.
+
+A future format can introduce a new version and schema.
+Readers supporting that version can validate older references with the older schema and convert their contents to the current in-memory representation.
+Conversion must preserve device selection and expected-key constraints; it cannot invent new required information or silently discard constraints it does not understand.
+Version 1 readers reject later versions rather than interpreting them as version 1.
 
 **Writing a reference.** The reference is produced through the standard encoder API, selecting the
 `MpssKeyReference` output structure:
@@ -1528,10 +1567,27 @@ EVP_PKEY_free(key);
 
 `PEM_write_bio_PrivateKey` requests private material and fails; use the reference encoder above.
 
-A reference resolves the name again in its recorded backend, using current device-selection
-rules. It contains no fingerprint or device serial: replacing the file or reusing the key name
-can select a different key. Protect reference files as credential-selection configuration.
-Reading fails if the name is absent, ambiguous, or inaccessible.
+A reference resolves only its recorded location and checks the public key before returning a handle.
+Reading never creates a key, silently chooses another device, or replaces a mismatched expected key.
+A reference-bound signing operation verifies the returned signature on the host against that expected key before reporting success.
+This catches a device that reports the expected public key but produces a signature under a different key, without requesting a second signature.
+Loading itself does not add a signing challenge or proof-of-possession prompt; normal backend access may still require interaction.
+
+Only versioned reference PEMs containing an expected public key are accepted.
+The old `<backend>\0<key_name>` and custom `MPSS-REF` binary formats are not supported.
+Internal store locator messages use a separate ASN.1 structure and are rejected as PEM input.
+Ordinary `mpss:` store URIs still support name-based loading and device-selection defaults; exporting a loaded key records its current location and public key.
+
+**Trust and proof of possession.** Treat a reference as credential-selection configuration, not an authentication certificate.
+Parsing it safely does not authorize an untrusted party to choose a local credential for the application.
+Protect the file's integrity or retain the enrolled public key through an independently trusted channel, such as the application's enrollment database or a relying party.
+An attacker able to replace the entire reference can replace its public key too; neither a self-signature nor a challenge verified against that substituted key recovers the original trust.
+
+Public-key comparison checks reported identity, not current access to the private key.
+If an application needs fresh proof of signing access, it should explicitly request a signature over an unpredictable, purpose-specific challenge and verify it against the independently trusted public key.
+Ordinary signature verification establishes valid output; freshness additionally requires an unpredictable challenge or the application's existing authentication protocol.
+Such a proof can require a PIN or touch, does not authenticate the reader or establish hardware provenance, and does not prevent relaying to the genuine signing key.
+References are therefore not self-signed and loading them does not perform this challenge automatically.
 
 ### Errors and the OpenSSL Error Queue
 
