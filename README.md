@@ -680,9 +680,8 @@ if (!deleted) {
 }
 ```
 
-The member `delete_key()` requires an open handle, and finishes that handle: once it succeeds the
-handle is released, and every operation on it fails from then on. Use static `KeyPair::Delete` to
-clear a name without opening it, including an ambiguous name:
+The member `delete_key()` requires an open handle, and finishes that handle: once it succeeds the handle is released, and the operations that reach the key fail from then on, as described under [Handle Lifetime](#handle-lifetime).
+Use static `KeyPair::Delete` to clear a name without opening it, including an ambiguous name:
 
 ```cpp
 // Clear a name outright, including one that Open refuses as ambiguous.
@@ -699,7 +698,7 @@ do not reuse the name until a later call succeeds.
 
 Windows skips providers it cannot open, so success does not establish absence there.
 YubiKey deletion by name requires a valid [slot label](#yubikey-backend-limitations-and-considerations).
-Handles to a deleted key refuse every operation afterwards, whichever API deleted it.
+Handles to a deleted key cannot reach it afterwards, whichever API deleted it.
 
 ### Handle Lifetime
 
@@ -720,18 +719,19 @@ The return value reports whether everything the handle held was given up. A `fal
 invite another attempt: the handle is finished either way, and releasing it again repeats what the
 one attempt reported.
 
-A handle also stops working when the name it opened moves on. A key can be deleted and created
-again under the same name while a handle to the old key is still open; that handle does not
-silently follow the name to the new key. Every operation on it fails with an error naming the
-reason:
+A handle also stops working when the name it opened moves on.
+A key can be deleted and created again under the same name while a handle to the old key is still open; that handle does not silently follow the name to the new key.
+The name is tracked within the process, so this covers a key MPSS itself replaced; one replaced by another process or tool is not seen.
+Signing, verification, public key extraction and deletion through it fail with an error naming the reason:
 
 ```text
 Key 'my-key' is no longer the key this handle opened.
 ```
 
-That is deliberately different from reporting the key as missing, since a caller told a key is
-absent will reasonably try to create it. Open the name again to get a handle to whatever holds it
-now.
+What the handle recorded still answers, as it does after releasing: `algorithm`, `key_info`, `sign_hash_size` and `extract_key_size` never reach the key, and neither do the size requests spelled as `sign_hash` and `extract_key` with an empty buffer.
+
+That is deliberately different from reporting the key as missing, since a caller told a key is absent will reasonably try to create it.
+Open the name again to get a handle to whatever holds it now.
 
 ### Key Policies
 

@@ -6,14 +6,44 @@
 #include "mpss/utils/utilities.h"
 #include <Windows.h>
 #include <algorithm>
+#include <cstdint>
 #include <memory>
+#include <mutex>
 #include <ncrypt.h>
+#include <string>
 
 namespace mpss::impl::os
 {
 
+WindowsKeyPair::WindowsKeyPair(std::string_view name, mpss::Algorithm algorithm, NCRYPT_KEY_HANDLE handle,
+                               mpss::StorageTier storage_tier, std::uint64_t generation)
+    : mpss::KeyPair(algorithm, storage_tier), name_{name}, key_handle_{handle}, generation_{generation}
+{
+}
+
+bool WindowsKeyPair::still_holds_opened_key() const
+{
+    if (utils::current_key_generation(name_) != generation_)
+    {
+        mpss::utils::log_and_set_error("Key '{}' is no longer the key this handle opened.", name_);
+        return false;
+    }
+
+    return true;
+}
+
 bool WindowsKeyPair::do_delete_key()
 {
+    // Prevent another MPSS thread from replacing this key between the generation check
+    // and deletion. KeyPair::Create, Open and Delete use the same mutex for this name.
+    const std::scoped_lock lifecycle{mpss::utils::name_mutex(name_)};
+
+    // An old Windows handle can delete a replacement key with the same name.
+    if (!still_holds_opened_key())
+    {
+        return false;
+    }
+
     mpss::utils::log_trace("Deleting Windows key.");
     SECURITY_STATUS status = ::NCryptDeleteKey(key_handle_, /* dwFlags */ 0);
     if (ERROR_SUCCESS != status)
@@ -21,6 +51,9 @@ bool WindowsKeyPair::do_delete_key()
         mpss::utils::log_and_set_error("NCryptDeleteKey failed with error code {}.", mpss::utils::to_hex(status));
         return false;
     }
+
+    // The name is free again, so nothing that opened the key just removed still holds it.
+    utils::invalidate_key_generation(name_);
 
     // NCryptDeleteKey frees the handle on success.
     clear_handle();
@@ -31,6 +64,11 @@ bool WindowsKeyPair::do_delete_key()
 
 std::size_t WindowsKeyPair::do_sign_hash(std::span<const std::byte> hash, std::span<std::byte> sig) const
 {
+    if (!still_holds_opened_key())
+    {
+        return 0;
+    }
+
     mpss::utils::log_trace("Signing hash with Windows key, hash size {}.", hash.size());
 
     const std::size_t hash_bytes = hash.size();
@@ -131,6 +169,11 @@ std::size_t WindowsKeyPair::do_sign_hash(std::span<const std::byte> hash, std::s
 
 bool WindowsKeyPair::do_verify(std::span<const std::byte> hash, std::span<const std::byte> sig) const
 {
+    if (!still_holds_opened_key())
+    {
+        return false;
+    }
+
     const std::size_t hash_bytes = hash.size();
     const DWORD hash_bytes_dw = mpss::utils::narrow_or_error<DWORD>(hash_bytes);
     if (0 == hash_bytes_dw)
@@ -171,6 +214,11 @@ bool WindowsKeyPair::do_verify(std::span<const std::byte> hash, std::span<const 
 
 std::size_t WindowsKeyPair::do_extract_key(std::span<std::byte> public_key) const
 {
+    if (!still_holds_opened_key())
+    {
+        return 0;
+    }
+
     mpss::utils::log_trace("Extracting public key from Windows key.");
 
     crypto_params const *const crypto = utils::get_crypto_params(algorithm_);

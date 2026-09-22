@@ -511,6 +511,11 @@ TryOpenKeyResult try_open_key(std::string_view name)
 
     Algorithm algorithm{unsupported};
 
+    // KeyPair::Open and KeyPair::Create hold name_mutex(name) while this runs.
+    // Deletion takes the same mutex, so another MPSS thread cannot replace the key
+    // between reading its generation and opening it.
+    const std::uint64_t generation = utils::current_key_generation(name);
+
     StorageTier storage_tier = StorageTier::unknown;
     OpenKeyResult found_key = GetKey(name, &storage_tier);
     if (found != found_key.status)
@@ -562,7 +567,8 @@ TryOpenKeyResult try_open_key(std::string_view name)
     }
 
     mpss::utils::log_trace("Key '{}' opened with {} storage.", name, get_storage_tier_info(storage_tier).description);
-    return {.status = found, .value = std::make_unique<WindowsKeyPair>(algorithm, key_handle, storage_tier)};
+    return {.status = found,
+            .value = std::make_unique<WindowsKeyPair>(name, algorithm, key_handle, storage_tier, generation)};
 }
 
 std::unique_ptr<KeyPair> open_key(std::string_view name)
@@ -621,6 +627,9 @@ bool delete_key(std::string_view name)
             undetermined = true;
             continue;
         }
+
+        // The name is free again, so nothing that opened the key just removed still holds it.
+        utils::invalidate_key_generation(name);
         ++deleted;
     }
 
@@ -693,6 +702,11 @@ std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm, 
 
     // Report why each provider failed; the reasons usually differ.
     std::string errors;
+
+    // KeyPair::Create holds name_mutex(name), so deletion cannot change this generation
+    // while the new key is being created.
+    const std::uint64_t generation = utils::current_key_generation(name);
+
     for (const key_storage_provider &provider : create_providers)
     {
         mpss::utils::log_trace("Creating key '{}' with {} provider.", name,
@@ -714,6 +728,10 @@ std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm, 
                     {
                         ::NCryptFreeObject(key_handle);
                     }
+
+                    // No handle was ever issued for this key, so nothing can be holding it. Moved
+                    // on anyway, so that every deletion here advances the name without exception.
+                    utils::invalidate_key_generation(name);
                     return nullptr;
                 }
 
@@ -726,7 +744,7 @@ std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm, 
 
             mpss::utils::log_trace("Key '{}' created with '{}' storage.", name,
                                    get_storage_tier_info(storage_tier).description);
-            return std::make_unique<WindowsKeyPair>(algorithm, key_handle, storage_tier);
+            return std::make_unique<WindowsKeyPair>(name, algorithm, key_handle, storage_tier, generation);
         }
 
         if (!errors.empty())

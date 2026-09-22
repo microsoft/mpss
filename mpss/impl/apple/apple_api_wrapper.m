@@ -14,14 +14,16 @@
 #error "This file requires automatic reference counting; build with -fobjc-arc."
 #endif
 
-// What a name holds while it is cached: the key itself, how many open handles depend on it so that
-// one handle's close does not evict an entry another is still using, and which entry those holds
-// were taken on. A name can be deleted and created again while a handle to the old key is still
-// alive, and that handle's release must not be charged against the new key, so a release for a
-// generation the cache has moved past does nothing. Generations are never reused.
+// A generation identifies a cache entry, not the stored key itself. Handles save this
+// number so an old handle cannot use a replacement entry or reduce its reference count.
+// A new entry gets a new generation; additional opens reuse the existing generation.
 //
-// The three travel together in one entry rather than in parallel dictionaries, so a hold on a name
-// with no key, or a key with no generation, cannot be written by forgetting one of them.
+// Deletion removes the entry even if handles remain open. Closing the last handle also
+// removes the entry, but does not delete the stored key. Reopening then gets a new
+// generation even though the stored key has not changed.
+//
+// Windows instead tracks deletions by name: only deletion assigns a new generation,
+// so closing and reopening a key does not change it.
 @interface MPSSCacheEntry : NSObject
 @property(nonatomic, strong) id key;
 @property(nonatomic, assign) NSInteger holds;

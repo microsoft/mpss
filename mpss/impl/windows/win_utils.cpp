@@ -5,7 +5,10 @@
 #include "mpss/utils/utilities.h"
 #include <Windows.h>
 #include <algorithm>
+#include <map>
+#include <mutex>
 #include <ncrypt.h>
+#include <string>
 
 namespace
 {
@@ -15,10 +18,56 @@ constexpr mpss::impl::os::ECDSA_P256 ecdsa_p256;
 constexpr mpss::impl::os::ECDSA_P384 ecdsa_p384;
 constexpr mpss::impl::os::ECDSA_P521 ecdsa_p521;
 
+struct KeyGenerations
+{
+    std::mutex mtx;
+
+    // Generations are never reused, so one issued after a name was deleted can never equal one a
+    // handle recorded before. Counting globally rather than per name is what Apple and Android do.
+    std::uint64_t next_generation = 0;
+
+    // Only names deleted in this process are recorded. A name absent from here has never been
+    // deleted here, which every handle reads as the same generation without needing an entry.
+    std::map<std::string, std::uint64_t, std::less<>> by_name;
+};
+
+[[nodiscard]]
+KeyGenerations &key_generations()
+{
+    // Immortal singleton, for the same reason as the global logger: a host static destroyed after
+    // this one would otherwise lock a destroyed mutex. The one-time allocation is reclaimed by the
+    // OS at process exit, and nothing secret is held.
+    static KeyGenerations &state = *new KeyGenerations{}; // NOLINT(cppcoreguidelines-owning-memory) - intentional
+                                                          // immortal singleton, never freed.
+    return state;
+}
+
 } // namespace
 
 namespace mpss::impl::os::utils
 {
+
+std::uint64_t current_key_generation(std::string_view name)
+{
+    KeyGenerations &state = key_generations();
+    const std::scoped_lock lock{state.mtx};
+
+    const auto entry = state.by_name.find(name);
+    if (state.by_name.end() == entry)
+    {
+        return never_deleted_generation;
+    }
+
+    return entry->second;
+}
+
+void invalidate_key_generation(std::string_view name)
+{
+    KeyGenerations &state = key_generations();
+    const std::scoped_lock lock{state.mtx};
+
+    state.by_name.insert_or_assign(std::string{name}, ++state.next_generation);
+}
 
 using enum mpss::Algorithm;
 
