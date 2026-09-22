@@ -448,10 +448,18 @@ void StaleHandleCannotReachAReplacementKey(Algorithm algorithm, std::string_view
 
     const std::vector<std::byte> hash(hash_size, std::byte{0x2A});
     std::vector<std::byte> signature(stale->sign_hash_size());
+
+    // The reason is documented, and it is deliberately not "missing": a caller told the key is
+    // absent would reasonably create it, which is the one thing that must not follow from this.
+    constexpr std::string_view superseded = "no longer the key this handle opened";
+
     EXPECT_EQ(0, stale->sign_hash(hash, signature));
+    EXPECT_NE(std::string::npos, mpss::get_error().find(superseded)) << mpss::get_error();
     std::vector<std::byte> stale_public_key(pk_size);
     EXPECT_EQ(0, stale->extract_key(stale_public_key));
+    EXPECT_NE(std::string::npos, mpss::get_error().find(superseded)) << mpss::get_error();
     EXPECT_FALSE(stale->delete_key());
+    EXPECT_NE(std::string::npos, mpss::get_error().find(superseded)) << mpss::get_error();
 
     // The replacement is untouched by any of that.
     std::vector<std::byte> after(pk_size);

@@ -24,7 +24,7 @@ struct KeyGenerations
 
     // Generations are never reused, so one issued after a name was deleted can never equal one a
     // handle recorded before. Counting globally rather than per name is what Apple and Android do.
-    std::uint64_t next_generation = 0;
+    std::uint64_t last_issued_generation = 0;
 
     // Only names deleted in this process are recorded. A name absent from here has never been
     // deleted here, which every handle reads as the same generation without needing an entry.
@@ -66,7 +66,7 @@ void invalidate_key_generation(std::string_view name)
     KeyGenerations &state = key_generations();
     const std::scoped_lock lock{state.mtx};
 
-    state.by_name.insert_or_assign(std::string{name}, ++state.next_generation);
+    state.by_name.insert_or_assign(std::string{name}, ++state.last_issued_generation);
 }
 
 using enum mpss::Algorithm;
