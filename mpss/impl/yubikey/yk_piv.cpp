@@ -32,26 +32,22 @@
 namespace
 {
 
-// One device serves one connection at a time. A PIV session is stateful, since verifying a PIN and
-// then signing are separate exchanges carried on the same connection, so two threads addressing one
-// device would interleave exchanges that each assume they are alone. The device lock is taken per
-// serial and held for the life of the connection, a wait for a touch included, which is why a
-// second thread waits rather than racing.
-//
-// Connecting to a device disturbs what a session has established on it, a verified PIN among that.
-// A scan connects to every reader in turn, so it cannot run beside any connection at all: a scan
-// takes the bus exclusively and a connection takes it shared. Which reader answers for a serial is
-// remembered, so opening a connection addresses that reader alone rather than scanning towards it
-// and disturbing every device it passes on the way.
-//
-// The bus is acquired before a device and never while one is held, so the two cannot deadlock
-// against each other, and a scan is never needed while the bus is held shared.
+// Acquire the bus before a per-serial lock; never scan while holding the bus shared.
+// These locks coordinate this library's threads, not access from other processes.
 struct DeviceLocks
 {
+    // Connections hold this shared; discovery holds it exclusively so scans cannot disturb PIV sessions.
     std::shared_mutex bus;
+
+    // Protects reads and writes of both maps, including the cached reader vectors.
     std::mutex registry;
+
+    // Each pointed-to mutex serializes connections to one serial, from PIN authentication through signing.
+    // Find/create it under registry, then release registry before acquiring the per-serial lock.
     std::map<std::uint32_t, std::unique_ptr<std::mutex>> by_serial;
+
     // Cached routes avoid reconnecting to unrelated devices and disturbing their authenticated sessions.
+    // Protected by registry; holding the bus shared alone does not make map access safe.
     std::map<std::uint32_t, std::vector<std::string>> readers_by_serial;
 };
 
@@ -78,6 +74,7 @@ std::mutex &device_mutex(std::uint32_t serial)
     {
         device = std::make_unique<std::mutex>();
     }
+    // Entries are never erased, so the returned mutex remains valid after registry is unlocked.
     return *device;
 }
 
@@ -157,8 +154,8 @@ std::optional<std::vector<std::uint32_t>> scan_readers_locked()
     return serials;
 }
 
-// Which reader is remembered for a serial, if any. The caller must already hold the bus, so that a
-// scan cannot replace the mapping between reading it and connecting to what it named.
+// Caller holds the bus shared or exclusively through connection establishment, preventing a rescan.
+// Locks registry internally to copy the routes; the caller must not already hold registry.
 [[nodiscard]]
 std::vector<std::string> cached_readers(std::uint32_t serial)
 {

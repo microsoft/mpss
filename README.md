@@ -1157,15 +1157,14 @@ if (!key) {
     return;
 }
 
-mpss::KeyReference reference{
-    key->location(), key->algorithm(), std::vector<std::byte>(key->extract_key_size())};
-if (key->extract_key(reference.public_key) != reference.public_key.size()) {
-    // Do not save an incomplete reference.
+std::optional<mpss::KeyReference> reference = key->reference();
+if (!reference) {
+    // Report mpss::get_error().
     return;
 }
 
-// Persist reference in trusted application storage, then reopen the same key later.
-auto reopened = mpss::KeyPair::Open(reference);
+// Persist *reference in trusted application storage, then reopen the same key later.
+auto reopened = mpss::KeyPair::Open(*reference);
 ```
 
 `Open(location)` selects by location only; `Open(reference)` also requires the expected algorithm and public key.
