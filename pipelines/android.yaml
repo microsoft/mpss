@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT license.
+
 parameters:
   x64Preset: 'android-x64-release'
   arm64Preset: 'android-arm64-release'

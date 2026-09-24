@@ -84,6 +84,9 @@ endif()
 
 # The provider always needs the core serializer, regardless of how the provider was enabled.
 if(MPSS_BUILD_MPSS_OPENSSL_STATIC OR MPSS_BUILD_MPSS_OPENSSL_SHARED)
+    if(NOT MPSS_WITH_SERIALIZATION)
+        message(STATUS "[mpss] Key-reference serialization enabled by the provider.")
+    endif()
     set(MPSS_WITH_SERIALIZATION ON)
     list(APPEND VCPKG_MANIFEST_FEATURES "openssl")
 endif()

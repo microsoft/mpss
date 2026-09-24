@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT license.
+
 # This file selects the correct job definition based on system and buildType.
 
 parameters:
