@@ -198,10 +198,16 @@ bool WindowsKeyPair::do_verify(std::span<const std::byte> hash, std::span<const 
         return false;
     }
 
+    const DWORD raw_sig_size_dw = mpss::utils::narrow_or_error<DWORD>(raw_sig_size);
+    if (0 == raw_sig_size_dw)
+    {
+        return false;
+    }
+
     SECURITY_STATUS status = ::NCryptVerifySignature(
         key_handle_,
         /* pPaddingInfo */ nullptr, reinterpret_cast<PBYTE>(const_cast<std::byte *>(hash.data())), hash_bytes_dw,
-        reinterpret_cast<PBYTE>(raw_sig_span.data()), raw_sig_size,
+        reinterpret_cast<PBYTE>(raw_sig_span.data()), raw_sig_size_dw,
         /* dwFlags */ 0);
     if (ERROR_SUCCESS != status)
     {
@@ -222,6 +228,11 @@ std::size_t WindowsKeyPair::do_extract_key(std::span<std::byte> public_key) cons
     mpss::utils::log_trace("Extracting public key from Windows key.");
 
     crypto_params const *const crypto = utils::get_crypto_params(algorithm_);
+    if (nullptr == crypto)
+    {
+        mpss::utils::log_and_set_error("Unsupported algorithm '{}'.", get_algorithm_info(algorithm()).type_str);
+        return 0;
+    }
 
     // Get the public key size.
     DWORD pk_blob_size = 0;
@@ -277,8 +288,8 @@ std::size_t WindowsKeyPair::do_extract_key(std::span<std::byte> public_key) cons
     const std::size_t pk_expected_size = pk_data_end - pk_data_start + 1;
     if (mpss::utils::get_public_key_size(algorithm()) != pk_expected_size)
     {
-        mpss::utils::log_and_set_error("Unexpected public key size. Expected {} bytes, got {} bytes.", pk_expected_size,
-                                       pk_expected_size);
+        mpss::utils::log_and_set_error("Unexpected public key size. Expected {} bytes, got {} bytes.",
+                                       mpss::utils::get_public_key_size(algorithm()), pk_expected_size);
         return 0;
     }
 

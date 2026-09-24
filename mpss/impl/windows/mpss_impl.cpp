@@ -384,12 +384,12 @@ CreateKeyResult CreateKeyInProvider(LPCWSTR provider_name, std::string_view name
     return {.outcome = CreateOutcome::created, .value = result};
 }
 
-// VBS and software share a CNG provider and differ only by the require_vbs flag.
 CreateKeyResult CreateKeyTpm(std::string_view name, mpss::Algorithm algorithm)
 {
     return CreateKeyInProvider(tpm_provider_name, name, algorithm, /* create_flags */ 0);
 }
 
+// VBS and software share a CNG provider and differ only by the require_vbs flag.
 CreateKeyResult CreateKeyVbs(std::string_view name, mpss::Algorithm algorithm)
 {
     return CreateKeyInProvider(software_ksp_name, name, algorithm, require_vbs);
@@ -790,8 +790,14 @@ bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_k
         return false;
     }
 
+    if (mpss::utils::get_public_key_size(algorithm) != public_key.size())
+    {
+        mpss::utils::log_and_set_error("Invalid public key size.");
+        return false;
+    }
+
     // Check compression indicator
-    if (public_key[0] != std::byte{0x04})
+    if (std::byte{0x04} != public_key[0])
     {
         mpss::utils::log_and_set_error("Invalid public key format.");
         return false;
@@ -809,7 +815,12 @@ bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_k
     }
 
     // Build the key blob.
-    const DWORD pk_blob_size = sizeof(crypto_params::key_blob_t) + public_key.size() - 1;
+    const DWORD pk_blob_size =
+        mpss::utils::narrow_or_error<DWORD>(sizeof(crypto_params::key_blob_t) + public_key.size() - 1);
+    if (0 == pk_blob_size)
+    {
+        return false;
+    }
     std::unique_ptr<BYTE[]> key_blob_buffer = std::make_unique<BYTE[]>(pk_blob_size);
 
     crypto_params::key_blob_t *key_blob = reinterpret_cast<crypto_params::key_blob_t *>(key_blob_buffer.get());
@@ -861,6 +872,11 @@ bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_k
     std::unique_ptr<std::byte[]> raw_sig = std::make_unique<std::byte[]>(raw_sig_size);
     std::span<std::byte> raw_sig_span(raw_sig.get(), raw_sig_size);
     raw_sig_size = utils::decode_raw_signature(sig, algorithm, raw_sig_span);
+    const DWORD raw_sig_size_dw = mpss::utils::narrow_or_error<DWORD>(raw_sig_size);
+    if (0 == raw_sig_size_dw)
+    {
+        return false;
+    }
 
     const DWORD hash_size = mpss::utils::narrow_or_error<DWORD>(hash.size());
     if (0 == hash_size)
@@ -871,7 +887,7 @@ bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_k
     status = ::NCryptVerifySignature(key_handle,
                                      /* pPaddingInfo */ nullptr,
                                      reinterpret_cast<PBYTE>(const_cast<std::byte *>(hash.data())), hash_size,
-                                     reinterpret_cast<PBYTE>(raw_sig.get()), raw_sig_size,
+                                     reinterpret_cast<PBYTE>(raw_sig.get()), raw_sig_size_dw,
                                      /* dwFlags */ 0);
     if (ERROR_SUCCESS != status)
     {
