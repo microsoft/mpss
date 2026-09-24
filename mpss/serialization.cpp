@@ -28,8 +28,7 @@ using mpss::utils::bio_ptr;
 using mpss::utils::evp_pkey_ctx_ptr;
 using mpss::utils::evp_pkey_ptr;
 using mpss::utils::fn_deleter;
-using mpss::utils::ossl_lib_ctx_ptr;
-using mpss::utils::ossl_provider_ptr;
+using mpss::utils::openssl_buf_ptr;
 
 constexpr std::uint64_t reference_version = 1;
 
@@ -54,30 +53,48 @@ IMPLEMENT_ASN1_ALLOC_FUNCTIONS(KeyReferenceAsn1);
 
 using reference_ptr = std::unique_ptr<KeyReferenceAsn1, fn_deleter<KeyReferenceAsn1_free>>;
 
-// Keep public-key conversion independent of application providers; unload the provider before its context.
-struct HostContext
-{
-    ossl_lib_ctx_ptr context{OSSL_LIB_CTX_new()};
-    ossl_provider_ptr provider{context ? OSSL_PROVIDER_load(context.get(), "default") : nullptr};
-};
-
 // SPKI names the public-key parameters, not the hash; each supported set maps to one MPSS suite.
 constexpr std::array algorithm_parameters{std::pair{Algorithm::ecdsa_secp256r1_sha256, NID_X9_62_prime256v1},
                                           std::pair{Algorithm::ecdsa_secp384r1_sha384, NID_secp384r1},
                                           std::pair{Algorithm::ecdsa_secp521r1_sha512, NID_secp521r1}};
 
+// OpenSSL keeps a BIT STRING's unused-bit count in these flag bits.
+constexpr unsigned long unused_bits_flags = ASN1_STRING_FLAG_BITS_LEFT | 7U;
+
+// Public keys are validated in a private context, so the application's providers and default properties
+// cannot affect the result. Immortal like BackendRegistry::Instance(): never freed, so it outlives host
+// statics that serialize during exit; OSSL_LIB_CTX use is thread-safe.
+[[nodiscard]]
+OSSL_LIB_CTX *host_context()
+{
+    static OSSL_LIB_CTX *const context = [] {
+        OSSL_LIB_CTX *created = OSSL_LIB_CTX_new();
+        if (nullptr != created && nullptr == OSSL_PROVIDER_load(created, "default"))
+        {
+            OSSL_LIB_CTX_free(created);
+            created = nullptr;
+        }
+
+        return created;
+    }();
+    return context;
+}
+
+[[nodiscard]]
 std::nullopt_t failure(std::string_view message)
 {
     utils::log_and_set_error("{}", message);
     return std::nullopt;
 }
 
+[[nodiscard]]
 bool valid_text(std::string_view text, std::size_t limit)
 {
     return !text.empty() && limit >= text.size() &&
            std::ranges::all_of(text, [](unsigned char c) { return 0x20 <= c && 0x7e >= c; });
 }
 
+[[nodiscard]]
 bool valid_location(const KeyLocation &location)
 {
     // Serialization checks syntax only; resolving the backend or device belongs to KeyPair::Open.
@@ -85,6 +102,7 @@ bool valid_location(const KeyLocation &location)
            (!location.device_id || valid_text(*location.device_id, 256));
 }
 
+[[nodiscard]]
 std::string_view text_value(const ASN1_UTF8STRING *value)
 {
     if (nullptr == value || 0 >= ASN1_STRING_length(value))
@@ -92,14 +110,13 @@ std::string_view text_value(const ASN1_UTF8STRING *value)
         return {};
     }
 
-    // ASN.1 strings carry their length separately and need not be null-terminated.
     return {reinterpret_cast<const char *>(ASN1_STRING_get0_data(value)),
             static_cast<std::size_t>(ASN1_STRING_length(value))};
 }
 
+[[nodiscard]]
 std::optional<std::vector<std::byte>> encode_der(const KeyReferenceAsn1 *value)
 {
-    // Measure before allocating; the second call writes into our bounded buffer and advances cursor.
     const auto *asn_value = reinterpret_cast<const ASN1_VALUE *>(value);
     const int size = ASN1_item_i2d(asn_value, nullptr, ASN1_ITEM_rptr(KeyReferenceAsn1));
     if (0 >= size || std::cmp_less(max_reference_size, size))
@@ -117,19 +134,27 @@ std::optional<std::vector<std::byte>> encode_der(const KeyReferenceAsn1 *value)
     return encoded;
 }
 
-evp_pkey_ptr import_public_key(OSSL_LIB_CTX *libctx, const KeyReference &reference)
+[[nodiscard]]
+int group_nid(Algorithm algorithm)
+{
+    const auto parameters =
+        std::ranges::find(algorithm_parameters, algorithm, [](const auto &entry) { return entry.first; });
+    return algorithm_parameters.end() == parameters ? NID_undef : parameters->second;
+}
+
+[[nodiscard]]
+bool valid_public_key(OSSL_LIB_CTX *libctx, const KeyReference &reference)
 {
     // MPSS public bytes must have the size and uncompressed-point prefix required by this algorithm.
-    const auto parameters =
-        std::ranges::find(algorithm_parameters, reference.algorithm, [](const auto &entry) { return entry.first; });
-    if (algorithm_parameters.end() == parameters ||
+    const int nid = group_nid(reference.algorithm);
+    if (NID_undef == nid || reference.public_key.empty() ||
         utils::get_public_key_size(reference.algorithm) != reference.public_key.size() ||
         std::byte{4} != reference.public_key.front())
     {
-        return {};
+        return false;
     }
 
-    const char *group = OBJ_nid2sn(parameters->second);
+    const char *group = OBJ_nid2sn(nid);
     std::array params = {OSSL_PARAM_construct_utf8_string(OSSL_PKEY_PARAM_GROUP_NAME, const_cast<char *>(group), 0),
                          OSSL_PARAM_construct_octet_string(OSSL_PKEY_PARAM_PUB_KEY,
                                                            const_cast<std::byte *>(reference.public_key.data()),
@@ -140,20 +165,16 @@ evp_pkey_ptr import_public_key(OSSL_LIB_CTX *libctx, const KeyReference &referen
     if (!fromdata || 1 != EVP_PKEY_fromdata_init(fromdata.get()) ||
         1 != EVP_PKEY_fromdata(fromdata.get(), &raw, EVP_PKEY_PUBLIC_KEY, params.data()))
     {
-        return {};
+        return false;
     }
 
     // Importing the bytes is not enough: require a mathematically valid public key.
-    evp_pkey_ptr key(raw);
+    const evp_pkey_ptr key(raw);
     const evp_pkey_ctx_ptr check(EVP_PKEY_CTX_new_from_pkey(libctx, key.get(), "provider=default"));
-    if (!check || 1 != EVP_PKEY_public_check(check.get()))
-    {
-        return {};
-    }
-
-    return key;
+    return check && 1 == EVP_PKEY_public_check(check.get());
 }
 
+[[nodiscard]]
 bool read_public_key(OSSL_LIB_CTX *libctx, X509_PUBKEY *spki, KeyReference &reference, ReferenceError &error)
 {
     // Accept supported named parameters, not explicit parameter definitions from the input.
@@ -206,16 +227,16 @@ bool read_public_key(OSSL_LIB_CTX *libctx, X509_PUBKEY *spki, KeyReference &refe
         return false;
     }
 
+    // The supported public-key encodings must be octet-aligned; ASN1_TYPE_get reports a type only with a value.
     const ASN1_BIT_STRING *public_key_bits =
         public_key_field->value.bit_string; // NOLINT(cppcoreguidelines-pro-type-union-access) - type checked above.
-    // The supported public-key encodings must be octet-aligned.
-    if (nullptr == public_key_bits ||
-        ASN1_STRING_FLAG_BITS_LEFT != (public_key_bits->flags & (ASN1_STRING_FLAG_BITS_LEFT | 7)))
+    if (ASN1_STRING_FLAG_BITS_LEFT != (static_cast<unsigned long>(public_key_bits->flags) & unused_bits_flags))
     {
         return false;
     }
 
-    // Decode in the isolated context, validate the point, and normalize compressed input to MPSS public bytes.
+    // Decode in the private context, validate the point, and normalize compressed or hybrid input to MPSS
+    // public bytes.
     cursor = der;
     const evp_pkey_ptr key(d2i_PUBKEY_ex(nullptr, &cursor, size, libctx, "provider=default"));
     if (!key || cursor != der + size)
@@ -237,12 +258,74 @@ bool read_public_key(OSSL_LIB_CTX *libctx, X509_PUBKEY *spki, KeyReference &refe
     return 1 == EVP_PKEY_get_octet_string_param(key.get(), OSSL_PKEY_PARAM_PUB_KEY,
                                                 reinterpret_cast<unsigned char *>(reference.public_key.data()),
                                                 reference.public_key.size(), &written) &&
-           reference.public_key.size() == written && import_public_key(libctx, reference);
+           reference.public_key.size() == written && valid_public_key(libctx, reference);
 }
 
+[[nodiscard]]
 bool is_whitespace(char c)
 {
     return ' ' == c || '\t' == c || '\r' == c || '\n' == c || '\v' == c || '\f' == c;
+}
+
+[[nodiscard]]
+std::string_view trim(std::string_view text)
+{
+    while (!text.empty() && is_whitespace(text.front()))
+    {
+        text.remove_prefix(1);
+    }
+
+    while (!text.empty() && is_whitespace(text.back()))
+    {
+        text.remove_suffix(1);
+    }
+
+    return text;
+}
+
+[[nodiscard]]
+std::optional<std::string> write_pem(std::span<const std::byte> der)
+{
+    const bio_ptr out(BIO_new(BIO_s_mem()));
+    if (!out || 0 >= PEM_write_bio(out.get(), key_reference_pem_label, nullptr,
+                                   reinterpret_cast<const unsigned char *>(der.data()), static_cast<long>(der.size())))
+    {
+        return std::nullopt;
+    }
+
+    char *data = nullptr;
+    const long size = BIO_ctrl(out.get(), BIO_CTRL_INFO, 0, static_cast<void *>(&data));
+    if (0 >= size || std::cmp_less(max_reference_pem_size, size))
+    {
+        return std::nullopt;
+    }
+
+    return std::string{data, static_cast<std::size_t>(size)};
+}
+
+// PEM reading tolerates headers, stray bytes, and noncanonical Base64; the decoded bytes must reproduce the
+// trimmed input, allowing only CRLF in place of LF.
+[[nodiscard]]
+bool is_canonical_pem(std::string_view pem, std::span<const std::byte> der)
+{
+    const auto canonical = write_pem(der);
+    if (!canonical)
+    {
+        return false;
+    }
+
+    std::string normalized;
+    normalized.reserve(pem.size());
+    for (std::size_t i = 0; i < pem.size(); ++i)
+    {
+        const bool crlf = '\r' == pem[i] && i + 1 < pem.size() && '\n' == pem[i + 1];
+        if (!crlf)
+        {
+            normalized.push_back(pem[i]);
+        }
+    }
+
+    return trim(*canonical) == normalized;
 }
 
 } // namespace
@@ -258,31 +341,35 @@ std::optional<std::vector<std::byte>> encode_key_reference_der(const KeyReferenc
         return failure("Invalid key-reference location: expected bounded printable ASCII fields.");
     }
 
-    HostContext host;
-    if (!host.provider)
+    OSSL_LIB_CTX *host = host_context();
+    if (nullptr == host)
     {
         return failure("Failed to initialize key-reference public-key validation.");
     }
 
-    const evp_pkey_ptr public_key = import_public_key(host.context.get(), reference);
-    if (!public_key)
+    if (!valid_public_key(host, reference))
     {
         return failure("The key reference has an unsupported algorithm or invalid public key.");
     }
 
-    // Copy the supplied location and public key into the schema; never reopen a key while serializing it.
+    // Set the SPKI fields directly: converting an EVP_PKEY would decode it in the application's default context.
+    // OBJ_nid2obj returns static objects, which the structure holds without owning them.
     reference_ptr value(KeyReferenceAsn1_new());
+    openssl_buf_ptr<unsigned char> point(
+        static_cast<unsigned char *>(OPENSSL_memdup(reference.public_key.data(), reference.public_key.size())));
     const auto &location = reference.location;
-    if (!value || 1 != ASN1_INTEGER_set_uint64(value->version, reference_version) ||
+    if (!value || !point || 1 != ASN1_INTEGER_set_uint64(value->version, reference_version) ||
         1 != ASN1_STRING_set(value->backend, location.backend_name.data(),
                              static_cast<int>(location.backend_name.size())) ||
         1 != ASN1_STRING_set(value->name, location.name.data(), static_cast<int>(location.name.size())) ||
-        1 != X509_PUBKEY_set(&value->public_key, public_key.get()))
+        1 != X509_PUBKEY_set0_param(value->public_key, OBJ_nid2obj(NID_X9_62_id_ecPublicKey), V_ASN1_OBJECT,
+                                    OBJ_nid2obj(group_nid(reference.algorithm)), point.get(),
+                                    static_cast<int>(reference.public_key.size())))
     {
         return failure("Failed to construct the key-reference ASN.1 structure.");
     }
 
-    // Omit an unset device ID rather than encoding an empty string; the schema owns an allocated field.
+    static_cast<void>(point.release());
     if (location.device_id)
     {
         value->device = ASN1_UTF8STRING_new();
@@ -306,17 +393,16 @@ std::optional<KeyReference> impl::decode_key_reference_der(std::span<const std::
     }
 
     // Embedded SPKI decoding can fetch a public-key implementation before semantic validation.
-    HostContext host;
-    if (!host.provider)
+    OSSL_LIB_CTX *host = host_context();
+    if (nullptr == host)
     {
         return failure("Failed to initialize key-reference public-key validation.");
     }
 
     const auto *begin = reinterpret_cast<const unsigned char *>(der.data());
     const unsigned char *cursor = begin;
-    const reference_ptr value(reinterpret_cast<KeyReferenceAsn1 *>(
-        ASN1_item_d2i_ex(nullptr, &cursor, static_cast<long>(der.size()), ASN1_ITEM_rptr(KeyReferenceAsn1),
-                         host.context.get(), "provider=default")));
+    const reference_ptr value(reinterpret_cast<KeyReferenceAsn1 *>(ASN1_item_d2i_ex(
+        nullptr, &cursor, static_cast<long>(der.size()), ASN1_ITEM_rptr(KeyReferenceAsn1), host, "provider=default")));
     if (!value || cursor != begin + der.size())
     {
         return failure("Malformed key-reference DER or trailing data.");
@@ -329,20 +415,19 @@ std::optional<KeyReference> impl::decode_key_reference_der(std::span<const std::
         return failure("The key reference is not canonical DER.");
     }
 
-    // Do not interpret an unknown schema version as the version implemented here.
-    std::uint64_t version = 0;
-    if (1 != ASN1_INTEGER_get_uint64(&version, value->version))
+    // A negative version is malformed; any other unknown version, including one beyond 64 bits, is unsupported.
+    if (V_ASN1_NEG_INTEGER == ASN1_STRING_type(value->version))
     {
         return failure("Invalid key-reference version.");
     }
 
-    if (reference_version != version)
+    std::uint64_t version = 0;
+    if (1 != ASN1_INTEGER_get_uint64(&version, value->version) || reference_version != version)
     {
         error = ReferenceError::unsupported;
         return failure("Unsupported key-reference version.");
     }
 
-    // Copy out owning values before the decoded ASN.1 object is destroyed.
     KeyReference reference;
     reference.location.backend_name = text_value(value->backend);
     reference.location.name = text_value(value->name);
@@ -356,7 +441,7 @@ std::optional<KeyReference> impl::decode_key_reference_der(std::span<const std::
         return failure("Invalid key-reference location: expected bounded printable ASCII fields.");
     }
 
-    if (!read_public_key(host.context.get(), value->public_key, reference, error))
+    if (!read_public_key(host, value->public_key, reference, error))
     {
         return failure(ReferenceError::unsupported == error ? "Unsupported key-reference public-key algorithm."
                                                             : "Invalid key-reference public key.");
@@ -367,7 +452,6 @@ std::optional<KeyReference> impl::decode_key_reference_der(std::span<const std::
 
 std::optional<KeyReference> decode_key_reference_der(std::span<const std::byte> der)
 {
-    // The public API uses get_error(); the provider also needs the structured failure category.
     impl::ReferenceError error{};
     return impl::decode_key_reference_der(der, error);
 }
@@ -380,24 +464,13 @@ std::optional<std::string> encode_key_reference_pem(const KeyReference &referenc
         return std::nullopt;
     }
 
-    // PEM wraps the same DER bytes in Base64 and delimiters; it introduces no new key representation.
-    const bio_ptr out(BIO_new(BIO_s_mem()));
-    if (!out ||
-        0 >= PEM_write_bio(out.get(), key_reference_pem_label, nullptr,
-                           reinterpret_cast<const unsigned char *>(der->data()), static_cast<long>(der->size())))
+    auto pem = write_pem(*der);
+    if (!pem)
     {
         return failure("Failed to encode the key-reference PEM.");
     }
 
-    char *data = nullptr;
-    const long size = BIO_ctrl(out.get(), BIO_CTRL_INFO, 0, static_cast<void *>(&data));
-    if (0 >= size || std::cmp_less(max_reference_pem_size, size))
-    {
-        return failure("Failed to encode a bounded key-reference PEM.");
-    }
-
-    // BIO owns data, so return a copy before releasing it.
-    return std::string{data, static_cast<std::size_t>(size)};
+    return pem;
 }
 
 std::optional<KeyReference> impl::decode_key_reference_pem(std::string_view pem, ReferenceError &error)
@@ -409,26 +482,12 @@ std::optional<KeyReference> impl::decode_key_reference_pem(std::string_view pem,
         return failure("The key-reference PEM is empty or exceeds the size limit.");
     }
 
-    // Accept surrounding whitespace, but require our label at the first non-whitespace line.
-    while (!pem.empty() && is_whitespace(pem.front()))
-    {
-        pem.remove_prefix(1);
-    }
-
-    const auto first_newline = pem.find('\n');
-    auto first_line = pem.substr(0, first_newline);
-    if (first_line.ends_with('\r'))
-    {
-        first_line.remove_suffix(1);
-    }
-
-    if ("-----BEGIN MPSS KEY REFERENCE-----" != first_line || std::string_view::npos == first_newline ||
-        std::string_view::npos != pem.find('\0'))
+    pem = trim(pem);
+    if (!pem.starts_with("-----BEGIN MPSS KEY REFERENCE-----"))
     {
         return failure("Expected an MPSS KEY REFERENCE PEM.");
     }
 
-    // Generic PEM reading returns allocated buffers; reject PEM headers as well as the wrong label.
     const bio_ptr in(BIO_new_mem_buf(pem.data(), static_cast<int>(pem.size())));
     char *label = nullptr;
     char *header = nullptr;
@@ -437,24 +496,19 @@ std::optional<KeyReference> impl::decode_key_reference_pem(std::string_view pem,
     SCOPE_GUARD(OPENSSL_free(label));
     SCOPE_GUARD(OPENSSL_free(header));
     SCOPE_GUARD(OPENSSL_free(data));
-    if (!in || 1 != PEM_read_bio(in.get(), &label, &header, &data, &size) || nullptr == label ||
-        key_reference_pem_label != std::string_view{label} || nullptr == header || '\0' != *header || 0 >= size ||
+    if (!in || 1 != PEM_read_bio(in.get(), &label, &header, &data, &size) || 0 >= size ||
         std::cmp_less(max_reference_size, size))
     {
         return failure("Malformed or unsupported key-reference PEM.");
     }
 
-    // Unlike a stream reader, this API accepts one document only, not a second PEM or trailing text.
-    char *remaining = nullptr;
-    const long remaining_size = BIO_ctrl(in.get(), BIO_CTRL_INFO, 0, static_cast<void *>(&remaining));
-    if (0 > remaining_size ||
-        (0 < remaining_size &&
-         !std::ranges::all_of(std::string_view{remaining, static_cast<std::size_t>(remaining_size)}, is_whitespace)))
+    const auto der = std::as_bytes(std::span{data, static_cast<std::size_t>(size)});
+    if (!is_canonical_pem(pem, der))
     {
-        return failure("Unexpected trailing data after the key-reference PEM.");
+        return failure("The key-reference PEM is not canonical.");
     }
 
-    return impl::decode_key_reference_der(std::as_bytes(std::span{data, static_cast<std::size_t>(size)}), error);
+    return impl::decode_key_reference_der(der, error);
 }
 
 std::optional<KeyReference> decode_key_reference_pem(std::string_view pem)

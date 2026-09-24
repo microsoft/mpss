@@ -29,8 +29,11 @@ MPSS_DECOR std::optional<std::vector<std::byte>> encode_key_reference_der(const 
  * @brief Decodes exactly one canonical DER reference, without opening a key.
  *
  * Accepts at most 4096 bytes. Rejects unsupported versions, malformed or invalid public keys,
- * and trailing data. The returned reference owns its data; use KeyPair::Open to resolve it.
- * Returns nullopt on failure and reports the error through get_error().
+ * and trailing data. The embedded public key may be a compressed, hybrid, or uncompressed point;
+ * all three decode to the same reference with uncompressed public bytes, so re-encoding
+ * reproduces the input only for the uncompressed form. The returned reference owns its data;
+ * use KeyPair::Open to resolve it. Returns nullopt on failure and reports the error through
+ * get_error().
  */
 [[nodiscard]]
 MPSS_DECOR std::optional<KeyReference> decode_key_reference_der(std::span<const std::byte> der);
@@ -40,10 +43,13 @@ MPSS_DECOR std::optional<KeyReference> decode_key_reference_der(std::span<const 
 MPSS_DECOR std::optional<std::string> encode_key_reference_pem(const KeyReference &reference);
 
 /**
- * @brief Decodes one MPSS KEY REFERENCE PEM, with optional surrounding ASCII whitespace.
+ * @brief Decodes one MPSS KEY REFERENCE PEM.
  *
- * Accepts at most 8192 bytes, including whitespace. No backend access or private-key operation.
- * Returns nullopt on failure and reports the error through get_error().
+ * Apart from surrounding ASCII whitespace and CRLF line endings, the text must match
+ * encode_key_reference_pem's output for the same bytes exactly: no headers, no stray characters,
+ * and canonical 64-column Base64. Accepts at most 8192 bytes, including whitespace. No backend
+ * access or private-key operation. Returns nullopt on failure and reports the error through
+ * get_error().
  */
 [[nodiscard]]
 MPSS_DECOR std::optional<KeyReference> decode_key_reference_pem(std::string_view pem);

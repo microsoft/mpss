@@ -806,7 +806,8 @@ A serialized reference records the key's location and expected public key, so re
 PEM output uses the `MPSS KEY REFERENCE` label.
 The C++ and provider encoders share one implementation and produce identical [key reference PEMs](#loading-a-key-from-a-key-reference-pem) for the same reference.
 Output uses 64-character Base64 lines and LF line endings.
-The C++ PEM decoder accepts one document with optional surrounding ASCII whitespace, up to 8192 bytes in total; DER input is limited to 4096 bytes and must contain exactly one canonical reference.
+The C++ PEM decoder accepts one document of up to 8192 bytes in total; apart from surrounding ASCII whitespace and CRLF line endings, the text must match the encoder's output exactly.
+DER input is limited to 4096 bytes and must contain exactly one canonical reference; a compressed or hybrid public-key point is accepted and decodes to the uncompressed public bytes, so only references with uncompressed points re-encode byte for byte.
 Neither format contains private key material or credentials.
 Protect the reference's integrity: successful decoding does not establish trust in its public key or authenticate a physical device.
 
