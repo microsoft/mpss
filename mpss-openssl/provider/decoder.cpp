@@ -6,8 +6,8 @@
 #include "mpss-openssl/provider/provider.h"
 #include "mpss-openssl/provider/reference.h"
 #include "mpss-openssl/utils/names.h"
-#include "mpss-openssl/utils/ossl_ptr.h"
 #include "mpss-openssl/utils/utils.h"
+#include "mpss/utils/ossl_ptr.h"
 #include <array>
 #include <cstddef>
 #include <cstring>
@@ -19,14 +19,19 @@
 #include <openssl/params.h>
 #include <openssl/pem.h>
 #include <openssl/proverr.h>
+#include <optional>
 #include <span>
 #include <string>
+#include <string_view>
+#include <utility>
 
 namespace
 {
 
 using namespace ::mpss_openssl::provider;
 using namespace ::mpss_openssl::utils;
+using mpss::utils::bio_ptr;
+using mpss::utils::openssl_buf_ptr;
 
 // OSSL_FUNC_decoder_decode: 1 continues the decoder chain, 0 aborts it for every decoder.
 constexpr int decoder_continue = 1;
@@ -95,72 +100,107 @@ catch (...)
     return 0;
 }
 
-reference_parse_status parse_reference_input(OSSL_LIB_CTX *libctx, OSSL_CORE_BIO *cin, byte_vector &load_reference)
+using pem_buffer = std::array<char, mpss_max_reference_pem_size>;
+
+reference_parse_status read_reference_pem(BIO *in, pem_buffer &buffer, std::string_view &pem)
 {
-    bio_ptr in(BIO_new_from_core_bio(libctx, cin));
-    if (nullptr == in)
-    {
-        return reference_parse_status::not_our_pem;
-    }
+    const std::string begin = "-----BEGIN " + std::string{mpss_key_reference_pem_label} + "-----";
+    std::optional<std::size_t> begin_offset;
+    std::size_t used = 0;
+    std::size_t line_start = 0;
+
+    // Ignore probe errors for foreign input; recognizing our label commits us to reporting failures.
     ERR_set_mark();
 
-    constexpr std::string_view begin = "-----BEGIN MPSS KEY REFERENCE-----";
-    constexpr std::string_view end = "-----END MPSS KEY REFERENCE-----";
-    std::array<char, 512> line{};
-    std::string encoded;
-    std::size_t scanned = 0;
-    bool recognized = false;
-    bool complete = false;
-    while (mpss_max_reference_pem_size > scanned)
+    // Read bytes, not BIO_gets fragments: file BIOs can underreport lengths containing NUL.
+    // The small fixed budget bounds the work; byte reads avoid consuming the following PEM record.
+    while (used < mpss_max_reference_pem_size)
     {
-        const int count = BIO_gets(in.get(), line.data(), static_cast<int>(line.size()));
-        if (0 >= count)
+        std::size_t count = 0;
+        const bool read_failed = 1 != BIO_read_ex(in, buffer.data() + used, 1, &count);
+        if (read_failed)
         {
-            break;
+            // The core BIO forwards the underlying EOF status, but not its retry flags.
+            if (!BIO_eof(in))
+            {
+                break;
+            }
         }
-        const std::string_view piece{line.data(), static_cast<std::size_t>(count)};
-        scanned += piece.size();
-        std::string_view trimmed = piece;
-        while (!trimmed.empty() && ('\r' == trimmed.back() || '\n' == trimmed.back()))
+        else
         {
-            trimmed.remove_suffix(1);
-        }
-        if (!recognized)
-        {
-            if (!trimmed.starts_with("-----BEGIN "))
+            used += count;
+            if (0 == count || '\0' == buffer[used - 1])
+            {
+                break;
+            }
+            if ('\n' != buffer[used - 1])
             {
                 continue;
             }
-            if (begin != trimmed)
+        }
+
+        // Interpret delimiters only at a physical newline or confirmed EOF, never a short-read boundary.
+        std::string_view line{buffer.data() + line_start, used - line_start};
+        while (!line.empty() && ('\r' == line.back() || '\n' == line.back()))
+        {
+            line.remove_suffix(1);
+        }
+
+        if (!begin_offset && line.starts_with("-----BEGIN "))
+        {
+            if (line != begin)
             {
                 ERR_pop_to_mark();
                 return reference_parse_status::not_our_pem;
             }
-            recognized = true;
+
+            begin_offset = line_start;
             ERR_clear_last_mark();
         }
-        if (mpss_max_reference_pem_size < scanned)
+        else if (begin_offset && line.starts_with("-----END "))
         {
-            break;
+            // Stop at the first closing boundary; OpenSSL checks its label and decodes the body.
+            pem = {buffer.data() + *begin_offset, used - *begin_offset};
+            return reference_parse_status::ok;
         }
-        encoded.append(piece);
-        if (end == trimmed)
+
+        line_start = used;
+        if (read_failed)
         {
-            complete = true;
             break;
         }
     }
-    if (!recognized)
+
+    if (!begin_offset)
     {
         ERR_pop_to_mark();
         return reference_parse_status::not_our_pem;
     }
-    if (!complete)
+
+    // A footer reaching the byte limit without LF is incomplete: confirming EOF would require another read.
+    ERR_raise_data(ERR_LIB_PROV, PROV_R_BAD_ENCODING, "Invalid, incomplete, or oversized MPSS reference PEM");
+    return reference_parse_status::invalid_mpss_reference;
+}
+
+reference_parse_status parse_reference_input(OSSL_LIB_CTX *libctx, OSSL_CORE_BIO *cin, byte_vector &load_reference)
+{
+    bio_ptr in(BIO_new_from_core_bio(libctx, cin));
+    if (!in)
     {
-        ERR_raise(ERR_LIB_PROV, PROV_R_BAD_ENCODING);
+        ERR_raise(ERR_LIB_PROV, ERR_R_MALLOC_FAILURE);
         return reference_parse_status::invalid_mpss_reference;
     }
-    bio_ptr bounded(BIO_new_mem_buf(encoded.data(), static_cast<int>(encoded.size())));
+
+    // Frame one bounded record without consuming the next; this does not parse ASN.1 or Base64.
+    pem_buffer buffer{};
+    std::string_view pem;
+    const reference_parse_status status = read_reference_pem(in.get(), buffer, pem);
+    if (reference_parse_status::ok != status)
+    {
+        return status;
+    }
+
+    bio_ptr bounded(BIO_new_mem_buf(pem.data(), static_cast<int>(pem.size())));
     if (!bounded)
     {
         ERR_raise(ERR_LIB_PROV, ERR_R_MALLOC_FAILURE);
@@ -182,20 +222,19 @@ reference_parse_status parse_reference_input(OSSL_LIB_CTX *libctx, OSSL_CORE_BIO
     const openssl_buf_ptr<char> pem_header_owner(pem_header);
     const openssl_buf_ptr<unsigned char> pem_data_owner(pem_data);
 
-    const bool is_mpss_reference = nullptr != pem_name && 0 == std::strcmp(pem_name, mpss_key_reference_pem_label) &&
-                                   0 <= pem_data_len &&
-                                   mpss_max_reference_size >= static_cast<std::size_t>(pem_data_len) &&
-                                   nullptr != pem_header && '\0' == *pem_header;
-    if (!is_mpss_reference)
+    // The framing pass identifies our label; OpenSSL remains responsible for matching delimiters and Base64.
+    if (nullptr == pem_name || 0 != std::strcmp(pem_name, mpss_key_reference_pem_label) || nullptr == pem_header ||
+        '\0' != *pem_header || 0 >= pem_data_len || std::cmp_less(mpss_max_reference_size, pem_data_len))
     {
         ERR_raise(ERR_LIB_PROV, PROV_R_BAD_ENCODING);
         return reference_parse_status::invalid_mpss_reference;
     }
 
     const std::span<const unsigned char> body{pem_data, static_cast<std::size_t>(pem_data_len)};
-    mpss_load_reference parsed;
+
+    // Persisted references use the shared DER codec, never the store-locator format.
     mpss_reference_error error = mpss_reference_error::malformed;
-    if (!mpss_parse_key_load_reference(body, parsed, error) || mpss_reference_kind::bound != parsed.kind)
+    if (!mpss::impl::decode_key_reference_der(std::as_bytes(body), error))
     {
         ERR_raise_data(ERR_LIB_PROV,
                        mpss_reference_error::unsupported == error ? PROV_R_NOT_SUPPORTED : PROV_R_BAD_ENCODING,
@@ -203,6 +242,7 @@ reference_parse_status parse_reference_input(OSSL_LIB_CTX *libctx, OSSL_CORE_BIO
         return reference_parse_status::invalid_mpss_reference;
     }
 
+    // Copy the validated bytes before releasing OpenSSL's buffers; key management consumes them later.
     const auto body_bytes = std::as_bytes(body);
     load_reference.assign(body_bytes.begin(), body_bytes.end());
     return reference_parse_status::ok;

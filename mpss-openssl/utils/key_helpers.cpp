@@ -18,15 +18,19 @@ bool get_utf8_parameter(const OSSL_PARAM *param, std::string &value)
     {
         return false;
     }
+
+    // Accept an optional terminator, but reject embedded NULs that would change the selected identifier.
     std::string_view text{static_cast<const char *>(param->data), param->data_size};
     if (!text.empty() && '\0' == text.back())
     {
         text.remove_suffix(1);
     }
+
     if (std::string_view::npos != text.find('\0'))
     {
         return false;
     }
+
     value.assign(text);
     return true;
 }

@@ -143,12 +143,15 @@ std::optional<std::uint32_t> parse_serial(std::string_view serial)
     {
         return std::nullopt;
     }
+
+    // Parse decimal without locale or whitespace handling; reject overflow, partial consumption, and zero.
     std::uint32_t value = 0;
     const auto [end, error] = std::from_chars(serial.data(), serial.data() + serial.size(), value);
     if (std::errc{} != error || end != serial.data() + serial.size() || 0 == value)
     {
         return std::nullopt;
     }
+
     return value;
 }
 
@@ -165,6 +168,7 @@ std::optional<std::uint32_t> get_serial_from_env()
     {
         mpss::utils::log_warning("MPSS_YUBIKEY_SERIAL is not a valid decimal serial number; ignoring the default.");
     }
+
     return value;
 }
 

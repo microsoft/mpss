@@ -6,9 +6,9 @@
 #include "mpss-openssl/provider/provider.h"
 #include "mpss-openssl/provider/reference.h"
 #include "mpss-openssl/utils/names.h"
-#include "mpss-openssl/utils/ossl_ptr.h"
 #include "mpss-openssl/utils/utils.h"
 #include "mpss/serialization.h"
+#include "mpss/utils/ossl_ptr.h"
 #include <openssl/bio.h>
 #include <openssl/core_dispatch.h>
 #include <openssl/err.h>
@@ -23,6 +23,7 @@ namespace
 
 using namespace ::mpss_openssl::provider;
 using namespace ::mpss_openssl::utils;
+using mpss::utils::bio_ptr;
 
 extern "C" void *mpss_encoder_newctx(void *provctx)
 try
@@ -209,12 +210,14 @@ try
         return 0;
     }
 
+    // Capture may access the backend; encoding the captured reference is an offline operation.
     const auto reference = pkey->key_pair->reference();
     if (!reference)
     {
         ERR_raise_data(ERR_LIB_PROV, ERR_R_OPERATION_FAIL, "%s", mpss::get_error().c_str());
         return 0;
     }
+
     const auto pem = mpss::encode_key_reference_pem(*reference);
     if (!pem)
     {

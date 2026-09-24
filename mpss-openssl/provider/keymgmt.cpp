@@ -90,6 +90,7 @@ struct mpss_keymgmt_gen_ctx
     std::string key_name;
     std::string mpss_algorithm;
     std::optional<std::string> mpss_backend = std::nullopt;
+    // Unset uses environment defaults; empty selects automatically; nonempty selects that device.
     std::optional<std::string> device_id = std::nullopt;
     std::uint64_t key_policy = 0;
     int selection{0};
@@ -126,6 +127,7 @@ mpss_key::mpss_key(std::string_view key_name, std::optional<std::string> &mpss_a
         {
             key_pair = mpss::KeyPair::Open(key_name);
         }
+
         if (key_pair)
         {
             // Read the algorithm name from the opened key.
@@ -162,6 +164,7 @@ mpss_key::mpss_key(std::string_view key_name, std::optional<std::string> &mpss_a
             {
                 key_pair = mpss::KeyPair::Create(key_name, algorithm, policy);
             }
+
             this->mpss_algorithm = mpss::get_algorithm_info(algorithm).type_str;
         }
         else
@@ -189,10 +192,13 @@ mpss_key::mpss_key(std::unique_ptr<mpss::KeyPair> opened_key) : key_pair(std::mo
     {
         return;
     }
+
+    // Describe the handle we actually opened, not the caller's possibly defaulted selection.
     const mpss::KeyLocation location = key_pair->location();
     name = location.name;
     mpss_backend = location.backend_name;
     mpss_algorithm = key_pair->algorithm_info().type_str;
+
     sig_name = try_get_signature_scheme(key_pair);
     group_name = try_get_ec_group(key_pair);
     hash_name = try_get_hash_func(key_pair);
@@ -399,6 +405,7 @@ try
         {
             return 0;
         }
+
         ctx->device_id = std::move(value);
     }
 
@@ -669,6 +676,7 @@ try
     {
         return nullptr;
     }
+
     mpss_load_reference parsed;
     mpss_reference_error error = mpss_reference_error::malformed;
     if (!mpss_parse_key_load_reference(
@@ -679,6 +687,7 @@ try
         return nullptr;
     }
 
+    // Saved references enforce identity; store locators only select where to open. Neither path creates keys.
     std::unique_ptr<mpss::KeyPair> opened;
     if (mpss_reference_kind::bound == parsed.kind)
     {
@@ -694,6 +703,7 @@ try
     {
         opened = mpss::KeyPair::Open(parsed.key.location);
     }
+
     mpss_ptr<mpss_key> pkey{mpss_new<mpss_key>(std::move(opened))};
     if (!pkey->has_valid_key())
     {
@@ -701,6 +711,7 @@ try
         return nullptr;
     }
 
+    // OpenSSL owns the completed key-management object after this return.
     return pkey.release();
 }
 catch (...)

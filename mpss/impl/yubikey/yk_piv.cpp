@@ -74,6 +74,7 @@ std::mutex &device_mutex(std::uint32_t serial)
     {
         device = std::make_unique<std::mutex>();
     }
+
     // Entries are never erased, so the returned mutex remains valid after registry is unlocked.
     return *device;
 }
@@ -135,12 +136,14 @@ std::optional<std::vector<std::uint32_t>> scan_readers_locked()
         }
 
         mpss::utils::log_trace("Found YubiKey with serial {} on reader '{}'.", serial, reader);
+
         // Different readers can report the same serial; retain each route, but count the serial once.
         std::vector<std::string> &routes = discovered[serial];
         if (routes.empty())
         {
             serials.push_back(serial);
         }
+
         routes.emplace_back(reader);
     }
 
@@ -161,11 +164,13 @@ std::vector<std::string> cached_readers(std::uint32_t serial)
 {
     DeviceLocks &locks = device_locks();
     const std::scoped_lock lock{locks.registry};
+
     const auto entry = locks.readers_by_serial.find(serial);
     if (locks.readers_by_serial.end() == entry)
     {
         return {};
     }
+
     return entry->second;
 }
 
@@ -173,11 +178,13 @@ void prefer_reader(std::uint32_t serial, const std::string &reader)
 {
     DeviceLocks &locks = device_locks();
     const std::scoped_lock lock{locks.registry};
+
     const auto entry = locks.readers_by_serial.find(serial);
     if (locks.readers_by_serial.end() == entry)
     {
         return;
     }
+
     std::vector<std::string> &routes = entry->second;
     const auto found = std::ranges::find(routes, reader);
     if (routes.end() != found)
@@ -397,12 +404,15 @@ YubiKeyPIV::YubiKeyPIV(std::uint32_t serial, std::string_view name, std::span<co
         keep_connection = true;
         return;
     }
+
+    // Preserve a useful key-resolution error if rediscovery subsequently loses the device entirely.
     const std::string resolution_error =
         ConnectionResult::resolution_failed == result ? mpss::utils::get_error() : std::string{};
     if (ConnectionResult::conflicting_keys == result || !rescan_readers())
     {
         return;
     }
+
     result = connect_to_cached_reader(serial, name, expected_public_key, slot);
     if (ConnectionResult::connected == result)
     {
@@ -431,6 +441,7 @@ YubiKeyPIV::ConnectionResult YubiKeyPIV::connect_to_cached_reader(std::uint32_t 
                                                                   std::uint8_t slot)
 {
     using enum ConnectionResult;
+
     // Success keeps the connection and locks; every other exit releases this attempt's resources.
     bool keep_connection = false;
     SCOPE_GUARD({
@@ -442,6 +453,8 @@ YubiKeyPIV::ConnectionResult YubiKeyPIV::connect_to_cached_reader(std::uint32_t 
             bus_lock_ = std::shared_lock<std::shared_mutex>{};
         }
     });
+
+    // Keep the route snapshot stable against discovery until this connection attempt finishes.
     bus_lock_ = std::shared_lock{device_locks().bus};
 
     const std::vector<std::string> readers = cached_readers(serial);
@@ -449,17 +462,21 @@ YubiKeyPIV::ConnectionResult YubiKeyPIV::connect_to_cached_reader(std::uint32_t 
     {
         return unavailable;
     }
+
     device_lock_ = std::unique_lock{device_mutex(serial)};
 
     std::optional<std::vector<std::vector<std::byte>>> observed_keys;
     std::string selected_reader;
     std::string resolution_error;
+
     for (const auto &reader : readers)
     {
         if (!connect_to_reader(reader, serial))
         {
             continue;
         }
+
+        // An expected public key can identify a usable route even when another route reports different keys.
         if (!expected_public_key.empty())
         {
             std::uint8_t target_slot = slot;
@@ -476,10 +493,12 @@ YubiKeyPIV::ConnectionResult YubiKeyPIV::connect_to_cached_reader(std::uint32_t 
                     {
                         resolution_error = mpss::utils::get_error();
                     }
+
                     disconnect();
                     continue;
                 }
             }
+
             SlotMetadata metadata;
             if (0 != target_slot && read_slot_metadata(target_slot, metadata, /* probe */ true) &&
                 std::ranges::equal(metadata.public_key, expected_public_key))
@@ -488,11 +507,13 @@ YubiKeyPIV::ConnectionResult YubiKeyPIV::connect_to_cached_reader(std::uint32_t 
                 keep_connection = true;
                 return connected;
             }
+
             mpss::utils::log_warning("Reader '{}' does not report the expected public key on serial {}.", reader,
                                      serial);
             disconnect();
             continue;
         }
+
         if (name.empty() || 1 == readers.size())
         {
             prefer_reader(serial, reader);
@@ -508,11 +529,13 @@ YubiKeyPIV::ConnectionResult YubiKeyPIV::connect_to_cached_reader(std::uint32_t 
             mpss::utils::log_warning("Reader '{}' could not resolve key '{}' on serial {}.", reader, name, serial);
             continue;
         }
+
         if (observed_keys && *observed_keys != *keys)
         {
             mpss::utils::log_and_set_error("Readers reporting serial {} disagree about key '{}'.", serial, name);
             return conflicting_keys;
         }
+
         observed_keys = std::move(keys);
         if (selected_reader.empty())
         {
@@ -520,6 +543,7 @@ YubiKeyPIV::ConnectionResult YubiKeyPIV::connect_to_cached_reader(std::uint32_t 
         }
     }
 
+    // Probing closed each card session; reconnect and confirm the chosen route still reports the same keys.
     if (observed_keys && connect_to_reader(selected_reader, serial))
     {
         const std::optional<std::vector<std::vector<std::byte>>> confirmed = keys_by_name(name);
@@ -529,14 +553,17 @@ YubiKeyPIV::ConnectionResult YubiKeyPIV::connect_to_cached_reader(std::uint32_t 
             keep_connection = true;
             return connected;
         }
+
         mpss::utils::log_and_set_error("The reader's key binding changed while connecting to serial {}.", serial);
         return conflicting_keys;
     }
+
     if (!resolution_error.empty())
     {
         mpss::utils::set_error(std::move(resolution_error));
         return resolution_failed;
     }
+
     return unavailable;
 }
 
@@ -550,17 +577,21 @@ std::optional<std::vector<std::vector<std::byte>>> YubiKeyPIV::keys_by_name(std:
         {
             return std::nullopt;
         }
+
         if (KeyProbeStatus::found != label.status || label.value != name)
         {
             continue;
         }
+
         SlotMetadata metadata;
         if (!read_slot_metadata(slot, metadata, /* probe */ true))
         {
             return std::nullopt;
         }
+
         keys.push_back(std::move(metadata.public_key));
     }
+
     // Compare the same collection of binary public keys regardless of which slot holds each one.
     std::ranges::sort(keys);
     return keys;
@@ -1816,6 +1847,7 @@ bool pin_already_rejected(std::uint32_t serial, std::string_view pin)
 
 bool authenticate_pin_interactive(YubiKeyPIV &piv, std::string_view context)
 {
+    // Keep this handler and connection metadata fixed across retries and the matching result notifications.
     const std::shared_ptr<InteractionHandler> handler = mpss::GetInteractionHandler();
     const InteractionContext target = piv.interaction_context();
     mpss::SecureString last_failed_pin;
@@ -1887,6 +1919,7 @@ bool authenticate_pin_interactive(YubiKeyPIV &piv, std::string_view context)
             // able to lose the one fact that prevents the next operation spending another retry.
             remember_rejected_pin(serial, *pin_opt);
         }
+
         {
             const mpss::utils::InteractionHandlerScope in_handler;
             handler->notify_pin_result(target, result, retries);

@@ -3,13 +3,14 @@
 
 #pragma once
 
-#include "mpss-openssl/utils/utils.h"
+#include "mpss/utils/fn_deleter.h"
 #include <memory>
 #include <openssl/bio.h>
 #include <openssl/crypto.h>
 #include <openssl/evp.h>
+#include <openssl/provider.h>
 
-namespace mpss_openssl::utils
+namespace mpss::utils
 {
 
 /** @brief Gives the `OPENSSL_free` macro a name that can be used as a template argument. */
@@ -40,4 +41,10 @@ using evp_pkey_ptr = std::unique_ptr<EVP_PKEY, fn_deleter<EVP_PKEY_free>>;
 /** @brief Owns an EVP_PKEY_CTX. */
 using evp_pkey_ctx_ptr = std::unique_ptr<EVP_PKEY_CTX, fn_deleter<EVP_PKEY_CTX_free>>;
 
-} // namespace mpss_openssl::utils
+/** @brief Owns an OpenSSL library context. */
+using ossl_lib_ctx_ptr = std::unique_ptr<OSSL_LIB_CTX, fn_deleter<OSSL_LIB_CTX_free>>;
+
+/** @brief Releases one provider reference with OSSL_PROVIDER_unload. */
+using ossl_provider_ptr = std::unique_ptr<OSSL_PROVIDER, fn_deleter<OSSL_PROVIDER_unload>>;
+
+} // namespace mpss::utils

@@ -40,6 +40,7 @@ VerifyOutcome openssl_ecdsa_verify(const char *group_name, std::span<const std::
         return error;
     }
     SCOPE_GUARD(OSSL_LIB_CTX_free(libctx));
+
     OSSL_PROVIDER *provider = OSSL_PROVIDER_load(libctx, "default");
     if (nullptr == provider)
     {
@@ -93,6 +94,7 @@ VerifyOutcome openssl_ecdsa_verify(const char *group_name, std::span<const std::
     {
         return mismatch;
     }
+
     return error;
 }
 
@@ -109,6 +111,7 @@ namespace
 [[nodiscard]]
 std::optional<std::uint32_t> select_device(const KeyLocation &location)
 {
+    // An explicit serial is authoritative; unreachable or invalid targets must not fall back.
     if (location.device_id)
     {
         const std::optional<std::uint32_t> serial = utils::parse_serial(*location.device_id);
@@ -119,25 +122,30 @@ std::optional<std::uint32_t> select_device(const KeyLocation &location)
                 "(at most {} characters).",
                 utils::max_serial_length);
         }
+
         return serial;
     }
 
+    // Automatic selection requires exactly one distinct serial in the current reachable snapshot.
     const std::optional<std::vector<std::uint32_t>> serials = YubiKeyPIV::available_serials();
     if (!serials)
     {
         return std::nullopt;
     }
+
     if (serials->empty())
     {
         mpss::utils::log_and_set_error("No reachable YubiKey found.");
         return std::nullopt;
     }
+
     if (serials->size() > 1)
     {
         mpss::utils::log_and_set_error(
             "Multiple YubiKeys detected. Set device_id to the desired YubiKey serial number.");
         return std::nullopt;
     }
+
     return serials->front();
 }
 
@@ -160,12 +168,14 @@ std::optional<std::vector<std::string>> YubiKeyBackend::available_devices() cons
     {
         return std::nullopt;
     }
+
     std::vector<std::string> devices;
     devices.reserve(serials->size());
     for (const std::uint32_t serial : *serials)
     {
         devices.push_back(std::to_string(serial));
     }
+
     return devices;
 }
 
@@ -373,6 +383,7 @@ std::unique_ptr<KeyPair> YubiKeyBackend::open_key(const KeyLocation &location,
         return nullptr;
     }
 
+    // Read the selected slot again: its contents may have changed since name resolution.
     YubiKeyPIV::SlotMetadata slot_metadata;
     if (!piv.read_slot_metadata(slot_info.value.slot, slot_metadata))
     {
@@ -424,6 +435,7 @@ bool YubiKeyBackend::delete_key(const KeyLocation &location) const
     YubiKeyPIV::DeleteByNameResult result = piv.delete_keys_by_name(key_name);
     if (result.needs_authentication)
     {
+        // Retry only authentication failures; keep the earlier count but use the retry's remaining-failure flags.
         if (authenticate_pin_interactive(piv, "delete key '" + key_name + "'"))
         {
             const YubiKeyPIV::DeleteByNameResult retry = piv.delete_keys_by_name(key_name);

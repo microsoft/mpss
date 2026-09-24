@@ -799,7 +799,9 @@ Encoding and decoding are offline: they validate field syntax, algorithms, and p
 Encoding preserves the supplied identity rather than replacing it with whatever currently occupies the location.
 Backend-specific device rules are enforced when the reference is opened.
 
-The C++ and provider encoders share one implementation and produce identical [key reference PEMs](#7-loading-a-key-from-a-key-reference-pem) for the same reference.
+A serialized reference records the key's location and expected public key, so reopening can reject a different key at that location.
+PEM output uses the `MPSS KEY REFERENCE` label.
+The C++ and provider encoders share one implementation and produce identical [key reference PEMs](#loading-a-key-from-a-key-reference-pem) for the same reference.
 Output uses 64-character Base64 lines and LF line endings.
 The C++ PEM decoder accepts one document with optional surrounding ASCII whitespace, up to 8192 bytes in total; DER input is limited to 4096 bytes and must contain exactly one canonical reference.
 Neither format contains private key material or credentials.
@@ -1288,7 +1290,7 @@ These usage fragments omit some error handling; check OpenSSL return values and 
 resources on all paths. Register a statically linked provider with `OSSL_PROVIDER_add_builtin`.
 For dynamic loading, make its shared library available on OpenSSL's provider search path.
 
-#### 1. Basic Key Generation and Signing
+#### Basic Key Generation and Signing
 
 ```cpp
 #include "mpss-openssl/api.h"
@@ -1348,7 +1350,7 @@ OSSL_PROVIDER_unload(default_prov);
 OSSL_LIB_CTX_free(libctx);
 ```
 
-#### 2. Opening Existing Keys and Public Key Extraction
+#### Opening Existing Keys and Public Key Extraction
 
 Open `mpss:<key_name>` through `OSSL_STORE` with **`"provider=mpss"`** to select MPSS key
 management. Supply `mpss_backend` to select a non-default backend. The result is an `EVP_PKEY`
@@ -1393,7 +1395,7 @@ BIO_free(pk_file);
 EVP_PKEY_free(existing_pkey);
 ```
 
-#### 3. Self-Signed Certificate Creation
+#### Self-Signed Certificate Creation
 
 ```cpp
 // Assuming pkey (an EVP_PKEY) holds a key pair in the MPSS provider...
@@ -1422,7 +1424,7 @@ X509_verify(cert, pkey);
 X509_free(cert);
 ```
 
-#### 4. Provider-Specific Parameters
+#### Provider-Specific Parameters
 
 **Settable parameters** (passed via `EVP_PKEY_CTX_set_params` during key generation):
 
@@ -1453,11 +1455,11 @@ Supply it with `mpss_backend` to select a particular device without changing pro
 Retrieve the actual serial from a generated or opened key with `EVP_PKEY_get_utf8_string_param(pkey, "mpss_device_id", ...)`.
 The returned device metadata remains associated with that key; a setter cannot retarget an existing `EVP_PKEY`.
 
-#### 5. Certificate Authority and Certificate Chain Creation
+#### Certificate Authority and Certificate Chain Creation
 
 A complete end-to-end example of creating a CA certificate with an MPSS-backed key and signing end-entity certificates with it is shown in [tests/mpss_openssl_e2e_test.cpp](tests/mpss_openssl_e2e_test.cpp).
 
-#### 6. Secure Key Cleanup
+#### Secure Key Cleanup
 
 Both deletion entry points call `mpss::KeyPair::Delete`, with its
 [backend scope and partial-failure rules](#key-management). An absent name in readable storage
@@ -1494,7 +1496,7 @@ Do not use handles to deleted keys. Freeing an `EVP_PKEY` alone does not delete 
 Deletion is irreversible but does not prevent verification of existing signatures or certificates.
 MPSS does not provide key-name enumeration.
 
-#### 7. Loading a Key from a Key Reference PEM
+#### Loading a Key from a Key Reference PEM
 
 For applications that load keys from files, use a **key reference PEM**.
 The PEM body is a DER-encoded ASN.1 structure containing a format version, the resolved backend and key name, an optional device ID, and the expected public key as SubjectPublicKeyInfo (SPKI).
@@ -1526,6 +1528,9 @@ MPSSKeyReference ::= SEQUENCE {
 OpenSSL's ASN.1 templates handle encoding and decoding; there is no MPSS-specific length header or reference-kind field in the file.
 Backend and key names must contain 1-64 printable ASCII bytes; an optional device ID must contain 1-256 printable ASCII bytes and satisfy the selected backend's device-ID rules.
 The decoded reference is limited to 4096 bytes and the PEM input to 8192 bytes.
+The provider reads one PEM record at a time, counting any leading text toward the input limit and leaving subsequent records unread.
+The decoder is synchronous and does not support resuming partially supplied input.
+A record ending exactly at the limit must include its final LF newline.
 Non-DER encodings, trailing data, extra fields, missing public keys, unsupported versions, and invalid public keys are rejected before opening a key.
 
 A future format can introduce a new version and schema.
@@ -1573,7 +1578,6 @@ This catches a device that reports the expected public key but produces a signat
 Loading itself does not add a signing challenge or proof-of-possession prompt; normal backend access may still require interaction.
 
 Only versioned reference PEMs containing an expected public key are accepted.
-The old `<backend>\0<key_name>` and custom `MPSS-REF` binary formats are not supported.
 Internal store locator messages use a separate ASN.1 structure and are rejected as PEM input.
 Ordinary `mpss:` store URIs still support name-based loading and device-selection defaults; exporting a loaded key records its current location and public key.
 

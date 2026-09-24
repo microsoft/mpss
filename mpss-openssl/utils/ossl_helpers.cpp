@@ -2,8 +2,8 @@
 // Licensed under the MIT license.
 
 #include "mpss-openssl/utils/names.h"
-#include "mpss-openssl/utils/ossl_ptr.h"
 #include "mpss-openssl/utils/utils.h"
+#include "mpss/utils/ossl_ptr.h"
 #include <algorithm>
 #include <cstddef>
 #include <memory>
@@ -22,6 +22,9 @@ namespace mpss_openssl::utils
 {
 
 using namespace mpss;
+using mpss::utils::evp_pkey_ctx_ptr;
+using mpss::utils::evp_pkey_ptr;
+using mpss::utils::openssl_buf_ptr;
 
 std::size_t mpss_sign_as_der(const std::unique_ptr<KeyPair> &key_pair, std::span<const std::byte> hash_tbs,
                              std::span<std::byte> out)

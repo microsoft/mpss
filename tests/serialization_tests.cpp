@@ -25,6 +25,7 @@ using namespace mpss;
 using namespace mpss_openssl::testing;
 using namespace std::string_view_literals;
 
+// Build wire-format fixtures independently of the production ASN.1 templates.
 std::string der_value(int tag, std::string_view content, bool constructed = false, int tag_class = V_ASN1_UNIVERSAL)
 {
     const int size = ASN1_object_size(constructed ? 1 : 0, static_cast<int>(content.size()), tag);
@@ -53,6 +54,7 @@ std::string reference_der(const KeyReference &reference, EVP_PKEY *key)
         fields +=
             der_value(0, der_value(V_ASN1_UTF8STRING, *reference.location.device_id), true, V_ASN1_CONTEXT_SPECIFIC);
     }
+
     return der_value(V_ASN1_SEQUENCE, fields + public_key_der(key), true);
 }
 
@@ -79,6 +81,7 @@ class MPSSSerialization : public ::testing::TestWithParam<Algorithm>
         ASSERT_NE(nullptr, context);
         provider = OSSL_PROVIDER_load(context, "default");
         ASSERT_NE(nullptr, provider);
+
         const char *group = nullptr;
         switch (GetParam())
         {
@@ -94,9 +97,12 @@ class MPSSSerialization : public ::testing::TestWithParam<Algorithm>
         default:
             FAIL() << "Unsupported test algorithm.";
         }
+
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) - OpenSSL API.
         key.reset(EVP_PKEY_Q_keygen(context, "provider=default", "EC", group));
         ASSERT_NE(nullptr, key);
+
+        // An unavailable backend demonstrates that serialization never resolves the stored location.
         reference = {
             .location = {.backend_name = "unavailable-backend", .name = "offline-reference", .device_id = std::nullopt},
             .algorithm = GetParam(),
@@ -136,6 +142,7 @@ TEST_P(MPSSSerialization, OfflineRoundTripMatchesIndependentDer)
         ASSERT_TRUE(der.has_value()) << get_error();
         const std::string expected = reference_der(reference, key.get());
         EXPECT_TRUE(std::ranges::equal(*der, std::as_bytes(std::span{expected})));
+
         const auto decoded = decode_key_reference_der(*der);
         ASSERT_TRUE(decoded.has_value()) << get_error();
         expect_same_reference(reference, *decoded);
@@ -146,6 +153,7 @@ TEST_P(MPSSSerialization, OfflineRoundTripMatchesIndependentDer)
         const auto &pem_text = pem.value();
         EXPECT_EQ(std::string::npos, pem_text.find('\r'));
         EXPECT_TRUE(pem_text.ends_with("-----END MPSS KEY REFERENCE-----\n"));
+
         const auto parsed = decode_key_reference_pem(" \t\r\n" + pem_text + "\r\n ");
         ASSERT_TRUE(parsed.has_value()) << get_error();
         expect_same_reference(reference, *parsed);
@@ -160,6 +168,8 @@ TEST_P(MPSSSerialization, RejectsInvalidInputsAndClearsErrorsOnSuccess)
     const auto pem = encode_key_reference_pem(reference);
     ASSERT_TRUE(der.has_value());
     ASSERT_TRUE(pem.has_value());
+
+    // DER framing must reject every truncation, excess data, and oversized input.
     // NOLINTNEXTLINE(bugprone-unchecked-optional-access) - Checked by ASSERT_TRUE above.
     const auto &der_bytes = der.value();
     for (std::size_t size = 0; size < der_bytes.size(); ++size)
@@ -168,10 +178,13 @@ TEST_P(MPSSSerialization, RejectsInvalidInputsAndClearsErrorsOnSuccess)
         EXPECT_FALSE(decode_key_reference_der(std::span{der_bytes}.first(size)));
         EXPECT_TRUE(has_error());
     }
+
     auto trailing = *der;
     trailing.push_back(std::byte{0});
     EXPECT_FALSE(decode_key_reference_der(trailing));
     EXPECT_FALSE(decode_key_reference_der(std::vector<std::byte>(4097)));
+
+    // The PEM entry point accepts exactly one reference document, not arbitrary surrounding text.
     for (const auto &bad : {std::string{}, std::string(8193, ' '), *pem + "junk", *pem + *pem, "junk\n" + *pem,
                             std::string{"-----BEGIN MPSS KEY REFERENCE-----\n!!!\n-----END MPSS KEY REFERENCE-----\n"},
                             std::string{"os\0name", 7}, std::string{"MPSS-REF\0\0", 10}, *pem + '\0'})
@@ -179,6 +192,8 @@ TEST_P(MPSSSerialization, RejectsInvalidInputsAndClearsErrorsOnSuccess)
         EXPECT_FALSE(decode_key_reference_pem(bad));
         EXPECT_TRUE(has_error());
     }
+
+    // Encoding rejects invalid caller-owned fields, not just malformed serialized input.
     for (const auto &name : {std::string{}, std::string{"line\nbreak"}, std::string(65, 'x')})
     {
         auto invalid = reference;
@@ -186,19 +201,25 @@ TEST_P(MPSSSerialization, RejectsInvalidInputsAndClearsErrorsOnSuccess)
         EXPECT_FALSE(encode_key_reference_pem(invalid));
         EXPECT_TRUE(has_error());
     }
+
     auto invalid = reference;
     invalid.location.device_id = "";
     EXPECT_FALSE(encode_key_reference_der(invalid));
+
     invalid = reference;
     invalid.algorithm = Algorithm::unsupported;
     EXPECT_FALSE(encode_key_reference_der(invalid));
+
     invalid = reference;
     invalid.public_key.pop_back();
     EXPECT_FALSE(encode_key_reference_der(invalid));
+
     invalid = reference;
     std::fill(invalid.public_key.begin() + 1, invalid.public_key.end(), std::byte{0});
     EXPECT_FALSE(encode_key_reference_der(invalid));
     EXPECT_TRUE(has_error());
+
+    // Successful operations clear a preceding failure rather than leaking stale diagnostics.
     EXPECT_EQ(pem, encode_key_reference_pem(reference));
     EXPECT_FALSE(has_error());
     EXPECT_TRUE(decode_key_reference_pem(*pem));
@@ -231,6 +252,8 @@ TEST_P(MPSSSerialization, RejectsNoncanonicalAndUnsupportedReferences)
     const std::string valid = der_value(V_ASN1_SEQUENCE, fields, true);
     const std::string device = der_value(0, der_value(V_ASN1_UTF8STRING, "123"), true, V_ASN1_CONTEXT_SPECIFIC);
     const std::string prefix = der_value(V_ASN1_INTEGER, "\1"sv) + location;
+
+    // Exercise both noncanonical encodings and values that violate the reference schema.
     const std::vector malformed{
         std::string{"\x30\x80", 2} + fields + std::string(2, '\0'),
         der_value(V_ASN1_SEQUENCE, der_value(V_ASN1_INTEGER, "\0\1"sv) + location + spki, true),
@@ -242,11 +265,13 @@ TEST_P(MPSSSerialization, RejectsNoncanonicalAndUnsupportedReferences)
         der_value(V_ASN1_SEQUENCE, prefix + spki + der_value(V_ASN1_INTEGER, "\1"sv), true),
         der_value(0, der_value(V_ASN1_SEQUENCE, der_value(V_ASN1_BOOLEAN, "\xff"sv) + location, true), true,
                   V_ASN1_CONTEXT_SPECIFIC)};
+
     for (const auto &bytes : malformed)
     {
         EXPECT_FALSE(decode_key_reference_der(std::as_bytes(std::span{bytes})));
         EXPECT_TRUE(has_error());
     }
+
     for (const auto version : {"\0"sv, "\2"sv})
     {
         auto versioned_fields = der_value(V_ASN1_INTEGER, version);
@@ -255,6 +280,7 @@ TEST_P(MPSSSerialization, RejectsNoncanonicalAndUnsupportedReferences)
         EXPECT_FALSE(decode_key_reference_der(std::as_bytes(std::span{bytes})));
         EXPECT_NE(std::string::npos, get_error().find("Unsupported key-reference version"));
     }
+
     const auto decoded = decode_key_reference_der(std::as_bytes(std::span{valid}));
     ASSERT_TRUE(decoded.has_value()) << get_error();
     expect_same_reference(reference, *decoded);
@@ -274,6 +300,8 @@ TEST(SerializationReference, RejectsNonOctetAlignedPublicKey)
                                  .public_key = {bytes.begin(), bytes.end()}};
     const auto encoded = encode_key_reference_der(reference);
     ASSERT_TRUE(encoded.has_value()) << get_error();
+
+    // Locate the final BIT STRING by checking its bytes, then change only its declared unused-bit count.
     auto malformed = *encoded;
     ASSERT_GT(malformed.size(), bytes.size());
     ASSERT_TRUE(std::ranges::equal(std::span{malformed}.last(bytes.size()), bytes));
@@ -282,6 +310,7 @@ TEST(SerializationReference, RejectsNonOctetAlignedPublicKey)
     malformed[unused_bits] = std::byte{1};
     EXPECT_FALSE(decode_key_reference_der(malformed));
     EXPECT_NE(std::string::npos, get_error().find("Invalid key-reference public key"));
+
     EXPECT_TRUE(decode_key_reference_der(*encoded));
     EXPECT_FALSE(has_error());
 }

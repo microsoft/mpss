@@ -22,9 +22,11 @@ option(MPSS_BUILD_WIN32_MOCK_TESTS "Build the gmock-win32 NCrypt mock test execu
 if("serialization" IN_LIST VCPKG_MANIFEST_FEATURES)
     set(MPSS_WITH_SERIALIZATION ON)
 endif()
+
 if("yubikey" IN_LIST VCPKG_MANIFEST_FEATURES)
     set(MPSS_BACKEND_YUBIKEY ON)
 endif()
+
 if("tests" IN_LIST VCPKG_MANIFEST_FEATURES)
     set(MPSS_BUILD_TESTS ON)
 endif()
@@ -53,6 +55,7 @@ elseif(NOT MPSS_BUILD_MPSS_CORE_STATIC AND NOT MPSS_BUILD_MPSS_CORE_SHARED)
     set(MPSS_BUILD_MPSS_CORE_STATIC ON CACHE BOOL "Build the static mpss core library." FORCE)
 endif()
 
+# An explicit provider linkage wins; otherwise the manifest feature follows the core's linkage.
 if("openssl" IN_LIST VCPKG_MANIFEST_FEATURES
     AND NOT MPSS_BUILD_MPSS_OPENSSL_STATIC AND NOT MPSS_BUILD_MPSS_OPENSSL_SHARED)
     if(MPSS_BUILD_MPSS_CORE_SHARED)
@@ -79,11 +82,12 @@ if(MPSS_BUILD_TESTS)
     list(APPEND VCPKG_MANIFEST_FEATURES "tests")
 endif()
 
-# Enable openssl feature in vcpkg if we are building mpss-openssl.
+# The provider always needs the core serializer, regardless of how the provider was enabled.
 if(MPSS_BUILD_MPSS_OPENSSL_STATIC OR MPSS_BUILD_MPSS_OPENSSL_SHARED)
     set(MPSS_WITH_SERIALIZATION ON)
     list(APPEND VCPKG_MANIFEST_FEATURES "openssl")
 endif()
+
 if(MPSS_WITH_SERIALIZATION)
     list(APPEND VCPKG_MANIFEST_FEATURES "serialization")
 endif()
@@ -95,6 +99,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 if(MPSS_BACKEND_YUBIKEY)
     list(APPEND VCPKG_MANIFEST_FEATURES "yubikey")
 endif()
+
 list(REMOVE_DUPLICATES VCPKG_MANIFEST_FEATURES)
 
 get_filename_component(mpss_TOOLCHAIN_FILENAME "${CMAKE_TOOLCHAIN_FILE}" NAME)

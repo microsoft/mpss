@@ -104,6 +104,7 @@ bool is_valid_location(const KeyLocation &location)
         utils::log_and_set_error("A device identifier must not be empty.");
         return false;
     }
+
     return true;
 }
 
@@ -322,6 +323,7 @@ std::unique_ptr<KeyPair> create_key(const KeyLocation &location, Algorithm algor
     {
         return nullptr;
     }
+
     const auto &backend_name = location.backend_name;
     const auto &name = location.name;
 
@@ -335,6 +337,8 @@ std::unique_ptr<KeyPair> create_key(const KeyLocation &location, Algorithm algor
 
     utils::log_trace("Creating key '{}' with algorithm '{}' using backend '{}'.", name,
                      get_algorithm_info(algorithm).type_str, backend->name());
+
+    // Allocate metadata before the backend can persist a key; recording it afterwards only moves the string.
     std::string recorded_name = name;
     auto key = backend->create_key(location, algorithm, policy);
     if (nullptr != key)
@@ -342,6 +346,7 @@ std::unique_ptr<KeyPair> create_key(const KeyLocation &location, Algorithm algor
         utils::log_trace("Key '{}' created on backend '{}'.", name, backend->name());
         BackendNameSetter::set(*key, backend->name(), std::move(recorded_name));
     }
+
     return key;
 }
 
@@ -351,6 +356,7 @@ std::unique_ptr<KeyPair> open_key(const KeyLocation &location, std::span<const s
     {
         return nullptr;
     }
+
     const auto &backend_name = location.backend_name;
     const auto &name = location.name;
 
@@ -363,6 +369,7 @@ std::unique_ptr<KeyPair> open_key(const KeyLocation &location, std::span<const s
     }
 
     utils::log_trace("Opening key '{}' using backend '{}'.", name, backend->name());
+
     std::string recorded_name = name;
     auto key = backend->open_key(location, expected_public_key);
     if (nullptr != key)
@@ -370,6 +377,7 @@ std::unique_ptr<KeyPair> open_key(const KeyLocation &location, std::span<const s
         utils::log_trace("Key '{}' opened on backend '{}'.", name, backend->name());
         BackendNameSetter::set(*key, backend->name(), std::move(recorded_name));
     }
+
     return key;
 }
 
@@ -379,6 +387,7 @@ bool delete_key(const KeyLocation &location)
     {
         return false;
     }
+
     const auto &backend_name = location.backend_name;
     const auto &name = location.name;
 
@@ -402,6 +411,7 @@ std::optional<std::vector<std::string>> get_available_devices(std::string_view b
         utils::log_and_set_error("Backend '{}' not found.", backend_name);
         return std::nullopt;
     }
+
     return backend->available_devices();
 }
 

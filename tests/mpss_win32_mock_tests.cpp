@@ -340,6 +340,7 @@ class WindowsKeyReference : public WindowsKeyCreation
     void SetUp() override
     {
         WindowsKeyCreation::SetUp();
+
         EXPECT_MODULE_FUNC_CALL(NCryptExportKey, _, _, _, _, _, _, _, _)
             .Times(AnyNumber())
             .WillRepeatedly(Return(status_failure));
@@ -356,9 +357,11 @@ class WindowsKeyReference : public WindowsKeyCreation
         RESTORE_MODULE_FUNC(NCryptExportKey);
         RESTORE_MODULE_FUNC(NCryptSignHash);
         RESTORE_MODULE_FUNC(NCryptVerifySignature);
+
         VERIFY_AND_CLEAR_MODULE_FUNC(NCryptExportKey);
         VERIFY_AND_CLEAR_MODULE_FUNC(NCryptSignHash);
         VERIFY_AND_CLEAR_MODULE_FUNC(NCryptVerifySignature);
+
         WindowsKeyCreation::TearDown();
     }
 
@@ -379,6 +382,7 @@ class WindowsKeyReference : public WindowsKeyCreation
         std::vector<std::byte> blob(sizeof(header) + point.size() - 1);
         std::memcpy(blob.data(), &header, sizeof(header));
         std::copy(point.begin() + 1, point.end(), blob.begin() + sizeof(header));
+
         EXPECT_MODULE_FUNC_CALL(NCryptExportKey, _, _, _, _, _, _, _, _)
             .Times(AnyNumber())
             .WillRepeatedly([blob = std::move(blob)](NCRYPT_KEY_HANDLE, NCRYPT_KEY_HANDLE, LPCWSTR, NCryptBufferDesc *,
@@ -406,6 +410,8 @@ TEST_F(WindowsKeyReference, InvalidBackendSignatureIsNotReturnedToTheCaller)
         {"os", "mock_bound_key", std::nullopt}, mpss::Algorithm::ecdsa_secp256r1_sha256, public_key};
     auto key = mpss::KeyPair::Open(reference);
     ASSERT_NE(nullptr, key);
+
+    // Resolve DLL exports directly so real calls cannot re-enter the patched import table.
     const HMODULE ncrypt = GetModuleHandleW(L"ncrypt.dll");
     ASSERT_NE(nullptr, ncrypt);
     const auto real_open =
@@ -416,6 +422,8 @@ TEST_F(WindowsKeyReference, InvalidBackendSignatureIsNotReturnedToTheCaller)
     ASSERT_NE(nullptr, real_open);
     ASSERT_NE(nullptr, real_free);
     ASSERT_NE(nullptr, real_verify);
+
+    // Key operations remain mocked; the fabricated signature must reach real NCrypt verification.
     SECURITY_STATUS verification_status = status_failure;
     EXPECT_MODULE_FUNC_CALL(NCryptVerifySignature, _, _, _, _, _, _, _)
         .Times(1)
@@ -425,7 +433,7 @@ TEST_F(WindowsKeyReference, InvalidBackendSignatureIsNotReturnedToTheCaller)
             verification_status = real_verify(handle, padding, hash, hash_size, signature, signature_size, flags);
             return verification_status;
         });
-    // Resolve DLL exports directly so real calls cannot re-enter the patched import table.
+
     EXPECT_MODULE_FUNC_CALL(NCryptOpenStorageProvider, _, _, _)
         .Times(1)
         .WillOnce([real_open](NCRYPT_PROV_HANDLE *provider, LPCWSTR name, DWORD flags) -> SECURITY_STATUS {
@@ -440,6 +448,7 @@ TEST_F(WindowsKeyReference, InvalidBackendSignatureIsNotReturnedToTheCaller)
             }
             return real_free(handle);
         });
+
     EXPECT_MODULE_FUNC_CALL(NCryptSignHash, _, _, _, _, _, _, _, _)
         .Times(2)
         .WillRepeatedly([](NCRYPT_KEY_HANDLE, VOID *, PBYTE, DWORD, PBYTE out, DWORD size, DWORD *written,
@@ -455,6 +464,7 @@ TEST_F(WindowsKeyReference, InvalidBackendSignatureIsNotReturnedToTheCaller)
             }
             return ERROR_SUCCESS;
         });
+
     const std::vector<std::byte> hash(32, std::byte{0x2a});
     std::vector<std::byte> signature(key->sign_hash_size(), std::byte{0x5a});
     const auto untouched = signature;
@@ -474,8 +484,10 @@ TEST_F(WindowsKeyReference, ChangedBackendPublicKeyDoesNotReplaceTheReferencePin
         {"os", "mock_bound_extract", std::nullopt}, mpss::Algorithm::ecdsa_secp256r1_sha256, public_key};
     auto key = mpss::KeyPair::Open(reference);
     ASSERT_NE(nullptr, key);
+
     public_key.back() ^= std::byte{1};
     ExportPublicKey(public_key);
+
     std::vector<std::byte> output(key->extract_key_size(), std::byte{0x5a});
     const auto untouched = output;
     EXPECT_EQ(0, key->extract_key(output));

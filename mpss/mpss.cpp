@@ -43,20 +43,25 @@ std::optional<KeyLocation> location_with_defaults(std::string_view name,
                                                   std::optional<std::string_view> backend_name = std::nullopt)
 {
     clear_error();
+
     // Refuse reentry before resolving defaults, which can initialize the backend registry.
     if (utils::in_interaction_handler())
     {
         utils::log_and_set_error("MPSS cannot be called from an interaction handler.");
         return std::nullopt;
     }
+
+    // A supplied empty backend is invalid, not a request for the default backend.
     const std::string_view backend = backend_name ? *backend_name : impl::get_default_backend_name();
     if (!backend_name && backend.empty())
     {
         utils::log_and_set_error("No default backend available for key '{}'.", name);
         return std::nullopt;
     }
+
     KeyLocation location{.backend_name = std::string{backend}, .name = std::string{name}, .device_id = std::nullopt};
 #ifdef MPSS_BACKEND_YUBIKEY
+    // Only name-based calls pass through this helper; explicit locations never read the serial default.
     if ("yubikey" == backend)
     {
         const std::optional<std::uint32_t> serial = impl::yubikey::utils::get_serial_from_env();
@@ -66,6 +71,7 @@ std::optional<KeyLocation> location_with_defaults(std::string_view name,
         }
     }
 #endif
+
     return location;
 }
 } // namespace
@@ -77,6 +83,7 @@ KeyLocation KeyPair::location() const
 
 std::optional<KeyReference> KeyPair::reference() const
 {
+    // Location and algorithm are immutable; extract_key supplies the handle lock and identity checks.
     KeyReference result{location(), algorithm(), std::vector<std::byte>(extract_key_size())};
     const auto written = extract_key(result.public_key);
     if (0 == written || result.public_key.size() != written)
@@ -87,6 +94,7 @@ std::optional<KeyReference> KeyPair::reference() const
         }
         return std::nullopt;
     }
+
     return result;
 }
 
@@ -98,6 +106,8 @@ std::unique_ptr<KeyPair> KeyPair::Create(const KeyLocation &location, Algorithm 
         utils::log_and_set_error("MPSS cannot be called from an interaction handler.");
         return nullptr;
     }
+
+    // Keep the name's existence check and creation serialized against other lifecycle operations.
     const std::scoped_lock lifecycle{utils::name_mutex(location.name)};
     return clear_error_on_success(impl::create_key(location, algorithm, policy));
 }
@@ -110,6 +120,7 @@ std::unique_ptr<KeyPair> KeyPair::Open(const KeyLocation &location)
         utils::log_and_set_error("MPSS cannot be called from an interaction handler.");
         return nullptr;
     }
+
     const std::scoped_lock lifecycle{utils::name_mutex(location.name)};
     return clear_error_on_success(impl::open_key(location));
 }
@@ -122,6 +133,7 @@ std::unique_ptr<KeyPair> KeyPair::Open(const KeyReference &reference)
         utils::log_and_set_error("MPSS cannot be called from an interaction handler.");
         return nullptr;
     }
+
     const std::size_t key_size = utils::get_public_key_size(reference.algorithm);
     if (0 == key_size || reference.public_key.size() != key_size)
     {
@@ -129,6 +141,7 @@ std::unique_ptr<KeyPair> KeyPair::Open(const KeyReference &reference)
         return nullptr;
     }
 
+    // Own the expected bytes before opening; YubiKey also uses them to select a matching slot/route.
     std::vector<std::byte> expected = reference.public_key;
     const std::scoped_lock lifecycle{utils::name_mutex(reference.location.name)};
     auto key = impl::open_key(reference.location, expected);
@@ -136,21 +149,27 @@ std::unique_ptr<KeyPair> KeyPair::Open(const KeyReference &reference)
     {
         return nullptr;
     }
+
+    // A location alone is not an identity: verify both the algorithm and public key before returning it.
     if (key->algorithm() != reference.algorithm)
     {
         utils::log_and_set_error("The opened key does not match the referenced algorithm.");
         return nullptr;
     }
+
     std::vector<std::byte> actual(key_size);
     if (key_size != key->extract_key(actual))
     {
         return nullptr;
     }
+
     if (actual != expected)
     {
         utils::log_and_set_error("The opened key does not match the referenced public key.");
         return nullptr;
     }
+
+    // Keep the verified identity on the handle for later extraction and signing checks.
     key->expected_public_key_ = std::move(expected);
     return clear_error_on_success(std::move(key));
 }
@@ -163,6 +182,7 @@ bool KeyPair::Delete(const KeyLocation &location)
         utils::log_and_set_error("MPSS cannot be called from an interaction handler.");
         return false;
     }
+
     const std::scoped_lock lifecycle{utils::name_mutex(location.name)};
     return clear_error_on_success(impl::delete_key(location));
 }
@@ -466,22 +486,26 @@ std::size_t KeyPair::sign_hash(std::span<const std::byte> hash, std::span<std::b
     {
         return 0;
     }
+
     if (expected_public_key_.empty())
     {
         return clear_error_on_success(do_sign_hash(hash, sig));
     }
 
+    // Do not expose the backend's signature until the host verifies it against the expected key.
     std::vector<std::byte> signature(utils::get_max_signature_size(algorithm()));
     const std::size_t written = do_sign_hash(hash, signature);
     if (0 == written)
     {
         return 0;
     }
+
     if (written > signature.size())
     {
         utils::log_and_set_error("The backend returned an invalid signature size.");
         return 0;
     }
+
     const auto result = std::span<const std::byte>{signature}.first(written);
     clear_error();
     if (!impl::verify(backend_name_, hash, expected_public_key_, algorithm(), result))
@@ -492,6 +516,7 @@ std::size_t KeyPair::sign_hash(std::span<const std::byte> hash, std::span<std::b
         }
         return 0;
     }
+
     std::copy_n(signature.begin(), written, sig.begin());
     return clear_error_on_success(written);
 }
@@ -545,21 +570,26 @@ std::size_t KeyPair::extract_key(std::span<std::byte> public_key) const
     {
         return 0;
     }
+
     if (expected_public_key_.empty())
     {
         return clear_error_on_success(do_extract_key(public_key));
     }
+
+    // A changed key must not overwrite the caller's buffer or replace the handle's expected identity.
     std::vector<std::byte> actual(expected_public_key_.size());
     const std::size_t written = do_extract_key(actual);
     if (0 == written)
     {
         return 0;
     }
+
     if (written != expected_public_key_.size() || actual != expected_public_key_)
     {
         utils::log_and_set_error("The public key does not match the referenced public key.");
         return 0;
     }
+
     std::copy(actual.begin(), actual.end(), public_key.begin());
     return clear_error_on_success(written);
 }

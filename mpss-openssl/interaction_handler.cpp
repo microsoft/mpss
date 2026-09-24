@@ -27,6 +27,7 @@ static_assert(static_cast<int>(mpss::PinResult::not_attempted) == MPSS_PIN_RESUL
 static_assert(static_cast<int>(mpss::PinStatus::first_attempt) == MPSS_PIN_STATUS_FIRST_ATTEMPT);
 static_assert(static_cast<int>(mpss::PinStatus::wrong_pin) == MPSS_PIN_STATUS_WRONG_PIN);
 
+// Own null-terminated copies for C callbacks; the incoming C++ views need not end at a null byte.
 struct CInteractionContext
 {
     explicit CInteractionContext(const mpss::InteractionContext &target)
@@ -72,6 +73,7 @@ class CInteractionHandler : public mpss::InteractionHandler
         const int last_status = static_cast<int>(context.last_status);
 
         const CInteractionContext target{context.target};
+
         if (!request_pin_(&target.value, ctx_str.c_str(), last_status, context.retries_remaining, pin_buf.data(),
                           pin_buf.size(), user_data_))
         {
@@ -129,6 +131,8 @@ try
 {
     auto handler = std::make_shared<CInteractionHandler>(request_pin, notify_pin_result, notify_touch_needed,
                                                          notify_touch_complete, user_data);
+
+    // Publish only after construction succeeds; operations already using the old handler retain it.
     mpss::GetOrSetInteractionHandler(std::move(handler));
 }
 catch (...)

@@ -57,12 +57,15 @@ try
 {
     if (nullptr == location)
     {
+        // Forward an invalid location so core validation refreshes the MPSS error as well as the OpenSSL queue.
         ERR_raise(ERR_LIB_PROV, ERR_R_PASSED_NULL_PARAMETER);
         return mpss::KeyPair::Delete(mpss::KeyLocation{});
     }
+
     const mpss::KeyLocation value{
         std::string{as_view(location->backend_name)}, std::string{as_view(location->key_name)},
         nullptr == location->device_id ? std::nullopt : std::make_optional(std::string{location->device_id})};
+
     return mpss::KeyPair::Delete(value);
 }
 catch (...)

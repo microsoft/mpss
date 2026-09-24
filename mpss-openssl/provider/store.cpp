@@ -27,6 +27,7 @@ struct mpss_store_ctx
 {
     std::string key_name;
     std::string backend;
+    // Unset uses environment defaults; empty selects automatically; nonempty selects that device.
     std::optional<std::string> device_id;
     int expected_type = 0;
     bool loaded = false;
@@ -107,6 +108,7 @@ try
     // target backend and key name into it (see mpss_build_key_load_reference). The blob only needs to
     // outlive the synchronous object callback below, so a local is sufficient.
     byte_vector reference;
+
     const bool built =
         ctx->device_id ? mpss_build_key_load_reference(
                              mpss::KeyLocation{ctx->backend.empty() ? mpss::get_default_backend_name() : ctx->backend,
@@ -177,6 +179,7 @@ try
             return 0;
         }
     }
+
     p = OSSL_PARAM_locate_const(params, "mpss_device_id");
     if (nullptr != p)
     {
@@ -185,6 +188,7 @@ try
         {
             return 0;
         }
+
         ctx->device_id = std::move(value);
     }
 
@@ -277,9 +281,12 @@ try
         {
             return 0;
         }
+
+        // A present device parameter bypasses the serial environment default, even when empty.
         const mpss::KeyLocation location{backend.empty() ? mpss::get_default_backend_name() : backend,
                                          std::string{key_name},
                                          device_id.empty() ? std::nullopt : std::make_optional(device_id)};
+
         return mpss::KeyPair::Delete(location) ? 1 : 0;
     }
 

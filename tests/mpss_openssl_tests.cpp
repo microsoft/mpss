@@ -18,6 +18,8 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <gtest/gtest.h>
 #include <memory>
 #include <openssl/asn1.h>
@@ -26,6 +28,7 @@
 #include <openssl/core.h>
 #include <openssl/core_dispatch.h>
 #include <openssl/core_names.h>
+#include <openssl/core_object.h>
 #include <openssl/decoder.h>
 #include <openssl/encoder.h>
 #include <openssl/err.h>
@@ -334,6 +337,48 @@ evp_pkey_ptr DecodeReferencePem(OSSL_LIB_CTX *libctx, const std::string &pem)
     return evp_pkey_ptr(pkey);
 }
 
+// Capture the provider's reference object without opening the named key or accessing a device.
+int DecodeReferenceObject(OSSL_LIB_CTX *libctx, BIO *input, std::string &reference)
+{
+    OSSL_DECODER *decoder = OSSL_DECODER_fetch(libctx, "EC", "provider=mpss,input=pem");
+    if (nullptr == decoder)
+    {
+        return 0;
+    }
+    SCOPE_GUARD(OSSL_DECODER_free(decoder));
+
+    OSSL_DECODER_CTX *ctx = OSSL_DECODER_CTX_new();
+    if (nullptr == ctx)
+    {
+        return 0;
+    }
+    SCOPE_GUARD(OSSL_DECODER_CTX_free(ctx));
+
+    if (1 != OSSL_DECODER_CTX_set_input_type(ctx, "PEM") ||
+        1 != OSSL_DECODER_CTX_set_selection(ctx, OSSL_KEYMGMT_SELECT_PRIVATE_KEY) ||
+        1 != OSSL_DECODER_CTX_add_decoder(ctx, decoder) || 1 != OSSL_DECODER_CTX_set_construct_data(ctx, &reference) ||
+        1 != OSSL_DECODER_CTX_set_construct(
+                 ctx, [](OSSL_DECODER_INSTANCE *, const OSSL_PARAM params[], void *data) -> int {
+                     const OSSL_PARAM *value = OSSL_PARAM_locate_const(params, OSSL_OBJECT_PARAM_REFERENCE);
+                     if (nullptr == value || OSSL_PARAM_OCTET_STRING != value->data_type || nullptr == value->data)
+                     {
+                         return 0;
+                     }
+                     static_cast<std::string *>(data)->assign(static_cast<const char *>(value->data), value->data_size);
+                     return 1;
+                 }))
+    {
+        return 0;
+    }
+    return OSSL_DECODER_from_bio(ctx, input);
+}
+
+evp_pkey_ptr GenerateFramingKey(OSSL_LIB_CTX *libctx)
+{
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) - OpenSSL's keygen helper takes an algorithm-specific argument.
+    return evp_pkey_ptr{EVP_PKEY_Q_keygen(libctx, "provider=default", "EC", SN_X9_62_prime256v1)};
+}
+
 std::string EncodeReferencePem(EVP_PKEY *key, int selection = EVP_PKEY_PRIVATE_KEY)
 {
     encoder_ctx_ptr encoder(OSSL_ENCODER_CTX_new_for_pkey(key, selection, "PEM", "MpssKeyReference", "provider=mpss"));
@@ -403,8 +448,10 @@ TEST(InteractionContextTest, CCallbacksReceiveTargetAndUserData)
         int touches{0};
         int completions{0};
     } observations;
+
     const auto previous = mpss::GetInteractionHandler();
     SCOPE_GUARD(mpss::GetOrSetInteractionHandler(previous));
+
     const auto check_target = [](const mpss_interaction_context_t *target) {
         EXPECT_STREQ("yubikey", target->backend_name);
         EXPECT_STREQ("35489220", target->device_id);
@@ -416,6 +463,7 @@ TEST(InteractionContextTest, CCallbacksReceiveTargetAndUserData)
         Observations *observed;
         decltype(check_target) check;
     } state{&observations, check_target};
+
     mpss_set_interaction_handler(
         [](const mpss_interaction_context_t *target, const char *operation, int status, int retries, char *pin,
            size_t size, void *data) {
@@ -449,6 +497,7 @@ TEST(InteractionContextTest, CCallbacksReceiveTargetAndUserData)
         },
         &state);
 
+    // The adapter must copy the views into null-terminated C strings without exposing their suffixes.
     const auto handler = mpss::GetInteractionHandler();
     const mpss::InteractionContext target{
         std::string_view{"yubikey-tail"}.substr(0, 7), std::string_view{"35489220-tail"}.substr(0, 8),
@@ -457,9 +506,11 @@ TEST(InteractionContextTest, CCallbacksReceiveTargetAndUserData)
         {.operation = "sign", .last_status = mpss::PinStatus::first_attempt, .retries_remaining = 3, .target = target});
     ASSERT_TRUE(pin.has_value());
     EXPECT_STREQ("unused-test-pin", pin->c_str());
+
     handler->notify_pin_result(target, mpss::PinResult::not_attempted, 3);
     handler->notify_touch_needed(target);
     handler->notify_touch_complete(target, false);
+
     EXPECT_EQ(1, observations.requests);
     EXPECT_EQ(1, observations.results);
     EXPECT_EQ(1, observations.touches);
@@ -480,6 +531,7 @@ TEST(InteractionContextTest, CppNotificationsReceiveTarget)
 {
     const auto previous = mpss::GetInteractionHandler();
     SCOPE_GUARD(mpss::GetOrSetInteractionHandler(previous));
+
     int results = 0;
     class TargetHandler : public mpss::InteractionHandler
     {
@@ -487,20 +539,24 @@ TEST(InteractionContextTest, CppNotificationsReceiveTarget)
         explicit TargetHandler(int &calls) : calls_{calls}
         {
         }
+
         std::optional<mpss::SecureString> request_pin(const mpss::PinRequestContext &) override
         {
             return std::nullopt;
         }
+
         void notify_pin_result(const mpss::InteractionContext &target, mpss::PinResult, int) override
         {
             EXPECT_EQ("35489220", target.device_id);
             ++calls_;
         }
+
         void notify_touch_needed(const mpss::InteractionContext &target) override
         {
             EXPECT_EQ("reader", target.reader_name);
             ++calls_;
         }
+
         void notify_touch_complete(const mpss::InteractionContext &target, bool) override
         {
             EXPECT_EQ("my-key", target.key_name);
@@ -510,9 +566,11 @@ TEST(InteractionContextTest, CppNotificationsReceiveTarget)
       private:
         int &calls_;
     };
+
     mpss::GetOrSetInteractionHandler(std::make_shared<TargetHandler>(results));
     const auto handler = mpss::GetInteractionHandler();
     const mpss::InteractionContext target{"yubikey", "35489220", "my-key", "reader"};
+
     handler->notify_pin_result(target, mpss::PinResult::not_attempted, -1);
     handler->notify_touch_needed(target);
     handler->notify_touch_complete(target, false);
@@ -1626,6 +1684,287 @@ TEST_F(MPSSStore, ReferencePemDecoderRejectsForeignPem)
                            .get());
 }
 
+TEST_F(MPSSStore, ReferencePemFramingPreservesFollowingRecords)
+{
+    const evp_pkey_ptr key = GenerateFramingKey(libctx);
+    ASSERT_NE(nullptr, key);
+    const std::string body = BoundReference("os", "framing-only", "", PublicKeyDer(key.get()));
+    const std::string pem = ReferencePem(Base64(body));
+    const std::string records = pem + pem;
+    const bio_ptr input(BIO_new_mem_buf(records.data(), static_cast<int>(records.size())));
+    ASSERT_NE(nullptr, input);
+
+    std::string reference;
+    ASSERT_EQ(1, DecodeReferenceObject(libctx, input.get(), reference));
+    EXPECT_EQ(body, reference);
+    EXPECT_EQ(pem.size(), BIO_ctrl_pending(input.get()));
+
+    reference.clear();
+    ASSERT_EQ(1, DecodeReferenceObject(libctx, input.get(), reference));
+    EXPECT_EQ(body, reference);
+    EXPECT_EQ(0U, BIO_ctrl_pending(input.get()));
+}
+
+TEST_F(MPSSStore, ReferencePemFramingRejectsMidLineDelimiters)
+{
+    const evp_pkey_ptr key = GenerateFramingKey(libctx);
+    ASSERT_NE(nullptr, key);
+    const std::string body = BoundReference("os", "framing-only", "", PublicKeyDer(key.get()));
+    const std::string pem = ReferencePem(Base64(body));
+
+    // A line-buffer boundary must not turn the middle of a physical line into a BEGIN line.
+    for (const std::size_t prefix_size : {std::size_t{511}, std::size_t{1022}})
+    {
+        SCOPED_TRACE(prefix_size);
+        const std::string input_text = std::string(prefix_size, 'x') + pem;
+        const bio_ptr input(BIO_new_mem_buf(input_text.data(), static_cast<int>(input_text.size())));
+        ASSERT_NE(nullptr, input);
+        std::string reference;
+        EXPECT_EQ(0, DecodeReferenceObject(libctx, input.get(), reference));
+        EXPECT_TRUE(reference.empty());
+        ERR_clear_error();
+    }
+}
+
+TEST_F(MPSSStore, ReferencePemFramingLimitsConsumedInput)
+{
+    constexpr std::size_t input_limit = 8192;
+    const std::string begin = "-----BEGIN MPSS KEY REFERENCE-----\n";
+    const std::string input_text = begin + std::string(input_limit * 2, 'A');
+    std::size_t consumed = 0;
+    const bio_ptr input(BIO_new_mem_buf(input_text.data(), static_cast<int>(input_text.size())));
+    ASSERT_NE(nullptr, input);
+
+    // Count actual reads even if the decoder framework later restores the stream position.
+    BIO_set_callback_arg(input.get(), reinterpret_cast<char *>(&consumed));
+    BIO_set_callback_ex(
+        input.get(),
+        // NOLINTNEXTLINE(readability-non-const-parameter) - OpenSSL requires this callback signature.
+        [](BIO *bio, int operation, const char *, std::size_t, int, long, int result, std::size_t *processed) -> long {
+            if ((BIO_CB_READ | BIO_CB_RETURN) == operation && 0 < result && nullptr != processed)
+            {
+                *reinterpret_cast<std::size_t *>(BIO_get_callback_arg(bio)) += *processed;
+            }
+            return result;
+        });
+
+    std::string reference;
+    EXPECT_EQ(0, DecodeReferenceObject(libctx, input.get(), reference));
+    EXPECT_TRUE(reference.empty());
+    EXPECT_EQ(input_limit, consumed);
+    EXPECT_LE(input_text.size() - BIO_ctrl_pending(input.get()), input_limit);
+    ERR_clear_error();
+}
+
+TEST_F(MPSSStore, ReferencePemFramingAcceptsCompleteRecordsWithinBudget)
+{
+    constexpr std::size_t input_limit = 8192;
+    const evp_pkey_ptr key = GenerateFramingKey(libctx);
+    ASSERT_NE(nullptr, key);
+    const std::string body = BoundReference("os", "framing-only", "", PublicKeyDer(key.get()));
+    const std::string pem = ReferencePem(Base64(body));
+    ASSERT_LT(pem.size() + 1, input_limit);
+    const std::string at_limit = std::string(input_limit - pem.size() - 1, 'x') + "\n" + pem;
+
+    std::string crlf;
+    for (const char c : pem)
+    {
+        if ('\n' == c)
+        {
+            crlf.push_back('\r');
+        }
+        crlf.push_back(c);
+    }
+
+    for (const auto &record : {pem, crlf, pem.substr(0, pem.size() - 1), at_limit})
+    {
+        const bio_ptr input(BIO_new_mem_buf(record.data(), static_cast<int>(record.size())));
+        ASSERT_NE(nullptr, input);
+        std::string reference;
+        EXPECT_EQ(1, DecodeReferenceObject(libctx, input.get(), reference));
+        EXPECT_EQ(body, reference);
+        EXPECT_EQ(0U, BIO_ctrl_pending(input.get()));
+    }
+
+    const std::string over_limit = "x" + at_limit;
+    const bio_ptr input(BIO_new_mem_buf(over_limit.data(), static_cast<int>(over_limit.size())));
+    ASSERT_NE(nullptr, input);
+    std::string reference;
+    EXPECT_EQ(0, DecodeReferenceObject(libctx, input.get(), reference));
+    EXPECT_TRUE(reference.empty());
+    EXPECT_EQ(1U, BIO_ctrl_pending(input.get()));
+    ERR_clear_error();
+
+    // At the budget boundary, an END without LF cannot be distinguished from a truncated physical line.
+    const std::string no_final_lf = "x" + at_limit.substr(0, at_limit.size() - 1);
+    ASSERT_EQ(input_limit, no_final_lf.size());
+    for (const auto &record : {no_final_lf, no_final_lf + "unread"})
+    {
+        const bio_ptr bounded(BIO_new_mem_buf(record.data(), static_cast<int>(record.size())));
+        ASSERT_NE(nullptr, bounded);
+        reference.clear();
+        EXPECT_EQ(0, DecodeReferenceObject(libctx, bounded.get(), reference));
+        EXPECT_TRUE(reference.empty());
+        EXPECT_EQ(record.size() - input_limit, BIO_ctrl_pending(bounded.get()));
+        ERR_clear_error();
+    }
+}
+
+TEST_F(MPSSStore, ReferencePemFramingStopsAtMismatchedFooter)
+{
+    const evp_pkey_ptr key = GenerateFramingKey(libctx);
+    ASSERT_NE(nullptr, key);
+    const std::string body = BoundReference("os", "framing-only", "", PublicKeyDer(key.get()));
+    const std::string pem = ReferencePem(Base64(body));
+    const std::string malformed =
+        "-----BEGIN MPSS KEY REFERENCE-----\n" + Base64(body) + "\n-----END DIFFERENT LABEL-----\n";
+    const std::string input_text = malformed + pem;
+    const bio_ptr input(BIO_new_mem_buf(input_text.data(), static_cast<int>(input_text.size())));
+    ASSERT_NE(nullptr, input);
+
+    ERR_clear_error();
+    std::string reference;
+    EXPECT_EQ(0, DecodeReferenceObject(libctx, input.get(), reference));
+    EXPECT_TRUE(reference.empty());
+    EXPECT_EQ(pem.size(), BIO_ctrl_pending(input.get()));
+    bool bad_encoding = false;
+    for (unsigned long error = ERR_get_error(); 0 != error; error = ERR_get_error())
+    {
+        bad_encoding |= ERR_LIB_PROV == ERR_GET_LIB(error) && PROV_R_BAD_ENCODING == ERR_GET_REASON(error);
+    }
+    EXPECT_TRUE(bad_encoding);
+}
+
+TEST_F(MPSSStore, ReferencePemForeignProbePreservesExistingErrors)
+{
+    const std::string input_text = "-----BEGIN FOREIGN OBJECT-----\nAAAA\n-----END FOREIGN OBJECT-----\n" +
+                                   ReferencePem(Base64("not-a-reference"));
+    const bio_ptr input(BIO_new_mem_buf(input_text.data(), static_cast<int>(input_text.size())));
+    ASSERT_NE(nullptr, input);
+
+    ERR_clear_error();
+    ERR_raise(ERR_LIB_USER, 42);
+    const unsigned long existing_error = ERR_peek_last_error();
+    ASSERT_NE(0UL, existing_error);
+    std::string reference;
+    EXPECT_EQ(0, DecodeReferenceObject(libctx, input.get(), reference));
+    EXPECT_TRUE(reference.empty());
+    EXPECT_EQ(existing_error, ERR_get_error());
+    for (unsigned long error = ERR_get_error(); 0 != error; error = ERR_get_error())
+    {
+        EXPECT_FALSE(ERR_LIB_PROV == ERR_GET_LIB(error) && PROV_R_BAD_ENCODING == ERR_GET_REASON(error));
+    }
+}
+
+TEST_F(MPSSStore, ReferencePemFramingKeepsBufferedFragmentsOnTheSameLine)
+{
+    const evp_pkey_ptr key = GenerateFramingKey(libctx);
+    ASSERT_NE(nullptr, key);
+    const std::string body = BoundReference("os", "framing-only", "", PublicKeyDer(key.get()));
+    const std::string pem = ReferencePem(Base64(body));
+
+    BIO *reader_raw = nullptr;
+    BIO *writer_raw = nullptr;
+    ASSERT_EQ(1, BIO_new_bio_pair(&reader_raw, 0, &writer_raw, 0));
+    bio_ptr reader(reader_raw);
+    const bio_ptr writer(writer_raw);
+    bio_ptr buffered(BIO_new(BIO_f_buffer()));
+    ASSERT_NE(nullptr, buffered);
+    ASSERT_NE(nullptr, BIO_push(buffered.get(), reader.get()));
+    static_cast<void>(reader.release());
+    ASSERT_EQ(6, BIO_write(writer.get(), "prefix", 6));
+
+    struct Feed
+    {
+        BIO *writer = nullptr;
+        const std::string *suffix = nullptr;
+        bool sent = false;
+    } feed{.writer = writer.get(), .suffix = &pem};
+    BIO_set_callback_arg(buffered.get(), reinterpret_cast<char *>(&feed));
+    BIO_set_callback_ex(
+        buffered.get(),
+        // NOLINTNEXTLINE(readability-non-const-parameter) - OpenSSL requires this callback signature.
+        [](BIO *bio, int operation, const char *, std::size_t, int, long, int result, std::size_t *processed) -> long {
+            if (((BIO_CB_GETS | BIO_CB_RETURN) == operation || (BIO_CB_READ | BIO_CB_RETURN) == operation) &&
+                0 < result && nullptr != processed && 0 < *processed)
+            {
+                auto &state = *reinterpret_cast<Feed *>(BIO_get_callback_arg(bio));
+                if (!state.sent)
+                {
+                    state.sent = true;
+                    EXPECT_EQ(static_cast<int>(state.suffix->size()),
+                              BIO_write(state.writer, state.suffix->data(), static_cast<int>(state.suffix->size())));
+                    EXPECT_EQ(1, BIO_shutdown_wr(state.writer));
+                }
+            }
+            return result;
+        });
+    SCOPE_GUARD(BIO_set_callback_ex(buffered.get(), nullptr));
+
+    std::string reference;
+    EXPECT_EQ(0, DecodeReferenceObject(libctx, buffered.get(), reference));
+    EXPECT_TRUE(reference.empty());
+    EXPECT_TRUE(feed.sent);
+    ERR_clear_error();
+}
+
+TEST_F(MPSSStore, ReferencePemFramingCountsFileBytesContainingNul)
+{
+    constexpr std::size_t input_limit = 8192;
+    const std::string input_text = std::string{"x\0", 2} + std::string(input_limit - 3, 'x') + "\n" +
+                                   "-----BEGIN MPSS KEY REFERENCE-----\n" + std::string(1024, 'A');
+    const auto path = std::filesystem::temp_directory_path() / (test_key_name("pem_framing") + ".pem");
+    SCOPE_GUARD(std::filesystem::remove(path));
+    {
+        std::ofstream output(path, std::ios::binary);
+        ASSERT_TRUE(output.is_open());
+        output.write(input_text.data(), static_cast<std::streamsize>(input_text.size()));
+        ASSERT_TRUE(output.good());
+    }
+    const bio_ptr input(BIO_new_file(path.string().c_str(), "rb"));
+    ASSERT_NE(nullptr, input);
+
+    std::string reference;
+    EXPECT_EQ(0, DecodeReferenceObject(libctx, input.get(), reference));
+    EXPECT_TRUE(reference.empty());
+    const long position = BIO_tell(input.get());
+    ASSERT_LE(0L, position);
+    EXPECT_LE(position, static_cast<long>(input_limit));
+    ERR_clear_error();
+}
+
+TEST_F(MPSSStore, ReferencePemFramingDoesNotTreatRetryAsEndOfLine)
+{
+    const evp_pkey_ptr key = GenerateFramingKey(libctx);
+    ASSERT_NE(nullptr, key);
+    const std::string body = BoundReference("os", "framing-only", "", PublicKeyDer(key.get()));
+    std::string pending = ReferencePem(Base64(body));
+    pending.pop_back();
+
+    BIO *reader_raw = nullptr;
+    BIO *writer_raw = nullptr;
+    ASSERT_EQ(1, BIO_new_bio_pair(&reader_raw, 0, &writer_raw, 0));
+    bio_ptr reader(reader_raw);
+    const bio_ptr writer(writer_raw);
+    bio_ptr buffered(BIO_new(BIO_f_buffer()));
+    ASSERT_NE(nullptr, buffered);
+    ASSERT_NE(nullptr, BIO_push(buffered.get(), reader.get()));
+    static_cast<void>(reader.release());
+    ASSERT_EQ(static_cast<int>(pending.size()),
+              BIO_write(writer.get(), pending.data(), static_cast<int>(pending.size())));
+
+    // The producer has not closed its side: further footer characters can still arrive.
+    std::string reference;
+    EXPECT_EQ(0, DecodeReferenceObject(libctx, buffered.get(), reference));
+    EXPECT_TRUE(reference.empty());
+    bool bad_encoding = false;
+    for (unsigned long error = ERR_get_error(); 0 != error; error = ERR_get_error())
+    {
+        bad_encoding |= ERR_LIB_PROV == ERR_GET_LIB(error) && PROV_R_BAD_ENCODING == ERR_GET_REASON(error);
+    }
+    EXPECT_TRUE(bad_encoding);
+}
+
 TEST_F(MPSSStore, BoundReferenceRejectsMalformedDerBeforeOpening)
 {
     const evp_pkey_ptr public_key(EVP_PKEY_Q_keygen(libctx, "provider=default", "EC", SN_X9_62_prime256v1));
@@ -1633,12 +1972,16 @@ TEST_F(MPSSStore, BoundReferenceRejectsMalformedDerBeforeOpening)
     const std::string spki = PublicKeyDer(public_key.get());
     ASSERT_FALSE(spki.empty());
     const std::string valid = BoundReference("os", "mpss_bound_parse_only", "", spki);
+
     std::vector<std::string> malformed;
     std::vector<std::string> unsupported_bodies;
+
+    // Truncation, version values, and total/declaration sizes must not produce a usable reference.
     for (std::size_t size = 0; valid.size() > size; ++size)
     {
         malformed.push_back(valid.substr(0, size));
     }
+
     unsupported_bodies.push_back(BoundReference("os", "name", "", spki, 0));
     unsupported_bodies.push_back(BoundReference("os", "name", "", spki, 2));
     malformed.push_back(BoundReference("os", "name", "", spki, -1));
@@ -1647,6 +1990,8 @@ TEST_F(MPSSStore, BoundReferenceRejectsMalformedDerBeforeOpening)
     malformed.push_back(valid + valid);
     malformed.push_back(std::string(4097, 'x'));
     malformed.push_back(std::string(10000, 'x'));
+
+    // Location fields reject empty required values, excess length, and embedded control characters.
     malformed.push_back(BoundReference("", "name", "", spki));
     malformed.push_back(BoundReference("os", "", "", spki));
     malformed.push_back(BoundReference(std::string(65, 'x'), "name", "", spki));
@@ -1655,6 +2000,8 @@ TEST_F(MPSSStore, BoundReferenceRejectsMalformedDerBeforeOpening)
     malformed.push_back(BoundReference("os", "a\0b"sv, "", spki));
     malformed.push_back(BoundReference("os", "a\nb", "", spki));
     malformed.push_back(BoundReference("os", "name", "1\0ignored"sv, spki));
+
+    // A reference requires a complete, valid public key.
     malformed.push_back(BoundReference("os", "name", "", ""));
     malformed.push_back(BoundReference("os", "name", "", spki.substr(0, spki.size() - 1)));
     malformed.push_back(BoundReference("os", "name", "", spki + "trailing"));
@@ -1662,6 +2009,8 @@ TEST_F(MPSSStore, BoundReferenceRejectsMalformedDerBeforeOpening)
     ASSERT_LE(64U, invalid_public.size());
     invalid_public.replace(invalid_public.size() - 64, 64, 64, '\0');
     malformed.push_back(BoundReference("os", "name", "", invalid_public));
+
+    // Exercise ASN.1 tag, field order, optional-field presence, and duplicate-field rules.
     const std::string prefix = DerInteger(1) + DerValue(V_ASN1_UTF8STRING, "os") + DerValue(V_ASN1_UTF8STRING, "name");
     const std::string device = DerValue(0, DerValue(V_ASN1_UTF8STRING, "123"), true, V_ASN1_CONTEXT_SPECIFIC);
     malformed.push_back(DerValue(V_ASN1_SEQUENCE, prefix + device + device + spki, true));
@@ -1678,16 +2027,22 @@ TEST_F(MPSSStore, BoundReferenceRejectsMalformedDerBeforeOpening)
                                  DerValue(V_ASN1_INTEGER, "\x01\0\0\0\0\0\0\0\0"sv) +
                                      DerValue(V_ASN1_UTF8STRING, "os") + DerValue(V_ASN1_UTF8STRING, "name") + spki,
                                  true));
+
+    // BER and overlong length encodings must not be accepted as canonical DER.
     const std::string fields = prefix + spki;
     malformed.push_back(std::string{"\x30\x80", 2} + fields + std::string(2, '\0')); // BER indefinite length.
     ASSERT_LT(fields.size(), 256U);
     std::string nonminimal{"\x30\x82\0", 3};
     nonminimal.push_back(static_cast<char>(fields.size()));
     malformed.push_back(nonminimal + fields);
+
+    // Internal locator requests and unrelated binary envelopes are not persisted key references.
     malformed.push_back(InternalLocatorReference("os", "name", false));
     malformed.push_back(InternalLocatorReference("", "name", true));
     malformed.push_back(InternalLocatorReference("yubikey", "name", true));
     malformed.push_back(std::string{"MPSS-REF\0\0", 10} + std::string(28, '\0'));
+
+    // Valid ASN.1 with unsupported algorithms or parameter forms uses a different error category.
     const evp_pkey_ptr unsupported(EVP_PKEY_Q_keygen(libctx, "provider=default", "ED25519"));
     ASSERT_NE(nullptr, unsupported);
     unsupported_bodies.push_back(BoundReference("os", "name", "", PublicKeyDer(unsupported.get())));
@@ -1707,6 +2062,7 @@ TEST_F(MPSSStore, BoundReferenceRejectsMalformedDerBeforeOpening)
         }
         EXPECT_TRUE(bad_encoding);
     }
+
     for (const auto &body : unsupported_bodies)
     {
         ERR_clear_error();
@@ -1760,6 +2116,8 @@ TEST_F(MPSSStore, DeviceParameterRejectsInvalidLocations)
     EXPECT_EQ(nullptr, GenerateKey(libctx, name, "unknown-backend", MPSS_KEY_POLICY_NONE, ""));
     EXPECT_EQ(nullptr, evp_pkey_ptr(store_open_key(name, "unknown-backend", "")));
     EXPECT_EQ(0, store_delete_key(name, "unknown-backend", ""));
+
+    // Invalid C API input must report its own error, even when a different failure preceded it.
     mpss_clear_error();
     EXPECT_FALSE(mpss_delete_key_at(nullptr));
     EXPECT_TRUE(mpss_has_error());
@@ -1769,19 +2127,24 @@ TEST_F(MPSSStore, DeviceParameterRejectsInvalidLocations)
     ASSERT_NE(null_location_error, mpss::get_error());
     EXPECT_FALSE(mpss_delete_key_at(nullptr));
     EXPECT_EQ(null_location_error, mpss::get_error());
+
     for (const mpss_key_location_t location :
          {mpss_key_location_t{nullptr, name.c_str(), nullptr}, mpss_key_location_t{"os", nullptr, nullptr},
           mpss_key_location_t{"os", name.c_str(), ""}, mpss_key_location_t{"os", name.c_str(), "1"}})
     {
         EXPECT_FALSE(mpss_delete_key_at(&location));
     }
+
+    // Provider parameters must also validate their type, byte length, and embedded terminators.
     const evp_pkey_ctx_ptr ctx(EVP_PKEY_CTX_new_from_name(libctx, "EC", "provider=mpss"));
     ASSERT_NE(nullptr, ctx);
     ASSERT_EQ(1, EVP_PKEY_keygen_init(ctx.get()));
+
     char embedded_nul[] = {'1', '\0', '2'};
     std::array<char, 257> oversized{};
     std::fill(oversized.begin(), oversized.end(), '1');
     int wrong_type = 1;
+
     for (const auto param : {OSSL_PARAM_construct_utf8_string("mpss_device_id", nullptr, 0),
                              OSSL_PARAM_construct_utf8_string("mpss_device_id", embedded_nul, sizeof(embedded_nul)),
                              OSSL_PARAM_construct_utf8_string("mpss_device_id", oversized.data(), oversized.size()),
@@ -1799,14 +2162,18 @@ TEST_F(MPSSStore, BoundReferenceRejectsReplacementAndNeverCreates)
     {
         GTEST_SKIP() << "Algorithm not supported by OS backend";
     }
+
     const std::string name = test_key_name("mpss_bound_replacement");
     const mpss_key_location_t location{"os", name.c_str(), nullptr};
     ASSERT_TRUE(mpss_delete_key_at(&location));
     SCOPE_GUARD(mpss_delete_key_at(&location));
+
     evp_pkey_ptr key = GenerateKey(libctx, name, "os", MPSS_KEY_POLICY_NONE, "");
     ASSERT_NE(nullptr, key);
     const std::string pem = EncodeReferencePem(key.get());
     ASSERT_FALSE(pem.empty());
+
+    // A different public-point encoding represents the same key and must normalize to the original bytes.
     const std::string spki = PublicKeyDer(key.get());
     const auto *cursor = reinterpret_cast<const unsigned char *>(spki.data());
     const evp_pkey_ptr public_key(
@@ -1819,10 +2186,12 @@ TEST_F(MPSSStore, BoundReferenceRejectsReplacementAndNeverCreates)
     ASSERT_NE(nullptr, normalized);
     EXPECT_EQ(spki, PublicKeyDer(normalized.get()));
     normalized.reset();
+
     char device[2]{};
     std::size_t written = 0;
     ASSERT_EQ(1, EVP_PKEY_get_utf8_string_param(key.get(), "mpss_device_id", device, sizeof(device), &written));
     EXPECT_STREQ("", device);
+
     evp_pkey_ptr opened(store_open_key(name, "os", ""));
     ASSERT_NE(nullptr, opened);
     EXPECT_EQ(PublicKeyDer(key.get()), PublicKeyDer(opened.get()));
@@ -1830,9 +2199,11 @@ TEST_F(MPSSStore, BoundReferenceRejectsReplacementAndNeverCreates)
     key.reset();
     ASSERT_EQ(1, store_delete_key(name, "os", ""));
 
+    // A missing key is not recreated by loading its reference.
     EXPECT_EQ(nullptr, DecodeReferencePem(libctx, pem).get());
     EXPECT_EQ(nullptr, mpss::KeyPair::Open(mpss::KeyLocation{"os", name, std::nullopt}));
 
+    // Reusing the name must not make the saved reference accept different key material.
     key = GenerateKey(libctx, name, "os", MPSS_KEY_POLICY_NONE, "");
     ASSERT_NE(nullptr, key);
     EXPECT_EQ(nullptr, DecodeReferencePem(libctx, pem).get());
@@ -1848,11 +2219,13 @@ TEST_F(MPSSStore, DeviceParameterReportsAndPersistsActualDevice)
     {
         GTEST_SKIP() << "YubiKey device not available";
     }
+
     const std::string device_id = devices->front();
     const std::string name = test_key_name("mpss_reference_device");
     const mpss_key_location_t location{"yubikey", name.c_str(), device_id.c_str()};
     ASSERT_TRUE(mpss_delete_key_at(&location));
     SCOPE_GUARD(mpss_delete_key_at(&location));
+
     evp_pkey_ptr key =
         GenerateKey(libctx, name, "yubikey", MPSS_KEY_POLICY_YUBIKEY_TOUCH_NEVER | MPSS_KEY_POLICY_YUBIKEY_PIN_ONCE,
                     device_id.c_str());
@@ -1860,19 +2233,24 @@ TEST_F(MPSSStore, DeviceParameterReportsAndPersistsActualDevice)
     {
         GTEST_SKIP() << "YubiKey key creation unavailable: " << mpss_get_error();
     }
+
     std::array<char, 32> actual{};
     std::size_t written = 0;
     ASSERT_EQ(1, EVP_PKEY_get_utf8_string_param(key.get(), "mpss_device_id", actual.data(), actual.size(), &written));
     EXPECT_EQ(device_id, actual.data());
+
     const std::string pem = EncodeReferencePem(key.get());
     EXPECT_EQ(BoundReference("yubikey", name, device_id, PublicKeyDer(key.get())), ReferenceBody(pem));
+
     const evp_pkey_ptr opened(store_open_key(name, "yubikey", device_id.c_str()));
     ASSERT_NE(nullptr, opened);
     EXPECT_EQ(PublicKeyDer(key.get()), PublicKeyDer(opened.get()));
+
     const evp_pkey_ptr decoded = DecodeReferencePem(libctx, pem);
     ASSERT_NE(nullptr, decoded);
     EXPECT_FALSE(SignDigest(libctx, decoded.get()).empty());
 
+    // Point the environment elsewhere; explicit locations and persisted references must keep using this device.
     const char *configured = std::getenv("MPSS_YUBIKEY_SERIAL"); // NOLINT(concurrency-mt-unsafe)
     const std::optional<std::string> saved =
         nullptr == configured ? std::nullopt : std::optional<std::string>{configured};
@@ -1886,13 +2264,16 @@ TEST_F(MPSSStore, DeviceParameterReportsAndPersistsActualDevice)
             unsetenv("MPSS_YUBIKEY_SERIAL"); // NOLINT(concurrency-mt-unsafe)
         }
     });
+
     std::uint32_t absent_serial = 1;
     while (std::ranges::find(*devices, std::to_string(absent_serial)) != devices->end())
     {
         ++absent_serial;
     }
+
     const std::string absent_id = std::to_string(absent_serial);
     ASSERT_EQ(0, setenv("MPSS_YUBIKEY_SERIAL", absent_id.c_str(), 1)); // NOLINT(concurrency-mt-unsafe)
+
     EXPECT_EQ(nullptr, evp_pkey_ptr(store_open_key(name, "yubikey")));
     EXPECT_NE(nullptr, evp_pkey_ptr(store_open_key(name, "yubikey", device_id.c_str())));
     if (1 == devices->size())
@@ -1934,6 +2315,8 @@ TEST_F(MPSSStore, ReferencePemEncoderCarriesNameAndRoundTrips)
     EXPECT_EQ(BoundReference(mpss::get_default_backend_name(), key_name, device.data(), PublicKeyDer(key.get())),
               ReferenceBody(pem));
     EXPECT_EQ(std::string::npos, pem.find("PRIVATE KEY"));
+
+    // Cross the provider/C++ boundary in both directions without changing the serialized reference.
     const auto cpp_reference = mpss::decode_key_reference_pem(pem);
     ASSERT_TRUE(cpp_reference.has_value()) << mpss::get_error();
     auto cpp_key = mpss::KeyPair::Open(*cpp_reference);

@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "mpss/utils/fn_deleter.h"
 #include <cstddef>
 #include <memory>
 #include <mpss/mpss.h>
@@ -18,19 +19,7 @@ namespace mpss_openssl::utils
 
 using byte_vector = std::vector<std::byte>;
 
-/**
- * @brief Deleter that releases an object with a compile-time known function.
- *
- * @p Fn is a template parameter rather than a stored function pointer, so the deleter is an empty
- * class and a `std::unique_ptr` using it stays the size of a raw pointer.
- */
-template <auto Fn> struct fn_deleter
-{
-    template <typename T> void operator()(T *ptr) const noexcept
-    {
-        Fn(ptr);
-    }
-};
+using mpss::utils::fn_deleter;
 
 template <typename T, typename... Args>
 [[nodiscard]]

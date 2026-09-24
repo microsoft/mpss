@@ -6,8 +6,8 @@
 #include "mpss-openssl/provider/keymgmt.h"
 #include "mpss-openssl/provider/provider.h"
 #include "mpss-openssl/utils/names.h"
-#include "mpss-openssl/utils/ossl_ptr.h"
 #include "mpss-openssl/utils/utils.h"
+#include "mpss/utils/ossl_ptr.h"
 #include <algorithm>
 #include <cstddef>
 #include <memory>
@@ -26,6 +26,7 @@ namespace
 
 using namespace ::mpss_openssl::provider;
 using namespace ::mpss_openssl::utils;
+using mpss::utils::openssl_buf_ptr;
 using enum digest_state;
 
 using asn1_object_ptr = std::unique_ptr<ASN1_OBJECT, fn_deleter<ASN1_OBJECT_free>>;
