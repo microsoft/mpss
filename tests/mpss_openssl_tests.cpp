@@ -170,6 +170,7 @@ std::string reference_fixture_key_name()
     return mpss::tests::test_key_name("mpss_reference_pem_fixture");
 }
 
+// Wrapped at 64 columns like PEM_write_bio writes it, which is the only layout the reference decoders accept.
 std::string Base64(std::string_view raw)
 {
     bio_ptr sink(BIO_new(BIO_s_mem()));
@@ -179,7 +180,6 @@ std::string Base64(std::string_view raw)
         return {};
     }
 
-    BIO_set_flags(encoder.get(), BIO_FLAGS_BASE64_NO_NL);
     const bio_ptr chain(BIO_push(encoder.release(), sink.release()));
 
     if (static_cast<int>(raw.size()) != BIO_write(chain.get(), raw.data(), static_cast<int>(raw.size())) ||
@@ -194,7 +194,14 @@ std::string Base64(std::string_view raw)
     {
         return {};
     }
-    return {mem->data, mem->length};
+
+    // ReferencePem supplies the line break before the footer.
+    std::string encoded{mem->data, mem->length};
+    if (encoded.ends_with('\n'))
+    {
+        encoded.pop_back();
+    }
+    return encoded;
 }
 
 std::string ReferencePem(std::string_view base64_body)
@@ -373,6 +380,32 @@ int DecodeReferenceObject(OSSL_LIB_CTX *libctx, BIO *input, std::string &referen
         return 0;
     }
     return OSSL_DECODER_from_bio(ctx, input);
+}
+
+evp_pkey_ptr DefaultProviderKey(OSSL_LIB_CTX *libctx, const char *type, const char *group = nullptr)
+{
+    evp_pkey_ctx_ptr ctx(EVP_PKEY_CTX_new_from_name(libctx, type, "provider=default"));
+    if (nullptr == ctx || 1 != EVP_PKEY_keygen_init(ctx.get()))
+    {
+        return nullptr;
+    }
+
+    if (nullptr != group)
+    {
+        const OSSL_PARAM params[]{
+            OSSL_PARAM_construct_utf8_string(OSSL_PKEY_PARAM_GROUP_NAME, const_cast<char *>(group), 0), OSSL_PARAM_END};
+        if (1 != EVP_PKEY_CTX_set_params(ctx.get(), params))
+        {
+            return nullptr;
+        }
+    }
+
+    EVP_PKEY *pkey = nullptr;
+    if (1 != EVP_PKEY_generate(ctx.get(), &pkey))
+    {
+        return nullptr;
+    }
+    return evp_pkey_ptr(pkey);
 }
 
 evp_pkey_ptr GenerateFramingKey(OSSL_LIB_CTX *libctx)
@@ -2065,8 +2098,13 @@ TEST_F(MPSSStore, BoundReferenceRejectsMalformedDerBeforeOpening)
     malformed.push_back(InternalLocatorReference("yubikey", "name", true));
     malformed.push_back(std::string{"MPSS-REF\0\0", 10} + std::string(28, '\0'));
 
-    // Valid ASN.1 with unsupported algorithms or parameter forms uses a different error category.
-    const evp_pkey_ptr unsupported(EVP_PKEY_Q_keygen(libctx, "provider=default", "ED25519"));
+    // Valid ASN.1 with an unsupported version, algorithm, or parameter form uses a different error category.
+    unsupported_bodies.push_back(DerValue(V_ASN1_SEQUENCE,
+                                          DerValue(V_ASN1_INTEGER, "\x01\0\0\0\0\0\0\0\0"sv) +
+                                              DerValue(V_ASN1_UTF8STRING, "os") + DerValue(V_ASN1_UTF8STRING, "name") +
+                                              spki,
+                                          true));
+    const evp_pkey_ptr unsupported = DefaultProviderKey(libctx, "ED25519");
     ASSERT_NE(nullptr, unsupported);
     unsupported_bodies.push_back(BoundReference("os", "name", "", PublicKeyDer(unsupported.get())));
     ASSERT_EQ(1, EVP_PKEY_set_utf8_string_param(public_key.get(), OSSL_PKEY_PARAM_EC_ENCODING,

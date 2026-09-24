@@ -7,20 +7,18 @@
 #include "mpss-openssl/provider/reference.h"
 #include "mpss-openssl/utils/names.h"
 #include "mpss-openssl/utils/utils.h"
+#include "mpss/serialization.h"
 #include "mpss/utils/ossl_ptr.h"
 #include <array>
 #include <cstddef>
-#include <cstring>
 #include <openssl/bio.h>
 #include <openssl/core_dispatch.h>
 #include <openssl/core_names.h>
 #include <openssl/core_object.h>
 #include <openssl/err.h>
 #include <openssl/params.h>
-#include <openssl/pem.h>
 #include <openssl/proverr.h>
 #include <optional>
-#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -31,7 +29,6 @@ namespace
 using namespace ::mpss_openssl::provider;
 using namespace ::mpss_openssl::utils;
 using mpss::utils::bio_ptr;
-using mpss::utils::openssl_buf_ptr;
 
 // OSSL_FUNC_decoder_decode: 1 continues the decoder chain, 0 aborts it for every decoder.
 constexpr int decoder_continue = 1;
@@ -114,7 +111,7 @@ reference_parse_status read_reference_pem(BIO *in, pem_buffer &buffer, std::stri
 
     // Read bytes, not BIO_gets fragments: file BIOs can underreport lengths containing NUL.
     // The small fixed budget bounds the work; byte reads avoid consuming the following PEM record.
-    while (used < mpss_max_reference_pem_size)
+    while (mpss_max_reference_pem_size > used)
     {
         std::size_t count = 0;
         const bool read_failed = 1 != BIO_read_ex(in, buffer.data() + used, 1, &count);
@@ -200,51 +197,28 @@ reference_parse_status parse_reference_input(OSSL_LIB_CTX *libctx, OSSL_CORE_BIO
         return status;
     }
 
-    bio_ptr bounded(BIO_new_mem_buf(pem.data(), static_cast<int>(pem.size())));
-    if (!bounded)
-    {
-        ERR_raise(ERR_LIB_PROV, ERR_R_MALLOC_FAILURE);
-        return reference_parse_status::invalid_mpss_reference;
-    }
-
-    char *pem_name = nullptr;
-    char *pem_header = nullptr;
-    unsigned char *pem_data = nullptr;
-    long pem_data_len = 0;
-    const int pem_read = PEM_read_bio(bounded.get(), &pem_name, &pem_header, &pem_data, &pem_data_len);
-    if (0 >= pem_read)
-    {
-        ERR_raise(ERR_LIB_PROV, PROV_R_BAD_ENCODING);
-        return reference_parse_status::invalid_mpss_reference;
-    }
-
-    const openssl_buf_ptr<char> pem_name_owner(pem_name);
-    const openssl_buf_ptr<char> pem_header_owner(pem_header);
-    const openssl_buf_ptr<unsigned char> pem_data_owner(pem_data);
-
-    // The framing pass identifies our label; OpenSSL remains responsible for matching delimiters and Base64.
-    if (nullptr == pem_name || 0 != std::strcmp(pem_name, mpss_key_reference_pem_label) || nullptr == pem_header ||
-        '\0' != *pem_header || 0 >= pem_data_len || std::cmp_less(mpss_max_reference_size, pem_data_len))
-    {
-        ERR_raise(ERR_LIB_PROV, PROV_R_BAD_ENCODING);
-        return reference_parse_status::invalid_mpss_reference;
-    }
-
-    const std::span<const unsigned char> body{pem_data, static_cast<std::size_t>(pem_data_len)};
-
-    // Persisted references use the shared DER codec, never the store-locator format.
+    // The same decoder serves the C++ API, so the provider accepts exactly the PEMs the library accepts.
     mpss_reference_error error = mpss_reference_error::malformed;
-    if (!mpss::impl::decode_key_reference_der(std::as_bytes(body), error))
+    const std::optional<mpss::KeyReference> reference = mpss::impl::decode_key_reference_pem(pem, error);
+    if (!reference)
     {
         ERR_raise_data(ERR_LIB_PROV,
                        mpss_reference_error::unsupported == error ? PROV_R_NOT_SUPPORTED : PROV_R_BAD_ENCODING,
-                       "PEM label \"%s\" does not carry a usable key load reference", mpss_key_reference_pem_label);
+                       "PEM label \"%s\" does not carry a usable key load reference: %s", mpss_key_reference_pem_label,
+                       mpss::get_error().c_str());
         return reference_parse_status::invalid_mpss_reference;
     }
 
-    // Copy the validated bytes before releasing OpenSSL's buffers; key management consumes them later.
-    const auto body_bytes = std::as_bytes(body);
-    load_reference.assign(body_bytes.begin(), body_bytes.end());
+    // Key management receives a self-contained byte reference, so the decoded reference travels as its
+    // canonical DER.
+    std::optional<byte_vector> der = mpss::encode_key_reference_der(*reference);
+    if (!der)
+    {
+        ERR_raise_data(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR, "%s", mpss::get_error().c_str());
+        return reference_parse_status::invalid_mpss_reference;
+    }
+
+    load_reference = std::move(*der);
     return reference_parse_status::ok;
 }
 
@@ -281,7 +255,6 @@ try
         OSSL_PARAM_construct_utf8_string(OSSL_OBJECT_PARAM_DATA_TYPE, const_cast<char *>(ec_data_type), 0),
         OSSL_PARAM_construct_octet_string(OSSL_OBJECT_PARAM_REFERENCE, reference.data(), reference.size()),
         OSSL_PARAM_END};
-    // object_cb consumes the reference synchronously, so the local outlives the call.
     return object_cb(params, object_cbarg);
 }
 catch (...)
