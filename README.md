@@ -25,7 +25,7 @@ reports false; read the tier rather than the flag to tell VBS from software stor
 ## Threat Model
 
 MPSS exposes no way to retrieve private key material: `extract_key()` returns the public key, and
-the OpenSSL provider's encoder emits a backend and a name rather than a key. Signing happens inside
+the OpenSSL provider's reference encoder emits the key's location and public key, never private material. Signing happens inside
 the backend. How much that is worth depends on the storage a key actually obtained, which is what
 `key_info()` reports.
 
@@ -174,7 +174,8 @@ cmake --install out/build/<configure-preset-name> --prefix <destination> # optio
 Run `cmake --list-presets=all` to list presets. Desktop names containing `-with-yubikey` enable
 YubiKey support; `-shared` selects shared libraries, otherwise static. Android uses shared
 libraries and the iOS Simulator preset uses static libraries. Linux offers only `-with-yubikey`
-presets, because it has no OS-native backend and MPSS requires at least one backend.
+presets, because it has no OS-native backend and MPSS requires at least one backend. Windows names
+containing `-mock` also build the NCrypt failure-injection tests (`MPSS_BUILD_WIN32_MOCK_TESTS=ON`).
 
 Each configure preset has a separate `out/build/<name>` directory and vcpkg installation.
 With Visual Studio or Xcode, add `--config Debug` or `--config Release` when installing.
@@ -227,8 +228,9 @@ project root, with arm64 slices for iOS devices and the Apple Silicon iOS simula
 Add the XCFrameworks to your Xcode project.
 
 If you include the provider, your app must also link an OpenSSL built for the iOS target. The
-provider archive deliberately leaves OpenSSL's symbols undefined so that your own link step
-resolves them, which is also why one set of headers serves both the device and simulator slices.
+provider archive, and the core archive with it because the provider enables key-reference
+serialization, deliberately leave OpenSSL's symbols undefined so that your own link step resolves
+them, which is also why one set of headers serves both the device and simulator slices.
 Building OpenSSL for iOS through vcpkg is the usual route; the macOS OpenSSL on your build host
 will not link against an iOS binary.
 
@@ -743,7 +745,8 @@ one attempt reported.
 
 A handle also stops working when the name it opened moves on.
 A key can be deleted and created again under the same name while a handle to the old key is still open; that handle does not silently follow the name to the new key.
-The name is tracked within the process, so this covers a key MPSS itself replaced; one replaced by another process or tool is not seen.
+On Windows, Apple and Android the name is tracked within the process, so this covers a key MPSS itself replaced; one replaced by another process or tool is not seen.
+A YubiKey handle instead compares the slot's public key before each operation, so it also notices a key replaced by another tool.
 Signing, verification, public key extraction and deletion through it fail with an error naming the reason:
 
 ```text
@@ -1089,36 +1092,35 @@ public:
         if (mpss::PinStatus::wrong_pin == context.last_status &&
             !my_ui::confirm_retry(context.retries_remaining)) {
             return std::nullopt;  // Give up rather than spend another try.
-}
+        }
 
         // context.operation describes what needs the PIN, for the prompt text. Have the dialog
         // return a SecureString so the PIN is never held in an ordinary std::string.
         return my_ui::prompt_for_pin(context.operation);  // std::nullopt if the user cancels.
-}
-
-void notify_touch_needed(const mpss::InteractionContext &target) override
-{
-    my_ui::show_touch_prompt(target.device_id);
-}
-
-void notify_touch_complete(const mpss::InteractionContext &target, bool success) override
-{
-    my_ui::hide_touch_prompt(target.device_id, success);
-}
-
-// Optional, but the only place an outcome other than "wrong PIN" is reported.
-    void notify_pin_result(const mpss::InteractionContext &target, mpss::PinResult result, int retries_remaining) override
-{
-    if (mpss::PinResult::not_attempted == result)
-    {
-        // No attempt was made, so retries_remaining is unchanged.
-            my_ui::hide_pin_dialog(target.device_id);
-    return;
     }
+
+    void notify_touch_needed(const mpss::InteractionContext &target) override
+    {
+        my_ui::show_touch_prompt(target.device_id);
+    }
+
+    void notify_touch_complete(const mpss::InteractionContext &target, bool success) override
+    {
+        my_ui::hide_touch_prompt(target.device_id, success);
+    }
+
+    // Optional, but the only place an outcome other than "wrong PIN" is reported.
+    void notify_pin_result(const mpss::InteractionContext &target, mpss::PinResult result, int retries_remaining) override
+    {
+        if (mpss::PinResult::not_attempted == result)
+        {
+            // No attempt was made, so retries_remaining is unchanged.
+            my_ui::hide_pin_dialog(target.device_id);
+            return;
+        }
         my_ui::report_pin_result(target.device_id, result, retries_remaining);  // ok, wrong_pin, locked, or error.
-}
-}
-;
+    }
+};
 
 // Install once, before any MPSS operation (typically at application startup).
 mpss::GetOrSetInteractionHandler(std::make_shared<MyInteractionHandler>());
@@ -1148,7 +1150,7 @@ declares `mpss_request_pin_handler_t` and the three notification types.
 MPSS automatically selects the sole reachable YubiKey; select a serial explicitly when several are reachable.
 Use `get_available_devices("yubikey")` to list reachable serials.
 
-`KeyLocation` specifies the backend, key name, and optional device ID: a positive decimal serial for YubiKey, or no device ID for OS storage.
+`KeyLocation` specifies the backend, key name, and optional device ID: a positive decimal serial for YubiKey; OS storage accepts no device ID and rejects one with an error.
 `key->location()` reports the backend and device actually used.
 
 ```cpp
@@ -1175,7 +1177,7 @@ A missing target or key mismatch fails without creating a key, changing the expe
 Location-based calls ignore `MPSS_YUBIKEY_SERIAL`; omitting the device ID requests automatic selection.
 `MPSS_YUBIKEY_SERIAL` sets the default serial for calls that take a key name rather than a `KeyLocation`.
 Serials are decimal integers from 1 to 4294967295; leading zeros are accepted, with a 256-character input limit.
-An invalid environment value is warned about and ignored; an invalid explicit `device_id` fails the operation.
+An invalid value fails the operation, whether it comes from the environment or from an explicit `device_id`; an empty environment value counts as unset.
 Existing handles keep their selected device when the default changes.
 A serial identifies a target but does not authenticate hardware.
 
@@ -1279,7 +1281,7 @@ OpenSSL. Key protection is determined by the selected backend.
 
 | Interface | Purpose |
 | --- | --- |
-| [api.h](mpss-openssl/api.h) | Provider initialization, policy constants, discovery, errors, and by-name deletion |
+| [api.h](mpss-openssl/api.h) | Provider initialization, policy and storage-tier constants, discovery, errors, and key deletion by name or location |
 | [interaction_handler.h](mpss-openssl/interaction_handler.h) | C callbacks for YubiKey PIN entry and touch notifications |
 | [log.h](mpss-openssl/log.h) | The shared C logging API |
 | [provider/](mpss-openssl/provider/) | Key management, signing, digests, codecs, and store implementation |
@@ -1575,6 +1577,7 @@ A reference resolves only its recorded location and checks the public key before
 Reading never creates a key, silently chooses another device, or replaces a mismatched expected key.
 A reference-bound signing operation verifies the returned signature on the host against that expected key before reporting success.
 This catches a device that reports the expected public key but produces a signature under a different key, without requesting a second signature.
+Verification through such a handle also uses the expected key rather than whatever the backend holds under the name.
 Loading itself does not add a signing challenge or proof-of-possession prompt; normal backend access may still require interaction.
 
 Only versioned reference PEMs containing an expected public key are accepted.
