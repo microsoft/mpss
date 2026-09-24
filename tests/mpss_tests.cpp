@@ -2190,6 +2190,26 @@ TEST_F(MPSS, KeyNameMaxLengthDistinguished)
     handle_b->delete_key();
 }
 
+namespace
+{
+// Whether the last error says the YubiKey itself is why a key could not be created: no device is
+// reachable, or the one connected refuses generation on grounds of its credentials or state. Those
+// runs skip; any other failure is a test failure.
+[[nodiscard]]
+bool yubikey_cannot_create_keys()
+{
+    const std::string error = mpss::get_error();
+    for (const char *reason : {"PIN", "management key", "Management key", "No reachable YubiKey", "smart card readers"})
+    {
+        if (std::string::npos != error.find(reason))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+} // namespace
+
 class CrossBackendTest : public ::testing::Test
 {
   protected:
@@ -2258,16 +2278,20 @@ TEST_F(CrossBackendTest, CreateKeyOnEachBackend)
     auto os_key = mpss::KeyPair::Create(os_key_name, ecdsa_secp256r1_sha256, "os");
     ASSERT_NE(nullptr, os_key);
 
-    // Create a key on the YubiKey backend. The backend may be registered without
-    // any device being currently available, so treat creation failure as a skip.
+    // Create a key on the YubiKey backend. The backend is registered whether or not a device is
+    // attached, so a create the device cannot serve is a skip rather than a failure.
     // touch=never so signing does not block on a physical touch during automated runs; pin=once
     // uses the configured PIN (MPSS_YUBIKEY_PIN) for the signing operation.
     auto yk_key = mpss::KeyPair::Create(yk_key_name, ecdsa_secp256r1_sha256, "yubikey",
                                         KeyPolicy::yubikey_touch_never | KeyPolicy::yubikey_pin_once);
     if (nullptr == yk_key)
     {
+        // Read before the clean-up below, which replaces the last error.
+        const bool device_reason = yubikey_cannot_create_keys();
+        const std::string reason = mpss::get_error();
         os_key->delete_key();
-        GTEST_SKIP() << "YubiKey backend registered but no device available.";
+        ASSERT_TRUE(device_reason) << reason;
+        GTEST_SKIP() << "YubiKey cannot create keys: " << reason;
     }
 
     // Both should be able to sign independently.
@@ -2468,7 +2492,8 @@ TEST_F(YubiKeySlotBinding, LabelDoesNotResolveAfterSlotKeyIsReplaced)
 
     if (nullptr == mpss::KeyPair::Create(key_name, ecdsa_secp256r1_sha256, "yubikey"))
     {
-        GTEST_SKIP() << "Connected YubiKey cannot create keys in its current state.";
+        ASSERT_TRUE(yubikey_cannot_create_keys()) << mpss::get_error();
+        GTEST_SKIP() << "YubiKey cannot create keys: " << mpss::get_error();
     }
 
     std::uint8_t slot = 0;
@@ -2506,10 +2531,15 @@ TEST_F(YubiKeySlotBinding, ReferenceDisambiguatesOnlySlotsWithTheRequestedName)
     const KeyLocation first{"yubikey", test_key_name("duplicate_label_a"), std::to_string(serials_[0])};
     const KeyLocation second{"yubikey", test_key_name("duplicate_label_b"), first.device_id};
 
+    // Clear what an interrupted run left behind; the test relabels a second slot to first.name.
+    ASSERT_TRUE(KeyPair::Delete(first)) << mpss::get_error();
+    ASSERT_TRUE(KeyPair::Delete(second)) << mpss::get_error();
+
     auto key_a = KeyPair::Create(first, ecdsa_secp256r1_sha256);
     if (nullptr == key_a)
     {
-        GTEST_SKIP() << "Connected YubiKey cannot create keys in its current state.";
+        ASSERT_TRUE(yubikey_cannot_create_keys()) << mpss::get_error();
+        GTEST_SKIP() << "YubiKey cannot create keys: " << mpss::get_error();
     }
     SCOPE_GUARD(static_cast<void>(key_a->delete_key()));
 
@@ -2594,6 +2624,9 @@ TEST_F(YubiKeySlotBinding, AScanThatCannotRunIsNotAnEmptyDeviceList)
         const std::optional<std::vector<std::uint32_t>> unlistable = YubiKeyPIV::available_serials();
         EXPECT_FALSE(unlistable.has_value());
         EXPECT_NE(std::optional<std::vector<std::uint32_t>>{std::vector<std::uint32_t>{}}, unlistable);
+
+        EXPECT_FALSE(mpss::get_available_devices("yubikey").has_value());
+        EXPECT_TRUE(mpss::has_error());
     }
 
     EXPECT_TRUE(YubiKeyPIV::available_serials().has_value());
@@ -2687,15 +2720,16 @@ TEST(YubiKeyReservedName, MarkerNameRejected)
 
 TEST(KeyLocationTest, YubiKeyRejectsInvalidSerialBeforeDeviceAccess)
 {
-    for (const auto *id : {"", "0", "-1", "+1", " 1", "1 ", "1x", "4294967296"})
+    // An empty identifier is refused as such before any backend sees it, so it is not in this list.
+    for (const auto *id : {"0", "-1", "+1", " 1", "1 ", "1x", "4294967296"})
     {
         const KeyLocation location{"yubikey", "invalid_device", id};
         EXPECT_EQ(nullptr, KeyPair::Create(location, ecdsa_secp256r1_sha256)) << id;
-        EXPECT_TRUE(mpss::has_error());
+        EXPECT_NE(std::string::npos, mpss::get_error().find("Invalid YubiKey device_id")) << id;
         EXPECT_EQ(nullptr, KeyPair::Open(location)) << id;
-        EXPECT_TRUE(mpss::has_error());
+        EXPECT_NE(std::string::npos, mpss::get_error().find("Invalid YubiKey device_id")) << id;
         EXPECT_FALSE(KeyPair::Delete(location)) << id;
-        EXPECT_TRUE(mpss::has_error());
+        EXPECT_NE(std::string::npos, mpss::get_error().find("Invalid YubiKey device_id")) << id;
     }
 }
 
@@ -2708,53 +2742,33 @@ class MultiYubiKeyTest : public ::testing::Test
     void SetUp() override
     {
         serials_ = mpss::impl::yubikey::YubiKeyPIV::available_serials().value_or(std::vector<std::uint32_t>{});
-
-        // Read the pin before the skip below. GTEST_SKIP returns from SetUp but TearDown still
-        // runs, so a value saved after it would be missed and the restore would clear a variable
-        // this fixture never read.
-        const char *existing = std::getenv("MPSS_YUBIKEY_SERIAL"); // NOLINT(concurrency-mt-unsafe)
-        if (nullptr != existing)
-        {
-            saved_serial_env_ = existing;
-        }
-
-        if (serials_.size() < 2)
+        if (2 > serials_.size())
         {
             GTEST_SKIP() << "Multi-device tests require at least two YubiKeys.";
         }
     }
 
-    void TearDown() override
+    void TargetDevice(std::uint32_t serial) const
     {
-        // Restore original env var state.
-        if (saved_serial_env_.empty())
-        {
-            unsetenv("MPSS_YUBIKEY_SERIAL"); // NOLINT(concurrency-mt-unsafe)
-        }
-        else
-        {
-            setenv("MPSS_YUBIKEY_SERIAL", saved_serial_env_.c_str(), 1); // NOLINT(concurrency-mt-unsafe)
-        }
+        serial_env_.set(std::to_string(serial));
     }
 
-    void TargetDevice(std::uint32_t serial)
+    void ClearDeviceTarget() const
     {
-        const std::string serial_str = std::to_string(serial);
-        setenv("MPSS_YUBIKEY_SERIAL", serial_str.c_str(), 1); // NOLINT(concurrency-mt-unsafe)
+        serial_env_.unset();
     }
 
-    void ClearDeviceTarget()
-    {
-        unsetenv("MPSS_YUBIKEY_SERIAL"); // NOLINT(concurrency-mt-unsafe)
-    }
+    // Unattended runs must not block on a touch, so every key these tests create waives it.
+    static constexpr KeyPolicy unattended_policy = KeyPolicy::yubikey_touch_never | KeyPolicy::yubikey_pin_once;
 
     std::vector<std::uint32_t> serials_;
-    std::string saved_serial_env_;
+    ScopedEnvironmentVariable serial_env_{"MPSS_YUBIKEY_SERIAL"};
 };
 
 TEST_F(MultiYubiKeyTest, OpenKeyFindsKeyOnNonFirstDevice)
 {
-    // Create a key on the second YubiKey (the one that would NOT be found by the old first-available logic).
+    // Create a key on the second YubiKey, so that opening it by name has to honor the selected serial
+    // rather than take the first device that answers.
     TargetDevice(serials_[1]);
 
     const std::string key_name = test_key_name("test_multi_yk_open");
@@ -2767,7 +2781,7 @@ TEST_F(MultiYubiKeyTest, OpenKeyFindsKeyOnNonFirstDevice)
         leftover.reset();
     }
 
-    auto key = mpss::KeyPair::Create(key_name, ecdsa_secp256r1_sha256, "yubikey");
+    auto key = mpss::KeyPair::Create(key_name, ecdsa_secp256r1_sha256, "yubikey", unattended_policy);
     ASSERT_NE(nullptr, key);
     key.reset();
 
@@ -2795,7 +2809,7 @@ TEST_F(MultiYubiKeyTest, SameNameUsesIndependentLocationsWithoutEnvironmentSwitc
     const KeyLocation first{"yubikey", name, std::to_string(serials_[0])};
     const KeyLocation second{"yubikey", name, std::to_string(serials_[1])};
 
-    auto key_a = KeyPair::Create(first, ecdsa_secp256r1_sha256);
+    auto key_a = KeyPair::Create(first, ecdsa_secp256r1_sha256, unattended_policy);
     ASSERT_NE(nullptr, key_a) << mpss::get_error();
     bool first_deleted = false;
     SCOPE_GUARD({
@@ -2805,7 +2819,7 @@ TEST_F(MultiYubiKeyTest, SameNameUsesIndependentLocationsWithoutEnvironmentSwitc
         }
     });
 
-    auto key_b = KeyPair::Create(second, ecdsa_secp256r1_sha256);
+    auto key_b = KeyPair::Create(second, ecdsa_secp256r1_sha256, unattended_policy);
     ASSERT_NE(nullptr, key_b) << mpss::get_error();
     SCOPE_GUARD(static_cast<void>(key_b->delete_key()));
 
@@ -2876,12 +2890,12 @@ TEST_F(MultiYubiKeyTest, KeysOnDifferentDevicesAreIndependent)
 
     // Create key A on device 0.
     TargetDevice(serials_[0]);
-    auto key_a = mpss::KeyPair::Create(key_name_a, ecdsa_secp256r1_sha256, "yubikey");
+    auto key_a = mpss::KeyPair::Create(key_name_a, ecdsa_secp256r1_sha256, "yubikey", unattended_policy);
     ASSERT_NE(nullptr, key_a);
 
     // Create key B on device 1.
     TargetDevice(serials_[1]);
-    auto key_b = mpss::KeyPair::Create(key_name_b, ecdsa_secp256r1_sha256, "yubikey");
+    auto key_b = mpss::KeyPair::Create(key_name_b, ecdsa_secp256r1_sha256, "yubikey", unattended_policy);
     ASSERT_NE(nullptr, key_b);
 
     // Clear the env var - all operations should use the stored serial.
@@ -2936,7 +2950,8 @@ TEST_F(MultiYubiKeyTest, AnAmbiguousDeviceIsRefusedRatherThanGuessed)
         leftover.reset();
     }
 
-    std::unique_ptr<mpss::KeyPair> created = mpss::KeyPair::Create(key_name, ecdsa_secp256r1_sha256, "yubikey");
+    std::unique_ptr<mpss::KeyPair> created =
+        mpss::KeyPair::Create(key_name, ecdsa_secp256r1_sha256, "yubikey", unattended_policy);
     ASSERT_NE(nullptr, created);
     created.reset();
 
@@ -3147,13 +3162,14 @@ TEST_F(YubiKeyPinGuard, AnAlreadyRejectedPinIsNotPresentedToTheDevice)
     std::unique_ptr<mpss::KeyPair> handle = mpss::KeyPair::Create(key_name, ecdsa_secp256r1_sha256, "yubikey");
     if (nullptr == handle)
     {
-        GTEST_SKIP() << "Connected YubiKey cannot create keys in its current state.";
+        ASSERT_TRUE(yubikey_cannot_create_keys()) << mpss::get_error();
+        GTEST_SKIP() << "YubiKey cannot create keys: " << mpss::get_error();
     }
 
     // A value the device has never been given, recorded as though it had refused it.
     const std::string fabricated = "not-a-real-pin-d";
     mpss::impl::yubikey::remember_rejected_pin(serials_[0], fabricated);
-    setenv("MPSS_YUBIKEY_PIN", fabricated.c_str(), 1); // NOLINT(concurrency-mt-unsafe)
+    pin_env_.set(fabricated);
 
     const std::vector<std::byte> hash(32, static_cast<std::byte>('h'));
     std::vector<std::byte> signature(handle->sign_hash_size());
@@ -3251,7 +3267,8 @@ TEST_F(YubiKeyPinGuard, EveryPinRequestIsAnsweredByExactlyOneResult)
     std::unique_ptr<mpss::KeyPair> handle = mpss::KeyPair::Create(key_name, ecdsa_secp256r1_sha256, "yubikey");
     if (nullptr == handle)
     {
-        GTEST_SKIP() << "Connected YubiKey cannot create keys in its current state.";
+        ASSERT_TRUE(yubikey_cannot_create_keys()) << mpss::get_error();
+        GTEST_SKIP() << "YubiKey cannot create keys: " << mpss::get_error();
     }
 
     const std::vector<std::byte> hash(32, static_cast<std::byte>('h'));
