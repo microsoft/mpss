@@ -13,7 +13,7 @@ namespace mpss::impl::os
  * @brief Key pair implementation that uses the Apple Secure Enclave for storage and operations.
  *
  * This class provides functionality to manage cryptographic key pairs stored in the Apple Secure Enclave.
- * It implements key deletion, signing, verification, and public key extraction using the Apple Secure Enclave APIs.
+ * It implements key deletion, signing, verification, and public-key extraction using the Apple Secure Enclave APIs.
  */
 class AppleSEKeyPair : public AppleKeyPairBase
 {

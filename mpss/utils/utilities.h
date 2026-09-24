@@ -241,9 +241,9 @@ template <typename... Args> void log_trace(std::format_string<Args...> fmt, Args
 std::size_t get_max_signature_size(Algorithm algorithm);
 
 /**
- * @brief Get public key size for a given algorithm.
- * @param algorithm The algorithm to get the public key size for.
- * @return The public key size.
+ * @brief Get public-key size for a given algorithm.
+ * @param algorithm The algorithm to get the public-key size for.
+ * @return The public-key size.
  * @note We assume that the public key is ANSI X9.63 encoded.
  */
 std::size_t get_public_key_size(Algorithm algorithm);
@@ -297,10 +297,10 @@ bool check_exact_hash_size(std::span<const std::byte> hash, Algorithm algorithm)
 bool check_sufficient_signature_buffer_size(std::span<const std::byte> sig, Algorithm algorithm);
 
 /**
- * @brief Check that the given public key buffer has at least the expected size for the given algorithm.
- * @param public_key The public key buffer to check.
- * @param algorithm The algorithm to check the public key buffer size for.
- * @return true if the public key buffer has at least the expected size for the given algorithm, false
+ * @brief Check that the given public-key buffer has at least the expected size for the given algorithm.
+ * @param public_key The public-key buffer to check.
+ * @param algorithm The algorithm to check the public-key buffer size for.
+ * @return true if the public-key buffer has at least the expected size for the given algorithm, false
  * otherwise.
  */
 bool check_sufficient_public_key_buffer_size(std::span<const std::byte> public_key, Algorithm algorithm);

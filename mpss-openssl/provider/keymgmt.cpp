@@ -229,7 +229,7 @@ try
     OSSL_PARAM *p = params;
 
     // The public key is written in this. It needs to stay alive until the call to
-    // param_cb finishes, since it holds the public key buffer.
+    // param_cb finishes, since it holds the public-key buffer.
     byte_vector vk;
 
     // For a parameter export, we just return the group type string.

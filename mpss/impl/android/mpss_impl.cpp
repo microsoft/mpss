@@ -554,7 +554,7 @@ bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_k
         return false;
     }
 
-    // The verification algorithm is inferred from the public key length on the Java side, so require
+    // The verification algorithm is inferred from the public-key length on the Java side, so require
     // an exact length match here to keep the public key bound to the requested algorithm.
     const std::size_t expected_pk_size = mpss::utils::get_public_key_size(algorithm);
     if (public_key.size() != expected_pk_size)

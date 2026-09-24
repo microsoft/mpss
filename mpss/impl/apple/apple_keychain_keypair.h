@@ -13,7 +13,7 @@ namespace mpss::impl::os
  * @brief Key pair implementation that uses the Apple Keychain for storage and operations.
  *
  * This class provides functionality to manage cryptographic key pairs stored in the Apple Keychain.
- * It implements key deletion, signing, verification, and public key extraction using the Apple Keychain APIs.
+ * It implements key deletion, signing, verification, and public-key extraction using the Apple Keychain APIs.
  */
 class AppleKeychainKeyPair : public AppleKeyPairBase
 {

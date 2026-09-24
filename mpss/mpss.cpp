@@ -567,7 +567,7 @@ std::size_t KeyPair::extract_key(std::span<std::byte> public_key) const
     }
     if (public_key.empty())
     {
-        // An empty output buffer is a request for the required public key size.
+        // An empty output buffer is a request for the required public-key size.
         return utils::get_public_key_size(algorithm());
     }
     if (!utils::check_sufficient_public_key_buffer_size(public_key, algorithm()))

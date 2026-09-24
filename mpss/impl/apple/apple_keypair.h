@@ -14,7 +14,7 @@ namespace mpss::impl::os
  *
  * This class provides common functionality for key pair implementations that use Apple APIs for storage and
  * operations. It implements the mpss::KeyPair interface and defines abstract methods for key deletion, signing,
- * verification, and public key extraction that must be implemented by derived classes.
+ * verification, and public-key extraction that must be implemented by derived classes.
  */
 class AppleKeyPairBase : public mpss::KeyPair
 {

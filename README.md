@@ -751,7 +751,7 @@ A handle also stops working when the name it opened moves on.
 A key can be deleted and created again under the same name while a handle to the old key is still open; that handle does not silently follow the name to the new key.
 On Windows, Apple and Android the name is tracked within the process, so this covers a key MPSS itself replaced; one replaced by another process or tool is not seen.
 A YubiKey handle instead compares the slot's public key before each operation, so it also notices a key replaced by another tool.
-Signing, verification, public key extraction and deletion through it fail with an error naming the reason:
+Signing, verification, public-key extraction and deletion through it fail with an error naming the reason:
 
 ```text
 Key 'my-key' is no longer the key this handle opened.

@@ -19,7 +19,13 @@ enum class ReferenceError
 };
 
 // Preserve structured diagnostics for the provider's OpenSSL error channel. These entry points are
-// internal to MPSS and its provider; the header is not installed.
+// internal to MPSS and its provider; the header is not installed. They are exported all the same,
+// because the provider is a separate binary that calls them.
+//
+// Defined in mpss/serialization.cpp rather than beside this header: the decoding they do is the
+// decoding the public entry points there do, and all of it rests on machinery local to that file.
+// A second translation unit would have to duplicate that machinery or share it through another
+// header, and two copies of a parser are two chances to disagree about what a reference is.
 [[nodiscard]]
 MPSS_DECOR std::optional<KeyReference> decode_key_reference_der(std::span<const std::byte> der, ReferenceError &error);
 

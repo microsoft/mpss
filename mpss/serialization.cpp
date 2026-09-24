@@ -149,7 +149,7 @@ bool valid_public_key(OSSL_LIB_CTX *libctx, const KeyReference &reference)
     const int nid = group_nid(reference.algorithm);
     if (NID_undef == nid || reference.public_key.empty() ||
         utils::get_public_key_size(reference.algorithm) != reference.public_key.size() ||
-        std::byte{4} != reference.public_key.front())
+        std::byte{0x04} != reference.public_key.front())
     {
         return false;
     }
@@ -383,6 +383,8 @@ std::optional<std::vector<std::byte>> encode_key_reference_der(const KeyReferenc
     return encode_der(value.get());
 }
 
+// Declared in mpss/impl/serialization.h. Defined here, with the public entry point that wraps it,
+// because both decode through the machinery local to this file.
 std::optional<KeyReference> impl::decode_key_reference_der(std::span<const std::byte> der, ReferenceError &error)
 {
     clear_error();

@@ -252,10 +252,14 @@ static int32_t KeyLocation(SecKeyRef keyRef) {
   if (NULL == keyRef) {
     return MPSS_APPLE_KEY_LOCATION_INDETERMINATE;
   }
+
+  // Whether the key can be asked at all.
   NSDictionary *attributes = (__bridge_transfer NSDictionary *)SecKeyCopyAttributes(keyRef);
   if (nil == attributes) {
     return MPSS_APPLE_KEY_LOCATION_INDETERMINATE;
   }
+
+  // A key the enclave holds carries its token; every other key answers for itself by not carrying one.
   id token = attributes[(id)kSecAttrTokenID];
   if (nil == token || ![token isEqual:(id)kSecAttrTokenIDSecureEnclave]) {
     return MPSS_APPLE_KEY_LOCATION_SOFTWARE;

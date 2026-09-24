@@ -196,18 +196,22 @@ std::shared_ptr<InteractionHandler> GetOrSetInteractionHandler(std::shared_ptr<I
         std::shared_mutex mtx;
         std::shared_ptr<InteractionHandler> handler;
     };
-    // Immortal singleton, like the logger and BackendRegistry: a host static destroyed after this one
-    // would otherwise lock a destroyed mutex. The one-time allocation is reclaimed by the OS at process
-    // exit.
+
+    // Immortal, like the logger and BackendRegistry: a host static destroyed after this one would
+    // otherwise lock a destroyed mutex. The single allocation is reclaimed by the OS at process exit.
     // NOLINTNEXTLINE(cppcoreguidelines-owning-memory) - intentional immortal singleton, never freed.
     static State &state = *new State{.handler = NewDefaultInteractionHandler()};
 
+    // Replacing returns the handler that was installed rather than the one it displaced, so a caller
+    // that installs and then uses the result cannot act through a handler already on its way out.
     if (nullptr != new_handler)
     {
         const std::unique_lock lock{state.mtx};
         state.handler = std::move(new_handler);
         return state.handler;
     }
+
+    // A handler in use outlives a replacement, because the caller holds a share of it.
     const std::shared_lock lock{state.mtx};
     return state.handler;
 }

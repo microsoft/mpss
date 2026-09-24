@@ -32,7 +32,7 @@ namespace mpss::impl::yubikey
  * This class handles:
  * - Connecting/disconnecting from the YubiKey
  * - PIN authentication
- * - Key generation, signing, public key extraction, and deletion
+ * - Key generation, signing, public-key extraction, and deletion
  * - Management-key authentication using PIN-protected, explicitly supplied, or explicitly enabled credentials
  */
 class YubiKeyPIV
