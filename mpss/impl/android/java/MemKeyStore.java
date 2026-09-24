@@ -17,7 +17,7 @@ public class MemKeyStore {
     // removes the entry, but does not delete the stored key. Reopening then gets a new
     // generation even though the stored key has not changed.
     private static final class CacheEntry {
-        KeyPair kp;
+        final KeyPair kp;
         final long generation;
         int holds;
 
@@ -31,14 +31,16 @@ public class MemKeyStore {
 
     private static final AtomicLong NextGeneration = new AtomicLong();
 
+    /**
+     * Record a name's cached key on a generation of its own. An entry already under this name is
+     * superseded rather than amended: a generation names one key for the whole of its life, so a
+     * handle holding the superseded one is refused from then on and its release finds nothing to
+     * give back. Amending the entry would instead hand those handles a key they never opened.
+     * @param keyName Name of the key being cached.
+     * @param kp The key to cache under it.
+     */
     public static void AddKey(String keyName, KeyPair kp) {
-        Entries.compute(keyName, (name, existing) -> {
-            if (null == existing) {
-                return new CacheEntry(kp, NextGeneration.incrementAndGet());
-            }
-            existing.kp = kp;
-            return existing;
-        });
+        Entries.put(keyName, new CacheEntry(kp, NextGeneration.incrementAndGet()));
     }
 
     /**
