@@ -74,7 +74,8 @@ KeyLocation KeyPair::location() const
 std::optional<KeyReference> KeyPair::reference() const
 {
     // Location and algorithm are immutable; extract_key supplies the handle lock and identity checks.
-    KeyReference result{location(), algorithm(), std::vector<std::byte>(extract_key_size())};
+    KeyReference result{
+        .location = location(), .algorithm = algorithm(), .public_key = std::vector<std::byte>(extract_key_size())};
     const auto written = extract_key(result.public_key);
     if (0 == written || result.public_key.size() != written)
     {
@@ -597,7 +598,7 @@ std::size_t KeyPair::extract_key(std::span<std::byte> public_key) const
         return 0;
     }
 
-    std::copy(actual.begin(), actual.end(), public_key.begin());
+    std::ranges::copy(actual, public_key.begin());
     return clear_error_on_success(written);
 }
 

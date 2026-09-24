@@ -140,7 +140,7 @@ std::optional<std::uint32_t> select_device(const KeyLocation &location)
         return std::nullopt;
     }
 
-    if (serials->size() > 1)
+    if (1 < serials->size())
     {
         mpss::utils::log_and_set_error(
             "Multiple YubiKeys detected. Set device_id to the desired YubiKey serial number.");

@@ -26,6 +26,7 @@ bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_k
 
 namespace
 {
+[[nodiscard]]
 bool accepts_location(const KeyLocation &location)
 {
     if (location.device_id)

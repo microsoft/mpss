@@ -46,11 +46,11 @@ namespace mpss::impl
 {
 
 /**
- * @brief Friend-based accessor for setting KeyPair::backend_name_.
+ * @brief Friend-based accessor for stamping a handle with the backend and key name it resolved to.
  *
- * KeyPair::backend_name_ is private with no public setter. BackendNameSetter is
- * declared as a friend of KeyPair, allowing the registry to stamp each key with
- * its backend name after creation or opening without exposing a public setter.
+ * KeyPair::key_name_ is private with no public setter. BackendNameSetter is declared as a friend of
+ * KeyPair, allowing the registry to record both names on each key after creation or opening
+ * without exposing a public setter.
  */
 class BackendNameSetter
 {
@@ -87,6 +87,7 @@ bool is_valid_key_name(std::string_view name)
     });
 }
 
+[[nodiscard]]
 bool is_valid_location(const KeyLocation &location)
 {
     if (!is_valid_key_name(location.name))
@@ -215,7 +216,8 @@ class BackendRegistry
 #endif
 
         // Check MPSS_DEFAULT_BACKEND environment variable.
-        const char *env_backend = std::getenv("MPSS_DEFAULT_BACKEND"); // NOLINT(concurrency-mt-unsafe)
+        // NOLINTNEXTLINE(concurrency-mt-unsafe) - the environment is only read, under the initialization lock.
+        const char *env_backend = std::getenv("MPSS_DEFAULT_BACKEND");
         if (nullptr != env_backend && std::strlen(env_backend) > 0)
         {
             const std::string requested{env_backend};

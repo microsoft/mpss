@@ -10,6 +10,7 @@
 #include "mpss/key_reference.h"
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <shared_mutex>
 #include <span>
 #include <string>
@@ -147,7 +148,11 @@ MPSS_DECOR std::vector<const char *> get_available_backends();
  * @brief Lists currently reachable selectable device identifiers for a backend.
  *
  * An empty list is a successful snapshot without selectable devices; OS storage has no device
- * selectors. A nullopt reports an enumeration or dispatch failure through @ref get_error.
+ * selectors. Like every other operation, this is refused from within an interaction handler.
+ *
+ * @param[in] backend_name The backend to enumerate (e.g., "os", "yubikey").
+ * @return The device identifiers, or nullopt if enumeration or dispatch failed, in which case
+ * @ref get_error describes the failure.
  */
 [[nodiscard]]
 MPSS_DECOR std::optional<std::vector<std::string>> get_available_devices(std::string_view backend_name);
@@ -242,8 +247,9 @@ class MPSS_DECOR KeyPair
     /**
      * @brief Creates a key at an explicitly selected backend.
      *
-     * Leave the device ID unset for automatic selection, without using MPSS_YUBIKEY_SERIAL.
-     * A supplied ID must be nonempty and supported by the backend; another device is never substituted.
+     * Leave the device ID unset for automatic selection, without using MPSS_YUBIKEY_SERIAL; a backend
+     * with selectable devices then requires exactly one to be reachable. A supplied ID must be
+     * nonempty and supported by the backend; another device is never substituted.
      */
     [[nodiscard]]
     static std::unique_ptr<KeyPair> Create(const KeyLocation &location, Algorithm algorithm,
@@ -439,7 +445,7 @@ class MPSS_DECOR KeyPair
     // must not propagate an exception and there is nobody left to tell.
     void release_from_destructor() noexcept;
 
-    // Non-virtual interface. Each public operation above clears the last error, validates its
+    // Non-virtual interface. Each fallible operation above clears the last error, validates its
     // inputs and refuses a released handle before dispatching to one of the implementations
     // below. Releasing is the exception: it latches rather than refusing, and leaves the last
     // error alone.

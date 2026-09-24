@@ -41,7 +41,8 @@ class Backend
     /**
      * @brief Open an existing key pair.
      * @param[in] location The explicit backend, name and optional device identifier.
-     * @param[in] expected_public_key Optional expected key used to select matching device routes.
+     * @param[in] expected_public_key Optional expected key that a backend may use to select among
+     * matching device routes. A backend may ignore it; the caller verifies the opened key against it.
      * @return Key pair if successful, nullptr otherwise.
      */
     [[nodiscard]]
