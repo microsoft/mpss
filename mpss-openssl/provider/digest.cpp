@@ -41,15 +41,18 @@ mpss_digest_ctx::~mpss_digest_ctx()
 }
 
 mpss_digest_ctx::mpss_digest_ctx(const mpss_digest_ctx &copy)
-    : libctx{copy.libctx}, md_name{copy.md_name}, state{copy.state}
+    : libctx{copy.libctx}, md_name{copy.md_name}, state{copy.state}, digest{copy.digest}
 {
     if (nullptr != copy.evp_dctx)
     {
         evp_dctx = EVP_MD_CTX_dup(copy.evp_dctx);
 
-        // NOTE: We make an owned copy of the evp_md pointer here.
-        // The mpss_digest_ctx destructor will then free it.
-        evp_md = EVP_MD_CTX_get1_md(evp_dctx);
+        // The destructor frees this owned reference.
+        evp_md = nullptr == evp_dctx ? nullptr : EVP_MD_CTX_get1_md(evp_dctx);
+        if (nullptr == evp_md)
+        {
+            state = error;
+        }
     }
 }
 } // namespace mpss_openssl::provider
@@ -122,7 +125,7 @@ try
     dctx->digest.clear();
 
     // If we are already initialized and not in an error state, clear the internal buffers.
-    if (dctx->state != uninitialized && dctx->state != error)
+    if (uninitialized != dctx->state && error != dctx->state)
     {
         dctx->state = uninitialized;
 
@@ -169,7 +172,6 @@ try
         return 0;
     }
 
-    // In any case, now we are ready to digest.
     dctx->state = digesting;
 
     return 1;
@@ -187,7 +189,7 @@ try
 
     // Check that the digest context is available and in the right state.
     // This means that the EVP_MD_CTX and EVP_MD are already set up.
-    if (nullptr == dctx || (dctx->state != digesting))
+    if (nullptr == dctx || (digesting != dctx->state))
     {
         return 0;
     }
@@ -224,16 +226,15 @@ try
     // Check that the digest context is available and in the right state.
     // This means that the EVP_MD_CTX and EVP_MD are already set up.
     const digest_state state = dctx->state;
-    if ((state != digesting) && (state != finalized))
+    if ((digesting != state) && (finalized != state))
     {
         return 0;
     }
 
-    if (state != finalized)
+    if (finalized != state)
     {
         byte_vector digest(EVP_MAX_MD_SIZE);
 
-        // First, we try to finalize the digest.
         unsigned int bytes_written = 0;
         unsigned char *digest_ptr = reinterpret_cast<unsigned char *>(digest.data());
         if (1 != EVP_DigestFinal_ex(dctx->evp_dctx, digest_ptr, &bytes_written))
@@ -241,25 +242,16 @@ try
             return 0;
         }
 
-        // Any errors after this are critical and should brick the context.
         dctx->state = finalized;
-
-        const std::size_t digest_bytes = static_cast<std::size_t>(bytes_written);
-
-        // Sanity check: we should not have exceeded outsz.
-        if (outsz < digest_bytes)
-        {
-            dctx->state = error;
-            return 0;
-        }
-
-        // Resize the vector to the correct size.
-        digest.resize(digest_bytes);
+        digest.resize(static_cast<std::size_t>(bytes_written));
         dctx->digest = std::move(digest);
     }
 
-    // We must be in finalized state now, because earlier if we ended up in
-    // error state we already returned 0.
+    // The digest stays available, so a caller may retry with a large enough buffer.
+    if (outsz < dctx->digest.size())
+    {
+        return 0;
+    }
 
     std::ranges::transform(dctx->digest, out, [](std::byte b) { return static_cast<unsigned char>(b); });
     *outl = dctx->digest.size();
@@ -381,15 +373,15 @@ void *mpss_digest_newctx(void *provctx, const char *mdname)
         return nullptr;
     }
 
-    if (std::string_view{mdname} == OSSL_DIGEST_NAME_SHA2_256)
+    if (OSSL_DIGEST_NAME_SHA2_256 == std::string_view{mdname})
     {
         return ::mpss_digest_newctx_SHA256(provctx);
     }
-    if (std::string_view{mdname} == OSSL_DIGEST_NAME_SHA2_384)
+    if (OSSL_DIGEST_NAME_SHA2_384 == std::string_view{mdname})
     {
         return ::mpss_digest_newctx_SHA384(provctx);
     }
-    if (std::string_view{mdname} == OSSL_DIGEST_NAME_SHA2_512)
+    if (OSSL_DIGEST_NAME_SHA2_512 == std::string_view{mdname})
     {
         return ::mpss_digest_newctx_SHA512(provctx);
     }
