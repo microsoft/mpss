@@ -78,9 +78,13 @@ extern "C"
     } mpss_key_location_t;
 
     /**
-     * @brief Deletes the key at a location without consulting environment selection defaults.
+     * @brief Deletes every key at a location without consulting environment selection defaults.
+     *
+     * A location that holds nothing is already in the requested state.
+     *
      * @param[in] location Non-null location. Device identifiers are locators, not authentication.
-     * @return True if deletion succeeds, false for an invalid location or storage failure.
+     * @return True if the location holds no key afterwards, false for an invalid location, a key
+     * that could not be removed, or storage that could not be read.
      */
     MPSS_OPENSSL_DECOR bool mpss_delete_key_at(const mpss_key_location_t *location);
 
