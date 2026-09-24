@@ -752,20 +752,20 @@ public class KeyManagement {
             throw new IllegalArgumentException("Invalid EC point format.");
         }
 
-        String curveName = null;
+        String groupName = null;
         int coordLength = 0;
 
         switch (uncompressed.length) {
             case 65:  // 1 + 32 + 32
-                curveName = "secp256r1";
+                groupName = "secp256r1";
                 coordLength = 32;
                 break;
             case 97:  // 1 + 48 + 48
-                curveName = "secp384r1";
+                groupName = "secp384r1";
                 coordLength = 48;
                 break;
             case 133: // 1 + 66 + 66
-                curveName = "secp521r1";
+                groupName = "secp521r1";
                 coordLength = 66;
                 break;
             default:
@@ -778,7 +778,7 @@ public class KeyManagement {
         ECPoint point = new ECPoint(new BigInteger(1, xBytes), new BigInteger(1, yBytes));
 
         AlgorithmParameters parameters = AlgorithmParameters.getInstance("EC");
-        parameters.init(new ECGenParameterSpec(curveName));
+        parameters.init(new ECGenParameterSpec(groupName));
         ECParameterSpec ecSpec = parameters.getParameterSpec(ECParameterSpec.class);
 
         ECPublicKeySpec pubKeySpec = new ECPublicKeySpec(point, ecSpec);
