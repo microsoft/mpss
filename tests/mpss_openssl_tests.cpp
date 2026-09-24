@@ -288,7 +288,8 @@ std::string ReferenceBody(const std::string &pem)
 }
 
 evp_pkey_ptr GenerateKey(OSSL_LIB_CTX *libctx, const std::string &key_name, const char *backend = nullptr,
-                         std::uint64_t key_policy = MPSS_KEY_POLICY_NONE, const char *device_id = nullptr)
+                         std::uint64_t key_policy = MPSS_KEY_POLICY_NONE, const char *device_id = nullptr,
+                         const char *algorithm = mpss_p256_algorithm)
 {
     evp_pkey_ctx_ptr ctx(EVP_PKEY_CTX_new_from_name(libctx, "EC", "provider=mpss"));
     if (nullptr == ctx || 1 != EVP_PKEY_keygen_init(ctx.get()))
@@ -2259,11 +2260,11 @@ TEST_F(MPSSStore, DeviceParameterReportsAndPersistsActualDevice)
     const std::string pem = EncodeReferencePem(key.get());
     EXPECT_EQ(BoundReference("yubikey", name, device_id, PublicKeyDer(key.get())), ReferenceBody(pem));
 
-    const evp_pkey_ptr opened(store_open_key(name, "yubikey", device_id.c_str()));
+    evp_pkey_ptr opened(store_open_key(name, "yubikey", device_id.c_str()));
     ASSERT_NE(nullptr, opened);
     EXPECT_EQ(PublicKeyDer(key.get()), PublicKeyDer(opened.get()));
 
-    const evp_pkey_ptr decoded = DecodeReferencePem(libctx, pem);
+    evp_pkey_ptr decoded = DecodeReferencePem(libctx, pem);
     ASSERT_NE(nullptr, decoded);
     EXPECT_FALSE(SignDigest(libctx, decoded.get()).empty());
 
@@ -2299,24 +2300,34 @@ TEST_F(MPSSStore, DeviceParameterReportsAndPersistsActualDevice)
     }
     EXPECT_NE(nullptr, DecodeReferencePem(libctx, pem));
     ERR_clear_error();
+
+    decoded.reset();
+    opened.reset();
+    key.reset();
+    EXPECT_TRUE(mpss_delete_key_at(&location)) << mpss_get_error();
 }
 #endif
+
+class MPSSStorePerAlgorithm : public MPSSStore, public ::testing::WithParamInterface<const char *>
+{
+};
 
 // Scenario: a persisted provider key is exported to a reference PEM and imported back.
 // Expected behavior: the export matches the on-the-wire format byte for byte, and the re-imported
 // key is usable for signing.
-TEST_F(MPSSStore, ReferencePemEncoderCarriesNameAndRoundTrips)
+TEST_P(MPSSStorePerAlgorithm, ReferencePemEncoderCarriesNameAndRoundTrips)
 {
-    if (!mpss_is_algorithm_available(mpss_p256_algorithm))
+    const char *algorithm = GetParam();
+    if (!mpss_is_algorithm_available(algorithm))
     {
-        GTEST_SKIP() << "Algorithm not supported by current backend";
+        GTEST_SKIP() << "Algorithm not supported by current backend: " << algorithm;
     }
 
     const std::string key_name = reference_fixture_key_name();
     mpss_delete_key(key_name.c_str());
     SCOPE_GUARD(mpss_delete_key(key_name.c_str()));
 
-    evp_pkey_ptr key = GenerateKey(libctx, key_name);
+    evp_pkey_ptr key = GenerateKey(libctx, key_name, nullptr, MPSS_KEY_POLICY_NONE, nullptr, algorithm);
     if (nullptr == key)
     {
         GTEST_SKIP() << "MPSS provider key generation failed: " << mpss_get_error();
@@ -2363,6 +2374,182 @@ TEST_F(MPSSStore, ReferencePemEncoderCarriesNameAndRoundTrips)
     EXPECT_FALSE(SignDigest(libctx, decoded.get()).empty());
 
     EXPECT_EQ(pem, EncodeReferencePem(decoded.get()));
+}
+
+// Scenario: a caller sizes a signature buffer from EVP_PKEY_get_size and signs in one call.
+// Expected behavior: the size is positive, the signature fits in it, and the one-call sign succeeds.
+TEST_P(MPSSStorePerAlgorithm, KeySizeBoundsASignature)
+{
+    const char *algorithm = GetParam();
+    if (!mpss_is_algorithm_available(algorithm))
+    {
+        GTEST_SKIP() << "Algorithm not supported by current backend: " << algorithm;
+    }
+
+    const std::string key_name = test_key_name("mpss_key_size");
+    mpss_delete_key(key_name.c_str());
+    SCOPE_GUARD(mpss_delete_key(key_name.c_str()));
+
+    const evp_pkey_ptr key = GenerateKey(libctx, key_name, nullptr, MPSS_KEY_POLICY_NONE, nullptr, algorithm);
+    if (nullptr == key)
+    {
+        GTEST_SKIP() << "MPSS provider key generation failed: " << mpss_get_error();
+    }
+
+    const int size = EVP_PKEY_get_size(key.get());
+    ASSERT_LT(0, size);
+
+    const evp_pkey_ctx_ptr ctx(EVP_PKEY_CTX_new_from_pkey(libctx, key.get(), "provider=mpss"));
+    ASSERT_NE(nullptr, ctx);
+    ASSERT_EQ(1, EVP_PKEY_sign_init(ctx.get()));
+    const EVP_MD *md = nullptr;
+    ASSERT_EQ(1, EVP_PKEY_CTX_get_signature_md(ctx.get(), &md));
+    ASSERT_NE(nullptr, md);
+    ASSERT_LT(0, EVP_MD_get_size(md));
+    const std::vector<unsigned char> digest(static_cast<std::size_t>(EVP_MD_get_size(md)), 0x5a);
+
+    std::vector<unsigned char> signature(static_cast<std::size_t>(size));
+    std::size_t written = signature.size();
+    ASSERT_EQ(1, EVP_PKEY_sign(ctx.get(), signature.data(), &written, digest.data(), digest.size()));
+    EXPECT_LT(0U, written);
+    EXPECT_GE(static_cast<std::size_t>(size), written);
+}
+
+INSTANTIATE_TEST_SUITE_P(Algorithms, MPSSStorePerAlgorithm,
+                         ::testing::Values("ecdsa_secp256r1_sha256", "ecdsa_secp384r1_sha384",
+                                           "ecdsa_secp521r1_sha512"),
+                         [](const ::testing::TestParamInfo<const char *> &info) {
+                             std::string name(info.param);
+                             std::ranges::replace_if(name, [](char c) { return !std::isalnum(c); }, '_');
+                             return name;
+                         });
+
+// Scenario: the same stored key is opened by name and reloaded from its reference PEM.
+// Expected behavior: OpenSSL considers the two handles equal, and a different key unequal.
+TEST_F(MPSSStore, EqualityComparesTheReferencedKey)
+{
+    if (!mpss_is_algorithm_available(mpss_p256_algorithm))
+    {
+        GTEST_SKIP() << "Algorithm not supported by current backend";
+    }
+
+    const std::string first_name = test_key_name("mpss_eq_first");
+    const std::string second_name = test_key_name("mpss_eq_second");
+    mpss_delete_key(first_name.c_str());
+    mpss_delete_key(second_name.c_str());
+    SCOPE_GUARD(mpss_delete_key(first_name.c_str()));
+    SCOPE_GUARD(mpss_delete_key(second_name.c_str()));
+
+    evp_pkey_ptr first = GenerateKey(libctx, first_name);
+    if (nullptr == first)
+    {
+        GTEST_SKIP() << "MPSS provider key generation failed: " << mpss_get_error();
+    }
+    const evp_pkey_ptr second = GenerateKey(libctx, second_name);
+    ASSERT_NE(nullptr, second);
+
+    const std::string pem = EncodeReferencePem(first.get());
+    ASSERT_FALSE(pem.empty());
+    first.reset();
+
+    const evp_pkey_ptr opened(store_open_key(first_name, nullptr));
+    ASSERT_NE(nullptr, opened);
+    const evp_pkey_ptr decoded = DecodeReferencePem(libctx, pem);
+    ASSERT_NE(nullptr, decoded);
+
+    EXPECT_EQ(1, EVP_PKEY_eq(opened.get(), decoded.get()));
+    EXPECT_EQ(0, EVP_PKEY_eq(opened.get(), second.get()));
+}
+
+// Scenario: a signing context is initialized for a key and asked which digest it uses.
+// Expected behavior: it reports the key's digest, on both the digest-sign and the plain-sign paths.
+TEST_F(MPSSStore, SignatureContextReportsTheKeysDigest)
+{
+    if (!mpss_is_algorithm_available(mpss_p256_algorithm))
+    {
+        GTEST_SKIP() << "Algorithm not supported by current backend";
+    }
+
+    const std::string key_name = test_key_name("mpss_signature_md");
+    mpss_delete_key(key_name.c_str());
+    SCOPE_GUARD(mpss_delete_key(key_name.c_str()));
+
+    const evp_pkey_ptr key = GenerateKey(libctx, key_name);
+    if (nullptr == key)
+    {
+        GTEST_SKIP() << "MPSS provider key generation failed: " << mpss_get_error();
+    }
+
+    const evp_md_ctx_ptr mdctx(EVP_MD_CTX_new());
+    ASSERT_NE(nullptr, mdctx);
+    EVP_PKEY_CTX *pctx = nullptr;
+    ASSERT_EQ(1, EVP_DigestSignInit_ex(mdctx.get(), &pctx, "SHA256", libctx, "provider=mpss", key.get(), nullptr));
+    ASSERT_NE(nullptr, pctx);
+    const EVP_MD *md = nullptr;
+    ASSERT_EQ(1, EVP_PKEY_CTX_get_signature_md(pctx, &md));
+    ASSERT_NE(nullptr, md);
+    EXPECT_EQ(NID_sha256, EVP_MD_get_type(md));
+
+    const evp_pkey_ctx_ptr sign_ctx(EVP_PKEY_CTX_new_from_pkey(libctx, key.get(), "provider=mpss"));
+    ASSERT_NE(nullptr, sign_ctx);
+    ASSERT_EQ(1, EVP_PKEY_sign_init(sign_ctx.get()));
+    md = nullptr;
+    ASSERT_EQ(1, EVP_PKEY_CTX_get_signature_md(sign_ctx.get(), &md));
+    ASSERT_NE(nullptr, md);
+    EXPECT_EQ(NID_sha256, EVP_MD_get_type(md));
+}
+
+// Scenario: key generation names an empty backend and no device.
+// Expected behavior: the key is created on the default backend, as it is when no backend is named.
+TEST_F(MPSSStore, EmptyBackendParameterSelectsTheDefaultBackend)
+{
+    if (!mpss_is_algorithm_available(mpss_p256_algorithm))
+    {
+        GTEST_SKIP() << "Algorithm not supported by current backend";
+    }
+
+    const std::string key_name = test_key_name("mpss_empty_backend");
+    mpss_delete_key(key_name.c_str());
+    SCOPE_GUARD(mpss_delete_key(key_name.c_str()));
+
+    const evp_pkey_ptr key = GenerateKey(libctx, key_name, "");
+    ASSERT_NE(nullptr, key) << mpss_get_error();
+
+    std::array<char, 64> backend{};
+    std::size_t written = 0;
+    ASSERT_EQ(1, EVP_PKEY_get_utf8_string_param(key.get(), "mpss_backend", backend.data(), backend.size(), &written));
+    EXPECT_STREQ(mpss_get_default_backend_name(), backend.data());
+}
+
+// Scenario: a reference PEM is read back through PEM_read_bio_PrivateKey_ex with no property query.
+// Expected behavior: the decoder chain reaches the MPSS decoder on its own and reopens the key.
+TEST_F(MPSSStore, ReferencePemLoadsWithoutAPropertyQuery)
+{
+    if (!mpss_is_algorithm_available(mpss_p256_algorithm))
+    {
+        GTEST_SKIP() << "Algorithm not supported by current backend";
+    }
+
+    const std::string key_name = reference_fixture_key_name();
+    mpss_delete_key(key_name.c_str());
+    SCOPE_GUARD(mpss_delete_key(key_name.c_str()));
+
+    evp_pkey_ptr key = GenerateKey(libctx, key_name);
+    if (nullptr == key)
+    {
+        GTEST_SKIP() << "MPSS provider key generation failed: " << mpss_get_error();
+    }
+
+    const std::string pem = EncodeReferencePem(key.get());
+    ASSERT_FALSE(pem.empty());
+    key.reset();
+
+    const bio_ptr bio(BIO_new_mem_buf(pem.data(), static_cast<int>(pem.size())));
+    ASSERT_NE(nullptr, bio);
+    const evp_pkey_ptr loaded(PEM_read_bio_PrivateKey_ex(bio.get(), nullptr, nullptr, nullptr, libctx, nullptr));
+    ASSERT_NE(nullptr, loaded);
+    EXPECT_EQ(mpss_prov, EVP_PKEY_get0_provider(loaded.get()));
+    EXPECT_FALSE(SignDigest(libctx, loaded.get()).empty());
 }
 
 // Scenario: a reference PEM is offered to a caller that asked for a public key.
