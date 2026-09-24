@@ -47,16 +47,27 @@ std::optional<KeyReference> decode(std::string_view der)
 }
 
 // The failure category reported by the structured entry point, or nullopt when decoding succeeds.
+// Decoded twice from opposite starting values: a category the decoder never wrote shows up as a
+// disagreement between the two, rather than as whichever value the variable happened to start with.
 [[nodiscard]]
 std::optional<ReferenceError> decode_error(std::string_view der)
 {
-    ReferenceError error{};
-    if (impl::decode_key_reference_der(std::as_bytes(std::span{der}), error))
+    ReferenceError from_malformed = ReferenceError::malformed;
+    const std::optional<KeyReference> malformed_run =
+        impl::decode_key_reference_der(std::as_bytes(std::span{der}), from_malformed);
+
+    ReferenceError from_unsupported = ReferenceError::unsupported;
+    const std::optional<KeyReference> unsupported_run =
+        impl::decode_key_reference_der(std::as_bytes(std::span{der}), from_unsupported);
+
+    EXPECT_EQ(malformed_run.has_value(), unsupported_run.has_value()) << "decoding the same input twice disagreed";
+    if (malformed_run)
     {
         return std::nullopt;
     }
 
-    return error;
+    EXPECT_EQ(from_malformed, from_unsupported) << "the decoder did not report a failure category";
+    return from_malformed;
 }
 
 void expect_same_reference(const KeyReference &expected, const std::optional<KeyReference> &actual)
@@ -526,6 +537,59 @@ TEST(MPSSSerialization, RejectsNonOctetAlignedPublicKey)
     EXPECT_NE(std::string::npos, get_error().find("Invalid key-reference public key"));
 
     EXPECT_TRUE(decode_key_reference_der(encoded_bytes));
+    EXPECT_FALSE(has_error());
+}
+
+// A reference recorded once and checked byte for byte ever after. The round-trip tests prove the
+// encoder and decoder agree with each other; this proves they still agree with what MPSS already
+// wrote, which is what a stored reference from an older build depends on. The point is the P-256
+// generator, so the vector can be rebuilt from published values rather than from this code.
+TEST(MPSSSerialization, MatchesTheRecordedWireFormat)
+{
+    constexpr std::string_view golden_pem = "-----BEGIN MPSS KEY REFERENCE-----\n"
+                                            "MIGCAgEBDAd5dWJpa2V5DA1nb2xkZW4tdmVjdG9yoAoMCDEyMzQ1Njc4MFkwEwYH\n"
+                                            "KoZIzj0CAQYIKoZIzj0DAQcDQgAEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5\n"
+                                            "RdiYwpZP40Li/hp/m47n60p8D54WK84zV2sxXs7LtkBoN79R9Q==\n"
+                                            "-----END MPSS KEY REFERENCE-----\n";
+
+    // SEQUENCE { INTEGER 1, UTF8String "yubikey", UTF8String "golden-vector",
+    //            [0] { UTF8String "12345678" }, SubjectPublicKeyInfo }
+    constexpr std::array<unsigned char, 133> golden_der{
+        0x30, 0x81, 0x82, 0x02, 0x01, 0x01, 0x0c, 0x07, 0x79, 0x75, 0x62, 0x69, 0x6b, 0x65, 0x79, 0x0c, 0x0d,
+        0x67, 0x6f, 0x6c, 0x64, 0x65, 0x6e, 0x2d, 0x76, 0x65, 0x63, 0x74, 0x6f, 0x72, 0xa0, 0x0a, 0x0c, 0x08,
+        0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x30, 0x59, 0x30, 0x13, 0x06, 0x07, 0x2a, 0x86, 0x48,
+        0xce, 0x3d, 0x02, 0x01, 0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07, 0x03, 0x42, 0x00,
+        0x04, 0x6b, 0x17, 0xd1, 0xf2, 0xe1, 0x2c, 0x42, 0x47, 0xf8, 0xbc, 0xe6, 0xe5, 0x63, 0xa4, 0x40, 0xf2,
+        0x77, 0x03, 0x7d, 0x81, 0x2d, 0xeb, 0x33, 0xa0, 0xf4, 0xa1, 0x39, 0x45, 0xd8, 0x98, 0xc2, 0x96, 0x4f,
+        0xe3, 0x42, 0xe2, 0xfe, 0x1a, 0x7f, 0x9b, 0x8e, 0xe7, 0xeb, 0x4a, 0x7c, 0x0f, 0x9e, 0x16, 0x2b, 0xce,
+        0x33, 0x57, 0x6b, 0x31, 0x5e, 0xce, 0xcb, 0xb6, 0x40, 0x68, 0x37, 0xbf, 0x51, 0xf5};
+
+    constexpr std::array<unsigned char, 65> generator{
+        0x04, 0x6b, 0x17, 0xd1, 0xf2, 0xe1, 0x2c, 0x42, 0x47, 0xf8, 0xbc, 0xe6, 0xe5, 0x63, 0xa4, 0x40, 0xf2,
+        0x77, 0x03, 0x7d, 0x81, 0x2d, 0xeb, 0x33, 0xa0, 0xf4, 0xa1, 0x39, 0x45, 0xd8, 0x98, 0xc2, 0x96, 0x4f,
+        0xe3, 0x42, 0xe2, 0xfe, 0x1a, 0x7f, 0x9b, 0x8e, 0xe7, 0xeb, 0x4a, 0x7c, 0x0f, 0x9e, 0x16, 0x2b, 0xce,
+        0x33, 0x57, 0x6b, 0x31, 0x5e, 0xce, 0xcb, 0xb6, 0x40, 0x68, 0x37, 0xbf, 0x51, 0xf5};
+    const auto generator_bytes = std::as_bytes(std::span{generator});
+
+    const KeyReference expected{
+        .location = {.backend_name = "yubikey", .name = "golden-vector", .device_id = std::string{"12345678"}},
+        .algorithm = Algorithm::ecdsa_secp256r1_sha256,
+        .public_key = {generator_bytes.begin(), generator_bytes.end()}};
+
+    // What is stored still reads back as what was stored.
+    expect_same_reference(expected, decode_key_reference_pem(golden_pem));
+    expect_same_reference(expected, decode_key_reference_der(std::as_bytes(std::span{golden_der})));
+
+    // And what MPSS writes today is still byte for byte what was stored.
+    const auto der = encode_key_reference_der(expected);
+    ASSERT_TRUE(der.has_value()) << get_error();
+    // NOLINTNEXTLINE(bugprone-unchecked-optional-access) - Checked by ASSERT_TRUE above.
+    EXPECT_TRUE(std::ranges::equal(der.value(), std::as_bytes(std::span{golden_der})));
+
+    const auto pem = encode_key_reference_pem(expected);
+    ASSERT_TRUE(pem.has_value()) << get_error();
+    // NOLINTNEXTLINE(bugprone-unchecked-optional-access) - Checked by ASSERT_TRUE above.
+    EXPECT_EQ(golden_pem, pem.value());
     EXPECT_FALSE(has_error());
 }
 
