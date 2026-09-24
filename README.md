@@ -531,9 +531,13 @@ Linux, macOS, and Windows, so the build steps below cover all three.
 
 #### Prerequisites
 
-The YubiKey backend requires a PIV-capable YubiKey with the PIV application enabled and firmware
-support for [reading slot metadata](https://docs.yubico.com/yesdk/users-manual/application-piv/apdu/metadata.html).
-Install the `ykman` CLI separately for device administration. FIPS models also need
+The YubiKey backend requires a PIV-capable YubiKey with the PIV application enabled and **firmware
+5.3 or later**. Two things MPSS depends on arrived in that release:
+[reading slot metadata](https://docs.yubico.com/yesdk/users-manual/application-piv/apdu/metadata.html),
+which is how a handle confirms it still holds the key it opened and how a key's origin and policies
+are established, and the `cached` touch policy, which is the default MPSS creates keys with. Earlier
+firmware is not supported: without metadata MPSS cannot tell what a slot holds, so it refuses rather
+than assume. Install the `ykman` CLI separately for device administration. FIPS models also need
 [FIPS provisioning](#fips-device-readiness).
 
 On **Linux**, the PC/SC smart card library must be installed separately, as it is a system dependency:
