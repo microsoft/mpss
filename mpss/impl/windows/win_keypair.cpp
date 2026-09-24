@@ -248,9 +248,6 @@ std::size_t WindowsKeyPair::do_extract_key(std::span<std::byte> public_key) cons
         return 0;
     }
 
-    // The Windows API returns only the X and Y coordinates; the extra byte is the point compression indicator.
-    std::size_t pk_size = pk_blob_size - sizeof(crypto_params::key_blob_t) + 1;
-
     auto pk_blob = std::make_unique<BYTE[]>(pk_blob_size);
     status = ::NCryptExportKey(key_handle_,
                                /* hExportKey */ 0, crypto->public_key_blob_name(),
@@ -272,6 +269,8 @@ std::size_t WindowsKeyPair::do_extract_key(std::span<std::byte> public_key) cons
     BYTE *pk_data_start = pk_blob.get() + sizeof(crypto_params::key_blob_t);
     BYTE *pk_data_end = pk_data_start + (pk_blob_size - sizeof(crypto_params::key_blob_t));
 
+    // The Windows API returns only the X and Y coordinates; the extra byte is the point compression
+    // indicator. Taken from what the export wrote rather than from the size query that preceded it.
     const std::size_t pk_expected_size = pk_data_end - pk_data_start + 1;
     if (mpss::utils::get_public_key_size(algorithm()) != pk_expected_size)
     {
@@ -285,7 +284,7 @@ std::size_t WindowsKeyPair::do_extract_key(std::span<std::byte> public_key) cons
     std::transform(pk_data_start, pk_data_end, public_key.begin() + 1,
                    [](auto in) { return static_cast<std::byte>(in); });
 
-    return pk_size;
+    return pk_expected_size;
 }
 
 bool WindowsKeyPair::do_release_key()
