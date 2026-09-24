@@ -24,13 +24,16 @@ namespace mpss::impl::yubikey::utils
 bool is_affirmative_environment_value(std::string_view value);
 
 /**
- * @brief Get the target YubiKey serial number from the environment variable MPSS_YUBIKEY_SERIAL.
+ * @brief Reads the default YubiKey serial number from the environment variable MPSS_YUBIKEY_SERIAL.
  *
- * When set, MPSS iterates through available smart card readers and connects to the
- * YubiKey whose serial number matches. Useful on machines with multiple YubiKeys.
- * @return The serial number, or std::nullopt if not set or invalid.
+ * Name-based calls connect to the YubiKey whose serial number matches this default. The variable
+ * counts as unset when it is absent or empty.
+ * @param[out] serial The serial number, or std::nullopt when the variable is unset.
+ * @return true if the variable is unset or holds a valid serial number, false, with the error
+ * set, if it holds anything else.
  */
-std::optional<std::uint32_t> get_serial_from_env();
+[[nodiscard]]
+bool get_serial_from_env(std::optional<std::uint32_t> &serial);
 
 // Match the reference format's device-ID bound while retaining support for leading zeros.
 inline constexpr std::size_t max_serial_length = 256;

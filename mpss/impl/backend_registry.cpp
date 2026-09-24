@@ -415,6 +415,18 @@ std::optional<std::vector<std::string>> get_available_devices(std::string_view b
     return backend->available_devices();
 }
 
+bool default_device_id(std::string_view backend_name, std::optional<std::string> &device_id)
+{
+    const auto backend = BackendRegistry::Instance().get_backend(backend_name);
+    if (nullptr == backend)
+    {
+        device_id.reset();
+        return true;
+    }
+
+    return backend->default_device_id(device_id);
+}
+
 bool verify(std::string_view backend_name, std::span<const std::byte> hash, std::span<const std::byte> public_key,
             Algorithm algorithm, std::span<const std::byte> sig)
 {

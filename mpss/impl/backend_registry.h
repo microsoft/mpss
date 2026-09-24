@@ -70,6 +70,20 @@ class Backend
     }
 
     /**
+     * @brief Resolves the device that this backend's environment default selects for name-based calls.
+     *
+     * Leaves device_id unset when there is no default, which requests automatic selection. Returns
+     * false, with the error set, when a default is present but invalid, so that a misconfigured
+     * default is refused rather than replaced by whichever device happens to be reachable.
+     */
+    [[nodiscard]]
+    virtual bool default_device_id(std::optional<std::string> &device_id) const
+    {
+        device_id.reset();
+        return true;
+    }
+
+    /**
      * @brief Verify a signature (standalone, without a key pair object).
      * @param[in] hash The hash to verify.
      * @param[in] public_key The public key for verification.
@@ -106,6 +120,11 @@ bool delete_key(const KeyLocation &location);
 
 [[nodiscard]]
 std::optional<std::vector<std::string>> get_available_devices(std::string_view backend_name);
+
+// Resolves the named backend's environment device default; see Backend::default_device_id. An
+// unknown backend has no default, and is reported by the operation that goes on to use it.
+[[nodiscard]]
+bool default_device_id(std::string_view backend_name, std::optional<std::string> &device_id);
 
 [[nodiscard]]
 bool verify(std::string_view backend_name, std::span<const std::byte> hash, std::span<const std::byte> public_key,

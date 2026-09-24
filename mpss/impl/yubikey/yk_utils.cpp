@@ -155,21 +155,26 @@ std::optional<std::uint32_t> parse_serial(std::string_view serial)
     return value;
 }
 
-std::optional<std::uint32_t> get_serial_from_env()
+bool get_serial_from_env(std::optional<std::uint32_t> &serial)
 {
-    const char *serial = std::getenv("MPSS_YUBIKEY_SERIAL");
-    if (nullptr == serial)
+    serial.reset();
+    const char *value = std::getenv("MPSS_YUBIKEY_SERIAL");
+    if (nullptr == value || '\0' == *value)
     {
-        return std::nullopt;
+        return true;
     }
 
-    const std::optional<std::uint32_t> value = parse_serial(serial);
-    if (!value)
+    // A default that cannot name a device must not fall through to whichever device is reachable.
+    serial = parse_serial(value);
+    if (!serial)
     {
-        mpss::utils::log_warning("MPSS_YUBIKEY_SERIAL is not a valid decimal serial number; ignoring the default.");
+        mpss::utils::log_and_set_error(
+            "MPSS_YUBIKEY_SERIAL is not a valid decimal serial number from 1 to 4294967295 (at most {} characters).",
+            max_serial_length);
+        return false;
     }
 
-    return value;
+    return true;
 }
 
 SecureByteVector get_mgm_key_from_env()

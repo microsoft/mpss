@@ -13,6 +13,7 @@
 #include <openssl/evp.h>
 #include <openssl/provider.h>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -177,6 +178,23 @@ std::optional<std::vector<std::string>> YubiKeyBackend::available_devices() cons
     }
 
     return devices;
+}
+
+bool YubiKeyBackend::default_device_id(std::optional<std::string> &device_id) const
+{
+    device_id.reset();
+    std::optional<std::uint32_t> serial;
+    if (!utils::get_serial_from_env(serial))
+    {
+        return false;
+    }
+
+    if (serial)
+    {
+        device_id = std::to_string(*serial);
+    }
+
+    return true;
 }
 
 std::unique_ptr<KeyPair> YubiKeyBackend::create_key(const KeyLocation &location, Algorithm algorithm,

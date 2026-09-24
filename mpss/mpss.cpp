@@ -3,13 +3,9 @@
 
 #include "mpss/mpss.h"
 #include "mpss/impl/backend_registry.h"
-#ifdef MPSS_BACKEND_YUBIKEY
-#include "mpss/impl/yubikey/yk_utils.h"
-#endif
 #include "mpss/utils/utilities.h"
 #include <algorithm>
 #include <array>
-#include <cstdint>
 #include <mutex>
 #include <optional>
 #include <shared_mutex>
@@ -55,22 +51,16 @@ std::optional<KeyLocation> location_with_defaults(std::string_view name,
     const std::string_view backend = backend_name ? *backend_name : impl::get_default_backend_name();
     if (!backend_name && backend.empty())
     {
-        utils::log_and_set_error("No default backend available for key '{}'.", name);
+        utils::log_and_set_error("No default backend available.");
         return std::nullopt;
     }
 
+    // Only name-based calls pass through this helper; explicit locations never read a device default.
     KeyLocation location{.backend_name = std::string{backend}, .name = std::string{name}, .device_id = std::nullopt};
-#ifdef MPSS_BACKEND_YUBIKEY
-    // Only name-based calls pass through this helper; explicit locations never read the serial default.
-    if ("yubikey" == backend)
+    if (!impl::default_device_id(location.backend_name, location.device_id))
     {
-        const std::optional<std::uint32_t> serial = impl::yubikey::utils::get_serial_from_env();
-        if (serial)
-        {
-            location.device_id = std::to_string(*serial);
-        }
+        return std::nullopt;
     }
-#endif
 
     return location;
 }

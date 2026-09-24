@@ -9,6 +9,7 @@
 #include "mpss/utils/scope_guard.h"
 #include "mpss/utils/utilities.h"
 #include "tests/compat_env.h"
+#include "tests/scoped_env.h"
 #include "tests/test_key_names.h"
 #if defined(__APPLE__) && !defined(MPSS_CORE_IS_SHARED)
 #include "mpss/impl/apple/apple_api_wrapper.h"
@@ -3121,27 +3122,40 @@ TEST(YubiKeyDeviceIdentifier, AcceptsOnlyNonzeroDecimalSerials)
 TEST(YubiKeyDeviceIdentifier, EnvironmentUsesTheSameDecimalRules)
 {
     using mpss::impl::yubikey::utils::get_serial_from_env;
-    const char *value = std::getenv("MPSS_YUBIKEY_SERIAL"); // NOLINT(concurrency-mt-unsafe)
-    const std::optional<std::string> saved = value ? std::make_optional(std::string{value}) : std::nullopt;
-    SCOPE_GUARD({
-        if (saved)
+    const mpss::tests::ScopedEnvironmentVariable env{"MPSS_YUBIKEY_SERIAL"};
+    std::optional<std::uint32_t> serial;
+    for (const char *invalid : {"4294967296", "-1", "+1", " 1", "1 ", "1x", "0"})
+    {
+        env.set(invalid);
+        mpss::clear_error();
+        EXPECT_FALSE(get_serial_from_env(serial)) << invalid;
+        EXPECT_TRUE(mpss::has_error()) << invalid;
+        EXPECT_FALSE(serial.has_value()) << invalid;
+    }
+
+    // Unset and empty both mean that there is no default.
+    for (const bool empty : {true, false})
+    {
+        if (empty)
         {
-            setenv("MPSS_YUBIKEY_SERIAL", saved->c_str(), 1); // NOLINT(concurrency-mt-unsafe)
+            env.set("");
         }
         else
         {
-            unsetenv("MPSS_YUBIKEY_SERIAL"); // NOLINT(concurrency-mt-unsafe)
+            env.unset();
         }
-    });
-    for (const char *invalid : {"4294967296", "-1", "+1", " 1", "1 ", "1x", "0", ""})
-    {
-        ASSERT_EQ(0, setenv("MPSS_YUBIKEY_SERIAL", invalid, 1)); // NOLINT(concurrency-mt-unsafe)
-        EXPECT_FALSE(get_serial_from_env()) << invalid;
+        mpss::clear_error();
+        EXPECT_TRUE(get_serial_from_env(serial));
+        EXPECT_FALSE(mpss::has_error());
+        EXPECT_FALSE(serial.has_value());
     }
-    ASSERT_EQ(0, setenv("MPSS_YUBIKEY_SERIAL", "000123", 1)); // NOLINT(concurrency-mt-unsafe)
-    EXPECT_EQ(std::uint32_t{123}, get_serial_from_env());
-    ASSERT_EQ(0, setenv("MPSS_YUBIKEY_SERIAL", "4294967295", 1)); // NOLINT(concurrency-mt-unsafe)
-    EXPECT_EQ(std::uint32_t{0xFFFFFFFF}, get_serial_from_env());
+
+    env.set("000123");
+    EXPECT_TRUE(get_serial_from_env(serial));
+    EXPECT_EQ(std::uint32_t{123}, serial);
+    env.set("4294967295");
+    EXPECT_TRUE(get_serial_from_env(serial));
+    EXPECT_EQ(std::uint32_t{0xFFFFFFFF}, serial);
 }
 
 // The record only protects a device if the authentication path consults it, which the tests above cannot
@@ -3335,6 +3349,25 @@ TEST_F(YubiKeyPinGuard, EveryPinRequestIsAnsweredByExactlyOneResult)
     MPSS::DeleteKey(key_name);
 }
 #endif // MPSS_CORE_IS_SHARED
+
+TEST(YubiKeyDeviceIdentifier, InvalidEnvironmentSerialRefusesNameBasedCalls)
+{
+    const mpss::tests::ScopedEnvironmentVariable env{"MPSS_YUBIKEY_SERIAL"};
+    env.set("1x");
+
+    // A default that names no device fails closed instead of selecting whichever device is reachable.
+    const std::string name = test_key_name("invalid_env_serial");
+    EXPECT_EQ(nullptr, KeyPair::Create(name, ecdsa_secp256r1_sha256, "yubikey"));
+    EXPECT_NE(std::string::npos, mpss::get_error().find("MPSS_YUBIKEY_SERIAL"));
+    EXPECT_EQ(nullptr, KeyPair::Open(name, "yubikey"));
+    EXPECT_NE(std::string::npos, mpss::get_error().find("MPSS_YUBIKEY_SERIAL"));
+    EXPECT_FALSE(KeyPair::Delete(name, "yubikey"));
+    EXPECT_NE(std::string::npos, mpss::get_error().find("MPSS_YUBIKEY_SERIAL"));
+
+    // An explicit location never reads the default, so it is unaffected by the invalid value.
+    EXPECT_EQ(nullptr, KeyPair::Open(KeyLocation{"yubikey", name, std::nullopt}));
+    EXPECT_EQ(std::string::npos, mpss::get_error().find("MPSS_YUBIKEY_SERIAL"));
+}
 
 #endif // MPSS_BACKEND_YUBIKEY
 
