@@ -67,7 +67,7 @@ bool encode_locator(const KeyLocatorRequestAsn1 *value, byte_vector &out)
 {
     // Measure first and publish the new buffer only after encoding succeeds.
     const int size = i2d_KeyLocatorRequestAsn1(value, nullptr);
-    if (0 >= size || mpss_max_reference_size < static_cast<std::size_t>(size))
+    if (0 >= size || std::cmp_less(mpss_max_reference_size, size))
     {
         return false;
     }

@@ -3,12 +3,12 @@
 
 #include "mpss-openssl/utils/names.h"
 #include "mpss-openssl/utils/utils.h"
+#include "mpss/log.h"
+#include "mpss/mpss.h"
 #include "mpss/utils/ossl_ptr.h"
 #include <algorithm>
 #include <cstddef>
 #include <memory>
-#include <mpss/log.h>
-#include <mpss/mpss.h>
 #include <openssl/bn.h>
 #include <openssl/crypto.h>
 #include <openssl/ecdsa.h>
@@ -29,7 +29,6 @@ using mpss::utils::openssl_buf_ptr;
 std::size_t mpss_sign_as_der(const std::unique_ptr<KeyPair> &key_pair, std::span<const std::byte> hash_tbs,
                              std::span<std::byte> out)
 {
-    // Check for obvious problems.
     if (nullptr == key_pair || (mpss::Algorithm::unsupported == key_pair->algorithm()))
     {
         return 0;
@@ -44,14 +43,12 @@ std::size_t mpss_sign_as_der(const std::unique_ptr<KeyPair> &key_pair, std::span
         return signature_size;
     }
 
-    // Check that signature_size is not greater than the output buffer size.
-    if (signature_size > out.size())
+    if (out.size() < signature_size)
     {
         GetLogger()->error("DER signature size is larger than output buffer.");
         return 0;
     }
 
-    // Compute the signature. The returned signature is ASN.1 DER encoded.
     const std::size_t written = key_pair->sign_hash(hash_tbs, out);
 
     return written;
@@ -61,13 +58,11 @@ std::size_t mpss_sign_as_der(const std::unique_ptr<KeyPair> &key_pair, std::span
 bool verify_der(const std::unique_ptr<KeyPair> &key_pair, std::span<const std::byte> hash_tbs,
                 std::span<const std::byte> der_sig)
 {
-    // Check for obvious problems.
     if (nullptr == key_pair || hash_tbs.empty() || der_sig.empty())
     {
         return false;
     }
 
-    // Verify the signature using mpss.
     const bool res = key_pair->verify(hash_tbs, der_sig);
     if (!res)
     {
@@ -97,7 +92,6 @@ byte_vector mpss_vk_params_to_spki(OSSL_LIB_CTX *libctx, const OSSL_PARAM *param
     // to the EVP_PKEY_fromdata function.
     OSSL_PARAM params_clone[3]{*group, *pub, OSSL_PARAM_END};
 
-    // Create a new EVP_PKEY from the parameters.
     evp_pkey_ctx_ptr ctx(EVP_PKEY_CTX_new_from_name(libctx, "EC", "provider=default"));
     if (nullptr == ctx)
     {
@@ -116,11 +110,10 @@ byte_vector mpss_vk_params_to_spki(OSSL_LIB_CTX *libctx, const OSSL_PARAM *param
     }
     const evp_pkey_ptr pkey(pkey_raw);
 
-    // Encode pkey to DER using i2d_PUBKEY.
     unsigned char *der_raw = nullptr;
     const int der_size = i2d_PUBKEY(pkey.get(), &der_raw);
     const openssl_buf_ptr<unsigned char> der_buf(der_raw);
-    if (der_size <= 0)
+    if (0 >= der_size)
     {
         return {};
     }

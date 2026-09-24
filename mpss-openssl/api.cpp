@@ -4,7 +4,7 @@
 #include "mpss-openssl/api.h"
 #include "mpss-openssl/utils/names.h"
 #include "mpss-openssl/utils/utils.h"
-#include <mpss/mpss.h>
+#include "mpss/mpss.h"
 #include <mutex>
 #include <openssl/err.h>
 #include <optional>
@@ -121,10 +121,9 @@ catch (...)
 const char *mpss_get_error()
 try
 {
-    // Use thread-local storage to hold a copy of the last std::string.
     static thread_local std::string last_error_str;
 
-    last_error_str = mpss::get_error(); // Update buffer
+    last_error_str = mpss::get_error();
     return last_error_str.c_str();
 }
 catch (...)

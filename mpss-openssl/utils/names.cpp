@@ -3,9 +3,9 @@
 
 #include "mpss-openssl/utils/names.h"
 #include "mpss/algorithm.h"
+#include "mpss/mpss.h"
 #include <cstddef>
 #include <memory>
-#include <mpss/mpss.h>
 #include <optional>
 #include <regex>
 #include <string>
@@ -196,7 +196,6 @@ std::string_view try_extract_canonical_name(std::string_view str, const std::arr
 [[nodiscard]]
 std::optional<std::string> try_get_ec_group(std::string_view str)
 {
-    // We wrap the result in std::string. This is now guaranteed to be null-terminated.
     const std::string_view group_name = unsafe::try_extract_canonical_name(str, mpss_group_names);
     return group_name.empty() ? std::nullopt : std::make_optional(std::string{group_name});
 }
@@ -218,7 +217,6 @@ std::optional<std::string> try_get_ec_group(const std::unique_ptr<KeyPair> &key_
 [[nodiscard]]
 std::optional<std::string> try_get_hash_func(std::string_view str)
 {
-    // We wrap the result in std::string. This is now guaranteed to be null-terminated.
     const std::string_view hash_name = unsafe::try_extract_canonical_name(str, mpss_hash_names);
     return hash_name.empty() ? std::nullopt : std::make_optional(std::string{hash_name});
 }
@@ -240,7 +238,6 @@ std::optional<std::string> try_get_hash_func(const std::unique_ptr<KeyPair> &key
 [[nodiscard]]
 std::optional<std::string> try_get_signature_scheme(std::string_view str)
 {
-    // We wrap the result in std::string. This is now guaranteed to be null-terminated.
     const std::string_view sig_scheme = unsafe::try_extract_canonical_name(str, mpss_sig_names);
     return sig_scheme.empty() ? std::nullopt : std::make_optional(std::string{sig_scheme});
 }

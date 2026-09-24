@@ -5,10 +5,10 @@
 
 #ifdef MPSS_BACKEND_YUBIKEY
 
+#include "mpss/interaction_handler.h"
+#include "mpss/utils/scope_guard.h"
 #include <array>
 #include <cstring>
-#include <mpss/interaction_handler.h>
-#include <mpss/utils/scope_guard.h>
 #include <openssl/crypto.h>
 #include <openssl/err.h>
 #include <string>
@@ -80,7 +80,6 @@ class CInteractionHandler : public mpss::InteractionHandler
             return std::nullopt;
         }
 
-        // Ensure null-termination before constructing the SecureString.
         pin_buf[pin_buf.size() - 1] = '\0';
         return mpss::SecureString{pin_buf.data()};
     }

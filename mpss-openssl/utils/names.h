@@ -3,9 +3,9 @@
 
 #pragma once
 
+#include "mpss/mpss.h"
 #include <array>
 #include <memory>
-#include <mpss/mpss.h>
 #include <openssl/core_names.h>
 #include <openssl/obj_mac.h>
 #include <openssl/types.h>
@@ -21,7 +21,7 @@ inline constexpr const char *ec_encoder_names = "EC";
 inline constexpr const char *ec_key_names = "EC:id_ecPublicKey:1.2.840.10045.2.1";
 
 // Key type reported to OpenSSL for a stored key object (OSSL_STORE reference object) and used to
-// fetch the EC key management when materializing it. Must equal the first (primary) alias of
+// fetch the key management that materializes it. Must equal the first (primary) alias of
 // ec_key_names.
 inline constexpr const char *ec_data_type = "EC";
 
