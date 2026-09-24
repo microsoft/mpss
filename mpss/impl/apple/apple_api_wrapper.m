@@ -35,7 +35,7 @@ static dispatch_queue_t _keyStoreQueue;                               // NOLINT(
 static NSMutableDictionary<NSString *, MPSSCacheEntry *> *_keyStore;  // NOLINT(bugprone-reserved-identifier)
 static uint64_t _nextGeneration;                                      // NOLINT(bugprone-reserved-identifier)
 
-void InitializeKeyStore() {
+static void InitializeKeyStore() {
   static dispatch_once_t onceToken;
   dispatch_once(&onceToken, ^{
     _keyStoreQueue = dispatch_queue_create("com.microsoft.mpss.KeyStore", DISPATCH_QUEUE_SERIAL);
@@ -43,19 +43,19 @@ void InitializeKeyStore() {
   });
 }
 
-void SetThreadLocalError(NSString *error) {
+static void SetThreadLocalError(NSString *error) {
   [[NSThread currentThread].threadDictionary setObject:error forKey:@"MyThreadLocalError"];
 }
 
-NSString *GetThreadLocalError() {
+static NSString *GetThreadLocalError() {
   return [[NSThread currentThread].threadDictionary objectForKey:@"MyThreadLocalError"];
 }
 
-void ClearThreadLocalError() {
+static void ClearThreadLocalError() {
   [[NSThread currentThread].threadDictionary removeObjectForKey:@"MyThreadLocalError"];
 }
 
-NSString *GetKeyLabel(const char *keyName) {
+static NSString *GetKeyLabel(const char *keyName) {
   NSString *keyLabel = [NSString stringWithUTF8String:keyName];
   NSString *keyNameWithPrefix = [NSString stringWithFormat:@"com.microsoft.mpss.%@", keyLabel];
   return keyNameWithPrefix;
@@ -72,7 +72,7 @@ static uint64_t RetainLocked(MPSSCacheEntry *entry) {
 // A non-NULL generation means the key is being handed to a handle: a hold is taken and the
 // generation it was taken on is reported. NULL means the caller only needed to look at the entry,
 // so nothing is retained and there is nothing to release.
-void StoreKey(NSString *keyLabel, SecKeyRef keyRef, uint64_t *generation) {
+static void StoreKey(NSString *keyLabel, SecKeyRef keyRef, uint64_t *generation) {
   InitializeKeyStore();
 
   if (keyLabel && keyRef) {
@@ -95,7 +95,7 @@ void StoreKey(NSString *keyLabel, SecKeyRef keyRef, uint64_t *generation) {
 }
 
 // A non-NULL generation means the key is being handed to a handle, as in StoreKey.
-SecKeyRef CopyKey(NSString *keyLabel, uint64_t *generation) {
+static SecKeyRef CopyKey(NSString *keyLabel, uint64_t *generation) {
   InitializeKeyStore();
 
   __block SecKeyRef result = NULL;
@@ -162,12 +162,12 @@ bool MPSS_KeychainGenerationIsCurrent(const char *keyName, uint64_t generation) 
   }
 }
 
-void RemoveKey(NSString *keyLabel, uint64_t generation) {
+static void RemoveKey(NSString *keyLabel, uint64_t generation) {
   InitializeKeyStore();
 
   dispatch_sync(_keyStoreQueue, ^{
     MPSSCacheEntry *entry = _keyStore[keyLabel];
-    if (entry == nil || entry.generation != generation) {
+    if (nil == entry || entry.generation != generation) {
       // The hold was taken on an entry this name has since moved past, so there is nothing of this
       // handle's left to give up and the entry now under the name belongs to someone else.
       return;
@@ -181,7 +181,7 @@ void RemoveKey(NSString *keyLabel, uint64_t generation) {
 
 // Drop a cached key regardless of how many holds remain. Deleting a key invalidates every handle
 // to it, so the entry must not survive on another handle's hold.
-void PurgeKey(NSString *keyLabel) {
+static void PurgeKey(NSString *keyLabel) {
   InitializeKeyStore();
 
   dispatch_sync(_keyStoreQueue, ^{
@@ -189,9 +189,11 @@ void PurgeKey(NSString *keyLabel) {
   });
 }
 
-int GetKeySize(SecKeyRef keyRef) {
-  // Retrieve the key size.
+static int GetKeySize(SecKeyRef keyRef) {
   CFDictionaryRef attrs = SecKeyCopyAttributes(keyRef);
+  if (NULL == attrs) {
+    return 0;
+  }
   NSNumber *keySizeNumber = (__bridge NSNumber *)CFDictionaryGetValue(attrs, kSecAttrKeySizeInBits);
   int bitSize = [keySizeNumber intValue];
   CFRelease(attrs);
@@ -199,7 +201,7 @@ int GetKeySize(SecKeyRef keyRef) {
   return bitSize;
 }
 
-SecKeyAlgorithm GetAlgorithm(int signatureType) {
+static SecKeyAlgorithm GetAlgorithm(int signatureType) {
   switch (signatureType) {
     case 1:  // ECDSA SHA 256
       return kSecKeyAlgorithmECDSASignatureDigestX962SHA256;
@@ -213,7 +215,7 @@ SecKeyAlgorithm GetAlgorithm(int signatureType) {
   }
 }
 
-int GetKeyBitSize(int signatureType) {
+static int GetKeyBitSize(int signatureType) {
   switch (signatureType) {
     case 1:  // ECDSA SHA 256
       return 256;
@@ -336,16 +338,12 @@ static int32_t OpenExistingKeyInternal(NSString *keyLabel, int *bitSize, uint64_
   mpss_log_debug("Retrieved key from OS.");
   StoreKey(keyLabel, keyRef, generation);
   *bitSize = GetKeySize(keyRef);
-  if (keyLocation != NULL) {
+  if (NULL != keyLocation) {
     *keyLocation = KeyLocation(keyRef);
   }
   CFRelease(keyRef);
   return MPSS_APPLE_RESULT_SUCCESS;
 }
-
-////////////////////////////////////////////////////////
-// From here on below, the public functions.
-////////////////////////////////////////////////////////
 
 void MPSS_RemoveKey(const char *keyName, uint64_t generation) {
   @autoreleasepool {
@@ -638,10 +636,10 @@ bool MPSS_SignHash(const char *keyName, int signatureType, uint64_t generation, 
     CFDataRef signatureData = SecKeyCreateSignature(keyRef, algorithm, (__bridge CFDataRef)hashData, &error);
     CFRelease(keyRef);
 
-    if (signatureData == NULL) {
+    if (NULL == signatureData) {
       NSError *err = CFBridgingRelease(error);
-      NSString *error = [NSString stringWithFormat:@"Failed to sign hash: %@", err];
-      SetThreadLocalError(error);
+      NSString *errStr = [NSString stringWithFormat:@"Failed to sign hash: %@", err];
+      SetThreadLocalError(errStr);
       return false;
     }
 
@@ -777,8 +775,8 @@ int32_t MPSS_VerifyStandaloneSignature(int signatureType, const uint8_t *hash, s
 
     if (!publicKeyRef) {
       NSError *err = CFBridgingRelease(error);
-      NSString *error = [NSString stringWithFormat:@"Failed to create public key from data: %@", err];
-      SetThreadLocalError(error);
+      NSString *errStr = [NSString stringWithFormat:@"Failed to create public key from data: %@", err];
+      SetThreadLocalError(errStr);
       return MPSS_APPLE_RESULT_OPERATIONAL_ERROR;
     }
 

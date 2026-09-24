@@ -191,7 +191,7 @@ private func removeKeyFromDict(_ keyName: String, _ generation: UInt64) {
 ///     - keyName: Name of the key to drop.
 private func purgeKeyFromDict(_ keyName: String) {
     _keyStoreQueue.sync {
-        _keyStore.removeValue(forKey: keyName)
+        _ = _keyStore.removeValue(forKey: keyName)
     }
 }
 
