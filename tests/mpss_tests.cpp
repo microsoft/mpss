@@ -2294,41 +2294,9 @@ TEST_F(CrossBackendTest, CreateKeyOnEachBackend)
 class YubiKeyPolicyEnv : public ::testing::Test
 {
   protected:
-    void SetUp() override
-    {
-        save("MPSS_YUBIKEY_PINPOLICY", saved_pin_);
-        save("MPSS_YUBIKEY_TOUCHPOLICY", saved_touch_);
-        save("MPSS_YUBIKEY_ALLOW_POLICY_DOWNGRADE", saved_allow_);
-    }
-
-    void TearDown() override
-    {
-        restore("MPSS_YUBIKEY_PINPOLICY", saved_pin_);
-        restore("MPSS_YUBIKEY_TOUCHPOLICY", saved_touch_);
-        restore("MPSS_YUBIKEY_ALLOW_POLICY_DOWNGRADE", saved_allow_);
-    }
-
-    static void save(const char *name, std::optional<std::string> &slot)
-    {
-        const char *value = std::getenv(name); // NOLINT(concurrency-mt-unsafe)
-        slot = (nullptr == value) ? std::nullopt : std::optional<std::string>{value};
-    }
-
-    static void restore(const char *name, const std::optional<std::string> &slot)
-    {
-        if (slot.has_value())
-        {
-            setenv(name, slot->c_str(), 1); // NOLINT(concurrency-mt-unsafe)
-        }
-        else
-        {
-            unsetenv(name); // NOLINT(concurrency-mt-unsafe)
-        }
-    }
-
-    std::optional<std::string> saved_pin_;
-    std::optional<std::string> saved_touch_;
-    std::optional<std::string> saved_allow_;
+    ScopedEnvironmentVariable pin_policy_{"MPSS_YUBIKEY_PINPOLICY"};
+    ScopedEnvironmentVariable touch_policy_{"MPSS_YUBIKEY_TOUCHPOLICY"};
+    ScopedEnvironmentVariable allow_downgrade_{"MPSS_YUBIKEY_ALLOW_POLICY_DOWNGRADE"};
 };
 
 TEST_F(YubiKeyPolicyEnv, EnvNeverGatedBehindOptIn)
@@ -2343,21 +2311,21 @@ TEST_F(YubiKeyPolicyEnv, EnvNeverGatedBehindOptIn)
     ASSERT_NE(pin_once, pin_never);
     ASSERT_NE(touch_cached, touch_never);
 
-    setenv("MPSS_YUBIKEY_PINPOLICY", "never", 1);   // NOLINT(concurrency-mt-unsafe)
-    setenv("MPSS_YUBIKEY_TOUCHPOLICY", "never", 1); // NOLINT(concurrency-mt-unsafe)
+    pin_policy_.set("never");
+    touch_policy_.set("never");
 
     // Without the opt-in flag, env 'never' is refused and the safe default is used.
-    unsetenv("MPSS_YUBIKEY_ALLOW_POLICY_DOWNGRADE"); // NOLINT(concurrency-mt-unsafe)
+    allow_downgrade_.unset();
     EXPECT_EQ(pin_once, yku::resolve_pin_policy(KeyPolicy::none));
     EXPECT_EQ(touch_cached, yku::resolve_touch_policy(KeyPolicy::none));
 
     // A non-affirmative flag value likewise does not enable the downgrade.
-    setenv("MPSS_YUBIKEY_ALLOW_POLICY_DOWNGRADE", "0", 1); // NOLINT(concurrency-mt-unsafe)
+    allow_downgrade_.set("0");
     EXPECT_EQ(pin_once, yku::resolve_pin_policy(KeyPolicy::none));
     EXPECT_EQ(touch_cached, yku::resolve_touch_policy(KeyPolicy::none));
 
     // With the opt-in flag, env 'never' is honored.
-    setenv("MPSS_YUBIKEY_ALLOW_POLICY_DOWNGRADE", "1", 1); // NOLINT(concurrency-mt-unsafe)
+    allow_downgrade_.set("1");
     EXPECT_EQ(pin_never, yku::resolve_pin_policy(KeyPolicy::none));
     EXPECT_EQ(touch_never, yku::resolve_touch_policy(KeyPolicy::none));
 
@@ -2390,11 +2358,7 @@ class YubiKeyMgmKeyEnv : public ::testing::Test
   protected:
     void SetUp() override
     {
-        const char *value = std::getenv("MPSS_YUBIKEY_MGM_KEY"); // NOLINT(concurrency-mt-unsafe)
-        saved_mgm_ = (nullptr == value) ? std::nullopt : std::optional<std::string>{value};
-        value = std::getenv("MPSS_YUBIKEY_ALLOW_DEFAULT_MGM_KEY"); // NOLINT(concurrency-mt-unsafe)
-        saved_allow_default_ = (nullptr == value) ? std::nullopt : std::optional<std::string>{value};
-        unsetenv("MPSS_YUBIKEY_ALLOW_DEFAULT_MGM_KEY"); // NOLINT(concurrency-mt-unsafe)
+        allow_default_.unset();
 
         serials_ = mpss::impl::yubikey::YubiKeyPIV::available_serials().value_or(std::vector<std::uint32_t>{});
         if (serials_.empty())
@@ -2403,30 +2367,9 @@ class YubiKeyMgmKeyEnv : public ::testing::Test
         }
     }
 
-    void TearDown() override
-    {
-        if (saved_mgm_.has_value())
-        {
-            setenv("MPSS_YUBIKEY_MGM_KEY", saved_mgm_->c_str(), 1); // NOLINT(concurrency-mt-unsafe)
-        }
-        else
-        {
-            unsetenv("MPSS_YUBIKEY_MGM_KEY"); // NOLINT(concurrency-mt-unsafe)
-        }
-        if (saved_allow_default_.has_value())
-        {
-            // NOLINTNEXTLINE(concurrency-mt-unsafe)
-            setenv("MPSS_YUBIKEY_ALLOW_DEFAULT_MGM_KEY", saved_allow_default_->c_str(), 1);
-        }
-        else
-        {
-            unsetenv("MPSS_YUBIKEY_ALLOW_DEFAULT_MGM_KEY"); // NOLINT(concurrency-mt-unsafe)
-        }
-    }
-
     std::vector<std::uint32_t> serials_;
-    std::optional<std::string> saved_mgm_;
-    std::optional<std::string> saved_allow_default_;
+    ScopedEnvironmentVariable mgm_key_{"MPSS_YUBIKEY_MGM_KEY"};
+    ScopedEnvironmentVariable allow_default_{"MPSS_YUBIKEY_ALLOW_DEFAULT_MGM_KEY"};
 };
 
 TEST_F(YubiKeyMgmKeyEnv, SuppliedKeyMustAuthenticateNoDefaultFallback)
@@ -2436,13 +2379,12 @@ TEST_F(YubiKeyMgmKeyEnv, SuppliedKeyMustAuthenticateNoDefaultFallback)
 
     // A valid-length management key that does not match the device must fail; MPSS must not fall
     // back to the factory-default key.
-    setenv("MPSS_YUBIKEY_ALLOW_DEFAULT_MGM_KEY", "1", 1); // NOLINT(concurrency-mt-unsafe)
-    const std::string wrong_key(48, 'a');
-    setenv("MPSS_YUBIKEY_MGM_KEY", wrong_key.c_str(), 1); // NOLINT(concurrency-mt-unsafe)
+    allow_default_.set("1");
+    mgm_key_.set(std::string(48, 'a'));
     EXPECT_FALSE(piv.authenticate_mgm_key());
 
     // A set-but-malformed value is likewise a hard error, not a default fallback.
-    setenv("MPSS_YUBIKEY_MGM_KEY", "not-hex", 1); // NOLINT(concurrency-mt-unsafe)
+    mgm_key_.set("not-hex");
     EXPECT_FALSE(piv.authenticate_mgm_key());
 }
 
@@ -2451,10 +2393,10 @@ TEST_F(YubiKeyMgmKeyEnv, FactoryDefaultRequiresExplicitOptIn)
     mpss::impl::yubikey::YubiKeyPIV piv{serials_[0]};
     ASSERT_TRUE(piv.is_connected());
 
-    unsetenv("MPSS_YUBIKEY_MGM_KEY"); // NOLINT(concurrency-mt-unsafe)
+    mgm_key_.unset();
     EXPECT_FALSE(piv.authenticate_mgm_key());
 
-    setenv("MPSS_YUBIKEY_ALLOW_DEFAULT_MGM_KEY", "0", 1); // NOLINT(concurrency-mt-unsafe)
+    allow_default_.set("0");
     EXPECT_FALSE(piv.authenticate_mgm_key());
 }
 
@@ -2463,8 +2405,8 @@ TEST_F(YubiKeyMgmKeyEnv, FactoryDefaultWorksWithExplicitOptIn)
     mpss::impl::yubikey::YubiKeyPIV piv{serials_[0]};
     ASSERT_TRUE(piv.is_connected());
 
-    unsetenv("MPSS_YUBIKEY_MGM_KEY");                     // NOLINT(concurrency-mt-unsafe)
-    setenv("MPSS_YUBIKEY_ALLOW_DEFAULT_MGM_KEY", "1", 1); // NOLINT(concurrency-mt-unsafe)
+    mgm_key_.unset();
+    allow_default_.set("1");
     if (!piv.authenticate_mgm_key())
     {
         GTEST_SKIP() << "Connected YubiKey does not use the factory-default management key.";
@@ -2479,33 +2421,17 @@ class YubiKeySlotBinding : public ::testing::Test
   protected:
     void SetUp() override
     {
-        const char *value = std::getenv("MPSS_YUBIKEY_SERIAL"); // NOLINT(concurrency-mt-unsafe)
-        saved_serial_ = (nullptr == value) ? std::nullopt : std::optional<std::string>{value};
-
         serials_ = mpss::impl::yubikey::YubiKeyPIV::available_serials().value_or(std::vector<std::uint32_t>{});
         if (serials_.empty())
         {
             GTEST_SKIP() << "Requires a connected YubiKey.";
         }
 
-        const std::string target = std::to_string(serials_[0]);
-        setenv("MPSS_YUBIKEY_SERIAL", target.c_str(), 1); // NOLINT(concurrency-mt-unsafe)
-    }
-
-    void TearDown() override
-    {
-        if (saved_serial_.has_value())
-        {
-            setenv("MPSS_YUBIKEY_SERIAL", saved_serial_->c_str(), 1); // NOLINT(concurrency-mt-unsafe)
-        }
-        else
-        {
-            unsetenv("MPSS_YUBIKEY_SERIAL"); // NOLINT(concurrency-mt-unsafe)
-        }
+        serial_env_.set(std::to_string(serials_[0]));
     }
 
     std::vector<std::uint32_t> serials_;
-    std::optional<std::string> saved_serial_;
+    ScopedEnvironmentVariable serial_env_{"MPSS_YUBIKEY_SERIAL"};
 };
 
 // A slot label describes the key held in that slot. Replacing the key without rewriting the label
@@ -2660,7 +2586,7 @@ TEST_F(YubiKeySlotBinding, ExplicitLocationsOverrideEnvironmentAndReportActualSe
     }
 
     const auto absent_id = std::to_string(absent_serial);
-    setenv("MPSS_YUBIKEY_SERIAL", absent_id.c_str(), 1); // NOLINT(concurrency-mt-unsafe)
+    serial_env_.set(absent_id);
 
     // Explicit selection ignores the wrong default and reports the canonical device identifier.
     const auto actual_id = std::to_string(serials_[0]);
@@ -2710,7 +2636,7 @@ TEST_F(YubiKeySlotBinding, ExplicitLocationsOverrideEnvironmentAndReportActualSe
     EXPECT_NE(nullptr, KeyPair::Open(actual));
 
     // Restoring the default enables name-based operations on the same device.
-    ASSERT_EQ(0, setenv("MPSS_YUBIKEY_SERIAL", actual_id.c_str(), 1)); // NOLINT(concurrency-mt-unsafe)
+    serial_env_.set(actual_id);
     EXPECT_EQ(nullptr, KeyPair::Create(actual.name, ecdsa_secp256r1_sha256, "yubikey"));
     EXPECT_NE(std::string::npos, mpss::get_error().find("already exists"));
 
@@ -3172,32 +3098,23 @@ class YubiKeyPinGuard : public ::testing::Test
         {
             GTEST_SKIP() << "Requires a connected YubiKey.";
         }
-
-        const char *value = std::getenv("MPSS_YUBIKEY_PIN"); // NOLINT(concurrency-mt-unsafe)
-        saved_pin_ = (nullptr == value) ? std::nullopt : std::optional<std::string>{value};
     }
 
-    void TearDown() override
+    // Puts the configured PIN back mid-test, so that clean-up can authenticate.
+    void restore_pin() const
     {
-        restore_pin();
-    }
-
-    void restore_pin()
-    {
-        if (saved_pin_.has_value())
+        if (pin_env_.saved().has_value())
         {
-            setenv("MPSS_YUBIKEY_PIN", saved_pin_->c_str(), 1); // NOLINT(concurrency-mt-unsafe)
+            pin_env_.set(*pin_env_.saved());
         }
         else
         {
-            unsetenv("MPSS_YUBIKEY_PIN"); // NOLINT(concurrency-mt-unsafe)
+            pin_env_.unset();
         }
     }
 
-    std::vector<std::uint32_t> serials_; // NOLINT(misc-non-private-member-variables-in-classes)
-
-  private:
-    std::optional<std::string> saved_pin_;
+    std::vector<std::uint32_t> serials_;
+    ScopedEnvironmentVariable pin_env_{"MPSS_YUBIKEY_PIN"};
 };
 
 TEST_F(YubiKeyPinGuard, AnAlreadyRejectedPinIsNotPresentedToTheDevice)
@@ -3271,7 +3188,6 @@ class CountingHandler : public mpss::InteractionHandler
     {
     }
 
-    // NOLINTBEGIN(misc-non-private-member-variables-in-classes) - a test double.
     int requests{0};
     int results{0};
     bool throw_from_request{false};
@@ -3280,7 +3196,6 @@ class CountingHandler : public mpss::InteractionHandler
     std::string device;
     std::string key_name;
     std::string reader;
-    // NOLINTEND(misc-non-private-member-variables-in-classes)
 
   private:
     std::optional<mpss::SecureString> pin_;
@@ -3330,12 +3245,12 @@ TEST_F(YubiKeyPinGuard, EveryPinRequestIsAnsweredByExactlyOneResult)
     EXPECT_EQ(key_name, withholding->key_name);
     EXPECT_FALSE(withholding->reader.empty());
 
-    // Cancelling is answered too, so a handler that cancels still hears back.
-    auto cancelling = std::make_shared<CountingHandler>(std::nullopt);
-    mpss::GetOrSetInteractionHandler(cancelling);
+    // Canceling is answered too, so a handler that cancels still hears back.
+    auto canceling = std::make_shared<CountingHandler>(std::nullopt);
+    mpss::GetOrSetInteractionHandler(canceling);
     EXPECT_EQ(0, handle->sign_hash(hash, signature));
-    EXPECT_EQ(cancelling->requests, cancelling->results);
-    EXPECT_EQ(mpss::PinResult::not_attempted, cancelling->last_result);
+    EXPECT_EQ(canceling->requests, canceling->results);
+    EXPECT_EQ(mpss::PinResult::not_attempted, canceling->last_result);
 
     // A handler that throws is answered as well, and its exception does not escape the operation.
     auto throwing = std::make_shared<CountingHandler>(std::nullopt);

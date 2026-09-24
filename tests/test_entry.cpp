@@ -3,7 +3,7 @@
 
 #include "tests/test_entry.h"
 #include "mpss/log.h"
-#include "tests/compat_env.h"
+#include "tests/scoped_env.h"
 #include <array>
 #include <cstdint>
 #include <cstdlib>
@@ -125,10 +125,8 @@ class YubiKeyEnvironment : public ::testing::Environment
     void SetUp() override
     {
 #ifdef MPSS_BACKEND_YUBIKEY
-        const char *existing = std::getenv("MPSS_YUBIKEY_SERIAL"); // NOLINT(concurrency-mt-unsafe)
-        if (nullptr != existing)
+        if (serial_env_.saved().has_value())
         {
-            saved_serial_env_ = existing;
             return;
         }
 
@@ -140,32 +138,15 @@ class YubiKeyEnvironment : public ::testing::Environment
             mpss::impl::yubikey::YubiKeyPIV::available_serials().value_or(std::vector<std::uint32_t>{});
         if (!serials.empty())
         {
-            auto_selected_ = true;
-            const std::string serial_str = std::to_string(serials.front());
-            setenv("MPSS_YUBIKEY_SERIAL", serial_str.c_str(), 1); // NOLINT(concurrency-mt-unsafe)
+            serial_env_.set(std::to_string(serials.front()));
             mpss::GetLogger()->info("Pinned YubiKey serial {} for tests ({} detected).", serials.front(),
                                     serials.size());
         }
 #endif
     }
 
-    void TearDown() override
-    {
-#ifdef MPSS_BACKEND_YUBIKEY
-        if (auto_selected_)
-        {
-            unsetenv("MPSS_YUBIKEY_SERIAL"); // NOLINT(concurrency-mt-unsafe)
-        }
-        else if (!saved_serial_env_.empty())
-        {
-            setenv("MPSS_YUBIKEY_SERIAL", saved_serial_env_.c_str(), 1); // NOLINT(concurrency-mt-unsafe)
-        }
-#endif
-    }
-
   private:
-    std::string saved_serial_env_;
-    bool auto_selected_{false};
+    mpss::tests::ScopedEnvironmentVariable serial_env_{"MPSS_YUBIKEY_SERIAL"};
 };
 
 } // namespace
