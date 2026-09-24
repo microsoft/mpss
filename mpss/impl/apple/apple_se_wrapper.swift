@@ -287,9 +287,9 @@ private func storeDataInKeychain(data: Data, account: String, service: String) -
     // would overwrite whatever already holds the name, and creation has already refused a name that
     // exists, so a duplicate here means another writer took it after that check.
     let status = SecItemAdd(query as CFDictionary, nil)
-    if status == errSecSuccess {
+    if errSecSuccess == status {
         logTrace("Added item to Keychain.")
-    } else if status == errSecDuplicateItem {
+    } else if errSecDuplicateItem == status {
         // The caller reports the status; this only records what it means.
         logDebug("Item already exists in Keychain; refusing to replace it.")
     } else {
@@ -315,10 +315,10 @@ private func countItemsInKeychain(account: String, service: String) -> Int? {
 
     var items: CFTypeRef?
     let status = SecItemCopyMatching(query as CFDictionary, &items)
-    if status == errSecItemNotFound {
+    if errSecItemNotFound == status {
         return 0
     }
-    if status != errSecSuccess {
+    if errSecSuccess != status {
         logDebug("Error counting items in Keychain: \(status)")
         setError("Error counting items in Keychain: \(status)")
         return nil
@@ -339,7 +339,7 @@ private func retrieveDataFromKeychain(account: String, service: String) -> Keych
     guard let count = countItemsInKeychain(account: account, service: service) else {
         return .failure
     }
-    if count == 0 {
+    if 0 == count {
         logTrace("Item not found in Keychain.")
         return .notFound
     }
@@ -363,9 +363,9 @@ private func retrieveDataFromKeychain(account: String, service: String) -> Keych
 
     var item: CFTypeRef?
     let status = SecItemCopyMatching(query as CFDictionary, &item)
-    if status == errSecSuccess {
+    if errSecSuccess == status {
         logTrace("Retrieved item from Keychain.")
-    } else if status == errSecItemNotFound {
+    } else if errSecItemNotFound == status {
         // Item not found.
         logTrace("Item not found in Keychain.")
         return .notFound
@@ -408,7 +408,7 @@ private func removeDataFromKeyChain(account: String, service: String) -> OSStatu
     var deleted = 0
 
     while deleted < maxItemsPerName {
-        if SecItemDelete(query as CFDictionary) != errSecSuccess {
+        if errSecSuccess != SecItemDelete(query as CFDictionary) {
             break
         }
         deleted += 1
@@ -480,7 +480,7 @@ private func createKeyPriv(
         let status = storeDataInKeychain(
             data: privateKey.dataRepresentation, account: keyChainAccountName, service: keyName)
 
-        if status != errSecSuccess {
+        if errSecSuccess != status {
             setError("Error storing private key in Keychain: \(status)")
             return nil
         }
@@ -561,7 +561,7 @@ private func removeExistingKey(_ keyName: String) -> Bool {
     let fullKeyName = getKeyName(keyName)
     purgeKeyFromDict(fullKeyName)
     let status = removeDataFromKeyChain(account: keyChainAccountName, service: fullKeyName)
-    return status == errSecSuccess || status == errSecItemNotFound
+    return errSecSuccess == status || errSecItemNotFound == status
 }
 
 /// Close existing key.
@@ -835,7 +835,7 @@ func getLastError(error: UnsafeMutablePointer<CChar>?, errorLength: UInt) -> UIn
     let utf8 = Array(lastError.utf8)
 
     // Return string size if error is nil.
-    if error == nil {
+    if nil == error {
         return UInt(utf8.count)
     }
 
