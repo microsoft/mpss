@@ -256,8 +256,10 @@ class MPSS_DECOR KeyPair
     /**
      * @brief Opens only the referenced algorithm and public key, without signing or prompting.
      *
-     * Public bytes use the format returned by @ref extract_key. Successful signatures through the
-     * returned handle are checked against this expected key using host-side verification.
+     * Public bytes use the format returned by @ref extract_key. The returned handle is bound to the
+     * expected key: @ref sign_hash verifies each signature against it on the host before returning
+     * it, @ref verify checks against it rather than against whatever the backend holds, and
+     * @ref extract_key and @ref reference report it or fail.
      */
     [[nodiscard]]
     static std::unique_ptr<KeyPair> Open(const KeyReference &reference);
@@ -371,8 +373,7 @@ class MPSS_DECOR KeyPair
     std::size_t sign_hash_size() const;
 
     /**
-     * @brief Verifies the given signature against the given hash data with the key pair with
-     * the given name.
+     * @brief Verifies the given signature against the given hash data with this key pair.
      * @param[in] hash The hash to verify.
      * @param[in] sig The signature to verify.
      * @return true if the signature was verified successfully, false otherwise.

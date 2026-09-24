@@ -1613,7 +1613,7 @@ TEST(KeyLocationTest, OSStorageRejectsDeviceSelection)
     EXPECT_TRUE(mpss::has_error());
 }
 
-TEST(KeyReferenceTest, RejectsUnsupportedAlgorithmAndInvalidPublicKeySize)
+TEST(KeyReferenceTest, RejectsInvalidReferencesBeforeOpening)
 {
     KeyReference reference{{"unknown-backend", "key", std::nullopt}, unsupported, {}};
     EXPECT_EQ(nullptr, KeyPair::Open(reference));
@@ -1626,6 +1626,21 @@ TEST(KeyReferenceTest, RejectsUnsupportedAlgorithmAndInvalidPublicKeySize)
         EXPECT_EQ(nullptr, KeyPair::Open(reference));
         EXPECT_NE(std::string::npos, mpss::get_error().find("public key size"));
     }
+
+    // With a well-formed public key, the location is validated before any backend is reached.
+    reference.public_key.assign(65, std::byte{0x04});
+    EXPECT_EQ(nullptr, KeyPair::Open(reference));
+    EXPECT_NE(std::string::npos, mpss::get_error().find("not found"));
+
+    reference.location.backend_name = "os";
+    reference.location.name.clear();
+    EXPECT_EQ(nullptr, KeyPair::Open(reference));
+    EXPECT_NE(std::string::npos, mpss::get_error().find("Invalid key name"));
+
+    reference.location.name = "key";
+    reference.location.device_id = "";
+    EXPECT_EQ(nullptr, KeyPair::Open(reference));
+    EXPECT_NE(std::string::npos, mpss::get_error().find("device identifier"));
 }
 
 TEST_F(MPSS, ResolvedLocationAndReferenceRoundTrip)
@@ -1636,6 +1651,7 @@ TEST_F(MPSS, ResolvedLocationAndReferenceRoundTrip)
     }
 
     const std::string name = test_key_name("reference_roundtrip");
+    MPSS::DeleteKey(name);
     auto original = KeyPair::Create(name, ecdsa_secp256r1_sha256);
     ASSERT_NE(nullptr, original) << mpss::get_error();
     SCOPE_GUARD(static_cast<void>(original->delete_key()));
@@ -1682,12 +1698,63 @@ TEST_F(MPSS, ResolvedLocationAndReferenceRoundTrip)
     ASSERT_LE(written, signature.size());
     EXPECT_TRUE(mpss::verify(hash, expected, reopened->algorithm(),
                              std::span<const std::byte>{signature}.first(written), location.backend_name));
+    EXPECT_TRUE(reopened->verify(hash, std::span<const std::byte>{signature}.first(written)));
+
+    // The bound handle verifies against the referenced key, so another key's signature is refused.
+    const std::string other_name = test_key_name("reference_other");
+    MPSS::DeleteKey(other_name);
+    auto other = KeyPair::Create(other_name, ecdsa_secp256r1_sha256);
+    ASSERT_NE(nullptr, other) << mpss::get_error();
+    SCOPE_GUARD(static_cast<void>(other->delete_key()));
+    std::vector<std::byte> other_signature(other->sign_hash_size());
+    const auto other_written = other->sign_hash(hash, other_signature);
+    ASSERT_GT(other_written, std::size_t{0}) << mpss::get_error();
+    EXPECT_FALSE(reopened->verify(hash, std::span<const std::byte>{other_signature}.first(other_written)));
 
     EXPECT_TRUE(reopened->release_key());
     EXPECT_FALSE(reopened->reference().has_value());
     EXPECT_TRUE(mpss::has_error());
     EXPECT_EQ(location.device_id, reopened->location().device_id);
     EXPECT_EQ(location.name, reopened->location().name);
+}
+
+TEST_F(MPSS, ReferenceBoundHandleRefusesAReplacementKey)
+{
+    if (!mpss::is_algorithm_available(ecdsa_secp256r1_sha256))
+    {
+        GTEST_SKIP() << "Algorithm not supported by current backend";
+    }
+
+    const std::string name = test_key_name("reference_replaced");
+    MPSS::DeleteKey(name);
+    auto original = KeyPair::Create(name, ecdsa_secp256r1_sha256);
+    ASSERT_NE(nullptr, original) << mpss::get_error();
+
+    const auto captured = original->reference();
+    ASSERT_TRUE(captured.has_value()) << mpss::get_error();
+    auto bound = KeyPair::Open(*captured);
+    ASSERT_NE(nullptr, bound) << mpss::get_error();
+
+    ASSERT_TRUE(original->delete_key());
+    original.reset();
+    auto fresh = KeyPair::Create(name, ecdsa_secp256r1_sha256);
+    ASSERT_NE(nullptr, fresh) << mpss::get_error();
+    SCOPE_GUARD(static_cast<void>(fresh->delete_key()));
+
+    // The name now holds a different key, which the bound handle must neither use nor delete.
+    const std::vector<std::byte> hash(32, std::byte{0x7B});
+    std::vector<std::byte> signature(bound->sign_hash_size());
+    EXPECT_EQ(0, bound->sign_hash(hash, signature));
+    EXPECT_TRUE(mpss::has_error());
+    std::vector<std::byte> public_key(bound->extract_key_size());
+    EXPECT_EQ(0, bound->extract_key(public_key));
+    EXPECT_TRUE(mpss::has_error());
+    EXPECT_FALSE(bound->reference().has_value());
+    EXPECT_FALSE(bound->delete_key());
+
+    std::vector<std::byte> fresh_public_key(fresh->extract_key_size());
+    ASSERT_EQ(fresh_public_key.size(), fresh->extract_key(fresh_public_key));
+    EXPECT_NE(captured->public_key, fresh_public_key);
 }
 
 TEST(BackendTest, CreateKeyWithExplicitBackend)

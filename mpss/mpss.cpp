@@ -141,7 +141,7 @@ std::unique_ptr<KeyPair> KeyPair::Open(const KeyReference &reference)
         return nullptr;
     }
 
-    // Own the expected bytes before opening; YubiKey also uses them to select a matching slot/route.
+    // Own the expected bytes before opening; a backend may also use them to disambiguate a route.
     std::vector<std::byte> expected = reference.public_key;
     const std::scoped_lock lifecycle{utils::name_mutex(reference.location.name)};
     auto key = impl::open_key(reference.location, expected);
@@ -158,8 +158,15 @@ std::unique_ptr<KeyPair> KeyPair::Open(const KeyReference &reference)
     }
 
     std::vector<std::byte> actual(key_size);
-    if (key_size != key->extract_key(actual))
+    const std::size_t written = key->extract_key(actual);
+    if (0 == written)
     {
+        return nullptr;
+    }
+
+    if (key_size != written)
+    {
+        utils::log_and_set_error("The opened key reported an invalid public key size.");
         return nullptr;
     }
 
@@ -544,7 +551,14 @@ bool KeyPair::verify(std::span<const std::byte> hash, std::span<const std::byte>
     {
         return false;
     }
-    return clear_error_on_success(do_verify(hash, sig));
+
+    if (expected_public_key_.empty())
+    {
+        return clear_error_on_success(do_verify(hash, sig));
+    }
+
+    // The referenced key is the identity, so verify against it rather than against whatever the backend holds.
+    return clear_error_on_success(impl::verify(backend_name_, hash, expected_public_key_, algorithm(), sig));
 }
 
 std::size_t KeyPair::extract_key(std::span<std::byte> public_key) const
