@@ -491,7 +491,7 @@ TEST_F(WindowsKeyReference, ChangedBackendPublicKeyDoesNotReplaceTheReferencePin
     std::vector<std::byte> output(key->extract_key_size(), std::byte{0x5a});
     const auto untouched = output;
     EXPECT_EQ(0, key->extract_key(output));
-    EXPECT_TRUE(mpss::has_error());
+    EXPECT_THAT(mpss::get_error(), HasSubstr("does not match the referenced public key"));
     EXPECT_EQ(untouched, output);
 }
 
