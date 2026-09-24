@@ -279,6 +279,15 @@ public class KeyManagement {
                     return null;
                 }
 
+                // A cached entry belongs to open handles; creating over it would splice a new key
+                // into their generation.
+                if (null != MemKeyStore.GetKey(keyName)) {
+                    String msg = "Key with same name is still open: " + keyName;
+                    Log.e("MPSS", msg);
+                    SetError(msg);
+                    return null;
+                }
+
                 KeyPair kp = null;
                 boolean useStrongbox = false;
 
