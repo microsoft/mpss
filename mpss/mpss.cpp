@@ -394,9 +394,12 @@ bool KeyPair::release_key()
 
 void KeyPair::release_from_destructor() noexcept
 {
+    // Destruction is not an operation, so it is not refused inside an interaction handler: the
+    // release must still happen, or what the handle holds is leaked.
     try
     {
-        static_cast<void>(release_key());
+        const std::unique_lock lock{mtx_};
+        static_cast<void>(release_locked());
     }
     // NOLINTNEXTLINE(bugprone-empty-catch) - a destructor must not propagate exceptions.
     catch (...)
