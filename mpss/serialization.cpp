@@ -117,11 +117,11 @@ std::optional<std::vector<std::byte>> encode_der(const KeyReferenceAsn1 *value)
     return encoded;
 }
 
-evp_pkey_ptr public_key_to_host(OSSL_LIB_CTX *libctx, const KeyReference &reference)
+evp_pkey_ptr import_public_key(OSSL_LIB_CTX *libctx, const KeyReference &reference)
 {
     // MPSS public bytes must have the size and uncompressed-point prefix required by this algorithm.
-    const auto parameters = std::ranges::find(algorithm_parameters, reference.algorithm,
-                                              &decltype(algorithm_parameters)::value_type::first);
+    const auto parameters =
+        std::ranges::find(algorithm_parameters, reference.algorithm, [](const auto &entry) { return entry.first; });
     if (algorithm_parameters.end() == parameters ||
         utils::get_public_key_size(reference.algorithm) != reference.public_key.size() ||
         std::byte{4} != reference.public_key.front())
@@ -175,7 +175,7 @@ bool read_public_key(OSSL_LIB_CTX *libctx, X509_PUBKEY *spki, KeyReference &refe
 
     const int parameter_id = OBJ_obj2nid(static_cast<const ASN1_OBJECT *>(parameter_value));
     const auto parameters =
-        std::ranges::find(algorithm_parameters, parameter_id, &decltype(algorithm_parameters)::value_type::second);
+        std::ranges::find(algorithm_parameters, parameter_id, [](const auto &entry) { return entry.second; });
     if (algorithm_parameters.end() == parameters)
     {
         error = ReferenceError::unsupported;
@@ -237,7 +237,7 @@ bool read_public_key(OSSL_LIB_CTX *libctx, X509_PUBKEY *spki, KeyReference &refe
     return 1 == EVP_PKEY_get_octet_string_param(key.get(), OSSL_PKEY_PARAM_PUB_KEY,
                                                 reinterpret_cast<unsigned char *>(reference.public_key.data()),
                                                 reference.public_key.size(), &written) &&
-           reference.public_key.size() == written && public_key_to_host(libctx, reference);
+           reference.public_key.size() == written && import_public_key(libctx, reference);
 }
 
 bool is_whitespace(char c)
@@ -264,7 +264,7 @@ std::optional<std::vector<std::byte>> encode_key_reference_der(const KeyReferenc
         return failure("Failed to initialize key-reference public-key validation.");
     }
 
-    const evp_pkey_ptr public_key = public_key_to_host(host.context.get(), reference);
+    const evp_pkey_ptr public_key = import_public_key(host.context.get(), reference);
     if (!public_key)
     {
         return failure("The key reference has an unsupported algorithm or invalid public key.");

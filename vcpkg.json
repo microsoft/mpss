@@ -3,7 +3,7 @@
   "version": "2.0.0",
   "description": "A multi-platform C++ library for hardware-backed digital signature key storage and signing.",
   "license": "MIT",
-  "builtin-baseline": "30ef65cad98f08e7197c9a1656fbd871bcb72f2d",
+  "builtin-baseline": "b61d33065508ba0d5e393206abb3cb2366299699",
   "features": {
     "openssl": {
       "description": "Build the OpenSSL provider, including key-reference serialization.",
