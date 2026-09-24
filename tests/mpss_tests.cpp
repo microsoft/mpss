@@ -39,6 +39,7 @@
 #include "mpss/impl/yubikey/yk_piv.h"
 #ifndef MPSS_CORE_IS_SHARED
 #include "mpss/impl/yubikey/yk_utils.h"
+#include <ykpiv/ykpiv.h>
 #endif
 #endif
 
@@ -2332,6 +2333,27 @@ TEST_F(YubiKeyPolicyEnv, EnvNeverGatedBehindOptIn)
     // The programmatic path is unaffected by the gate (explicit caller choice, no env consulted).
     EXPECT_EQ(pin_never, yku::resolve_pin_policy(KeyPolicy::yubikey_pin_never));
     EXPECT_EQ(touch_never, yku::resolve_touch_policy(KeyPolicy::yubikey_touch_never));
+}
+
+// The firmware default touch policy is 'never', so an environment 'default' is gated like 'never'.
+// The firmware default PIN policy is 'once', the MPSS default, so there 'default' needs no opt-in.
+TEST_F(YubiKeyPolicyEnv, EnvDefaultTouchPolicyGatedBehindOptIn)
+{
+    namespace yku = mpss::impl::yubikey::utils;
+
+    const std::uint8_t touch_cached = yku::resolve_touch_policy(KeyPolicy::yubikey_touch_cached);
+    touch_policy_.set("default");
+    pin_policy_.set("default");
+
+    allow_downgrade_.unset();
+    EXPECT_EQ(touch_cached, yku::resolve_touch_policy(KeyPolicy::none));
+    EXPECT_EQ(YKPIV_PINPOLICY_DEFAULT, yku::resolve_pin_policy(KeyPolicy::none));
+
+    allow_downgrade_.set("0");
+    EXPECT_EQ(touch_cached, yku::resolve_touch_policy(KeyPolicy::none));
+
+    allow_downgrade_.set("1");
+    EXPECT_EQ(YKPIV_TOUCHPOLICY_DEFAULT, yku::resolve_touch_policy(KeyPolicy::none));
 }
 
 TEST(YubiKeyPolicyEnvTest, AffirmativeEnvironmentValues)

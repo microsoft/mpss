@@ -25,11 +25,12 @@ std::string to_lower(std::string_view str)
 }
 
 /**
- * @brief Whether an env-driven downgrade to a 'never' pin/touch policy is explicitly permitted.
+ * @brief Whether the environment may weaken a policy below the MPSS default.
  *
  * A 'never' policy is permanent and unrepairable once baked into a key at generation, so it is
  * only honored from the environment when MPSS_YUBIKEY_ALLOW_POLICY_DOWNGRADE is set to an
- * affirmative value (1, true, yes, on). It defaults to off.
+ * affirmative value (1, true, yes, on). The firmware default touch policy is 'never' as well, so
+ * the same applies to an environment 'default' for touch. It defaults to off.
  */
 bool policy_downgrade_allowed()
 {
@@ -91,6 +92,16 @@ std::uint8_t get_touch_policy_from_env()
     const std::string value = to_lower(env_ptr);
     if ("default" == value)
     {
+        // The firmware default touch policy is 'never', so this is the same downgrade by another name.
+        if (!policy_downgrade_allowed())
+        {
+            mpss::utils::log_warning("MPSS_YUBIKEY_TOUCHPOLICY=default ignored: the firmware default is 'never'; set "
+                                     "MPSS_YUBIKEY_ALLOW_POLICY_DOWNGRADE to leave touch protection disabled for "
+                                     "newly created keys. Using 'cached'.");
+            return default_touch_policy;
+        }
+        mpss::utils::log_warning("MPSS_YUBIKEY_TOUCHPOLICY=default leaves touch protection at the firmware default, "
+                                 "'never', for keys created now.");
         return YKPIV_TOUCHPOLICY_DEFAULT;
     }
     if ("never" == value)
@@ -191,7 +202,7 @@ SecureByteVector get_mgm_key_from_env()
 
     // Validate length for AES-128 (32), AES-192/TDES (48), or AES-256 (64).
     const std::size_t len = hex_str.size();
-    if (len != 32 && len != 48 && len != 64)
+    if (32 != len && 48 != len && 64 != len)
     {
         mpss::utils::log_warning("MPSS_YUBIKEY_MGM_KEY has invalid length ({}). Expected 32, 48, or 64 hex characters.",
                                  len);

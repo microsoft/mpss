@@ -21,6 +21,7 @@ namespace mpss::impl::yubikey::utils
  * @param value The environment variable value.
  * @return true for 1, true, yes, or on; false otherwise.
  */
+[[nodiscard]]
 bool is_affirmative_environment_value(std::string_view value);
 
 /**
@@ -46,8 +47,9 @@ std::optional<std::uint32_t> parse_serial(std::string_view serial);
  * @brief Get the YubiKey management key from the environment variable MPSS_YUBIKEY_MGM_KEY.
  *
  * Expected format: hex string (32, 48, or 64 characters).
- * @return The management key bytes, or std::nullopt if not set or invalid.
+ * @return The management key bytes, or an empty vector if not set or invalid.
  */
+[[nodiscard]]
 SecureByteVector get_mgm_key_from_env();
 
 /**
@@ -57,10 +59,13 @@ SecureByteVector get_mgm_key_from_env();
  * ykpiv constant. Otherwise, falls back to the MPSS_YUBIKEY_PINPOLICY environment variable,
  * then to the hardcoded default (YKPIV_PINPOLICY_ONCE). The weakest environment value, 'never',
  * is honored only when MPSS_YUBIKEY_ALLOW_POLICY_DOWNGRADE is set; otherwise the default is used.
+ * The environment value 'default' delegates to the firmware default, which is 'once' and so
+ * needs no opt-in.
  *
  * @param policy The key policy bitmask.
  * @return The ykpiv PIN policy constant.
  */
+[[nodiscard]]
 std::uint8_t resolve_pin_policy(KeyPolicy policy);
 
 /**
@@ -68,12 +73,14 @@ std::uint8_t resolve_pin_policy(KeyPolicy policy);
  *
  * If the YubiKey touch policy field (bits 4-7) is non-zero, maps the value to the corresponding
  * ykpiv constant. Otherwise, falls back to the MPSS_YUBIKEY_TOUCHPOLICY environment variable,
- * then to the hardcoded default (YKPIV_TOUCHPOLICY_CACHED). The weakest environment value, 'never',
- * is honored only when MPSS_YUBIKEY_ALLOW_POLICY_DOWNGRADE is set; otherwise the default is used.
+ * then to the hardcoded default (YKPIV_TOUCHPOLICY_CACHED). The environment values 'never' and
+ * 'default' -- the firmware default touch policy is also 'never' -- are honored only when
+ * MPSS_YUBIKEY_ALLOW_POLICY_DOWNGRADE is set; otherwise the default is used.
  *
  * @param policy The key policy bitmask.
  * @return The ykpiv touch policy constant.
  */
+[[nodiscard]]
 std::uint8_t resolve_touch_policy(KeyPolicy policy);
 
 /**
@@ -81,6 +88,7 @@ std::uint8_t resolve_touch_policy(KeyPolicy policy);
  * @param algorithm The mpss::Algorithm.
  * @return The YubiKey PIV algorithm constant, or 0 if unsupported.
  */
+[[nodiscard]]
 std::uint8_t mpss_to_yk_algorithm(Algorithm algorithm);
 
 /**
@@ -88,6 +96,7 @@ std::uint8_t mpss_to_yk_algorithm(Algorithm algorithm);
  * @param yk_algorithm The YubiKey PIV algorithm constant.
  * @return The MPSS algorithm, or Algorithm::unsupported if unknown.
  */
+[[nodiscard]]
 Algorithm yk_to_mpss_algorithm(std::uint8_t yk_algorithm);
 
 /**
@@ -95,6 +104,7 @@ Algorithm yk_to_mpss_algorithm(std::uint8_t yk_algorithm);
  * @param algorithm The MPSS algorithm.
  * @return The group name, or nullptr if the algorithm has no YubiKey-supported group.
  */
+[[nodiscard]]
 const char *get_group_name(Algorithm algorithm);
 
 /**
@@ -102,6 +112,7 @@ const char *get_group_name(Algorithm algorithm);
  * @param slot The PIV slot number.
  * @return Human-readable slot name.
  */
+[[nodiscard]]
 std::string_view get_slot_name(std::uint8_t slot);
 
 } // namespace mpss::impl::yubikey::utils

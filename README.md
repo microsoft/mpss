@@ -1036,9 +1036,10 @@ export MPSS_YUBIKEY_PINPOLICY=once
 export MPSS_YUBIKEY_TOUCHPOLICY=cached
 ```
 
-Unset variables use `once` / `cached`; an explicit `default` delegates to firmware defaults.
-`never` permanently disables the corresponding protection for that key. Environment-driven
-`never` requires `MPSS_YUBIKEY_ALLOW_POLICY_DOWNGRADE=1`, otherwise MPSS warns and uses its default.
+Unset variables use `once` / `cached`; an explicit `default` delegates to the firmware defaults,
+which are `once` for the PIN and `never` for touch. `never` permanently disables the corresponding
+protection for that key. Environment-driven `never`, and `default` for the touch policy, require
+`MPSS_YUBIKEY_ALLOW_POLICY_DOWNGRADE=1`; otherwise MPSS warns and uses its default.
 
 Explicit [`KeyPolicy` fields](#key-policies) override environment settings and do not require
 that opt-in. Unsupported policies still fail creation.
@@ -1203,8 +1204,8 @@ value MPSS has already seen refused, restart the process so that value is offere
 | `MPSS_YUBIKEY_ALLOW_DEFAULT_MGM_KEY` | Permit factory-default management-key authentication | `1`, `true`, `yes`, `on` (case-insensitive) | Disabled |
 | `MPSS_YUBIKEY_SERIAL` | Default YubiKey serial for name-based calls; `KeyLocation` calls ignore it | Positive serial number | Sole reachable device |
 | `MPSS_YUBIKEY_PINPOLICY` | New-key PIN policy | `default`, `never`, `once`, `always` | `once` |
-| `MPSS_YUBIKEY_TOUCHPOLICY` | New-key touch policy | `default`, `never`, `always`, `cached`, `auto` | `cached` |
-| `MPSS_YUBIKEY_ALLOW_POLICY_DOWNGRADE` | Permit environment-driven `never` policies | `1`, `true`, `yes`, `on` (case-insensitive) | Disabled |
+| `MPSS_YUBIKEY_TOUCHPOLICY` | New-key touch policy; `never` and `default` (firmware default, also never) need the opt-in below | `default`, `never`, `always`, `cached`, `auto` | `cached` |
+| `MPSS_YUBIKEY_ALLOW_POLICY_DOWNGRADE` | Permit environment-driven `never` policies, including the firmware-default touch policy | `1`, `true`, `yes`, `on` (case-insensitive) | Disabled |
 
 ### YubiKey Backend Limitations and Considerations
 
