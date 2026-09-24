@@ -201,7 +201,6 @@ OpenKeyResult try_open_key(std::string_view name)
         }
     });
 
-    // Now we need the Algorithm.
     jmethodID mid_algo = JNIHelper::method(JNIHelper::JavaMethod::get_key_algorithm);
     if (nullptr == mid_algo)
     {
@@ -277,7 +276,6 @@ OpenKeyResult try_open_key(std::string_view name)
         return {.status = KeyProbeStatus::operational_error, .value = nullptr};
     }
 
-    // Finally, we can return the key.
     mpss::utils::log_trace("Key '{}' opened on Android with {} storage.", name,
                            get_storage_tier_info(storage_tier).description);
     handed_to_caller = true;
@@ -551,7 +549,6 @@ bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_k
         return false;
     }
 
-    // Check hash length.
     if (!mpss::utils::check_exact_hash_size(hash, algorithm))
     {
         return false;

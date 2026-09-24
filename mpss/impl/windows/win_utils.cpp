@@ -13,7 +13,6 @@
 namespace
 {
 
-// Instantiating the crypto_params for each algorithm.
 constexpr mpss::impl::os::ECDSA_P256 ecdsa_p256;
 constexpr mpss::impl::os::ECDSA_P384 ecdsa_p384;
 constexpr mpss::impl::os::ECDSA_P521 ecdsa_p521;
@@ -117,7 +116,6 @@ std::string wide_to_utf8(std::wstring_view value)
 std::size_t decode_raw_signature(std::span<const std::byte> der_sig, Algorithm algorithm,
                                  std::span<std::byte> raw_sig) noexcept
 {
-    // Check for obvious problems.
     if (der_sig.empty())
     {
         mpss::utils::log_warning("Nothing to decode.");
@@ -141,14 +139,12 @@ std::size_t decode_raw_signature(std::span<const std::byte> der_sig, Algorithm a
         return 0;
     }
 
-    // Decode signature.
     const DWORD encoded_size = mpss::utils::narrow_or_error<DWORD>(der_sig.size());
     if (0 == encoded_size)
     {
         return 0;
     }
 
-    // Get required decoded size
     DWORD ecc_sig_buffer_size = 0;
     if (!::CryptDecodeObjectEx(X509_ASN_ENCODING, X509_ECC_SIGNATURE, reinterpret_cast<LPCBYTE>(der_sig.data()),
                                encoded_size, 0 /* dwFlags */,
@@ -160,7 +156,6 @@ std::size_t decode_raw_signature(std::span<const std::byte> der_sig, Algorithm a
         return 0;
     }
 
-    // Decode the signature.
     std::unique_ptr<BYTE[]> ecc_sig_buffer = std::make_unique<BYTE[]>(ecc_sig_buffer_size);
     if (!::CryptDecodeObjectEx(X509_ASN_ENCODING, X509_ECC_SIGNATURE, reinterpret_cast<LPCBYTE>(der_sig.data()),
                                encoded_size, 0 /* dwFlags */,
@@ -184,7 +179,6 @@ std::size_t decode_raw_signature(std::span<const std::byte> der_sig, Algorithm a
         return 0;
     }
 
-    // Set raw_sig to zeros.
     std::fill_n(raw_sig.begin(), raw_sig_size, std::byte{});
 
     // Copy the raw signature data to the output buffer. Reverse the byte order.

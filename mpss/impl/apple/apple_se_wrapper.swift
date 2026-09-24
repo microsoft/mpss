@@ -242,12 +242,10 @@ private func getKey(
     _ keyName: String, generation: UnsafeMutablePointer<UInt64>?
 ) -> KeyLookupResult {
     do {
-        // Try first from dictionary.
         if let result = getKeyFromDict(keyName: keyName, generation: generation) {
             return .found(result)
         }
 
-        // Try from keychain.
         logDebug("Key not found in dictionary, trying to get from Keychain.")
         switch retrieveDataFromKeychain(account: keyChainAccountName, service: keyName) {
         case .found(let keyChainData):
@@ -275,7 +273,6 @@ private func getKey(
 ///     - service: The service name under which the data will be stored.
 /// - Returns: OSStatus that indicates the result of the operation.
 private func storeDataInKeychain(data: Data, account: String, service: String) -> OSStatus {
-    // Define the Keychain query dictionary.
     let query: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
         kSecAttrAccount as String: account,
@@ -293,7 +290,6 @@ private func storeDataInKeychain(data: Data, account: String, service: String) -
         // The caller reports the status; this only records what it means.
         logDebug("Item already exists in Keychain; refusing to replace it.")
     } else {
-        // Some other error occurred.
         logDebug("Error adding item to Keychain: \(status)")
     }
 
@@ -366,11 +362,9 @@ private func retrieveDataFromKeychain(account: String, service: String) -> Keych
     if errSecSuccess == status {
         logTrace("Retrieved item from Keychain.")
     } else if errSecItemNotFound == status {
-        // Item not found.
         logTrace("Item not found in Keychain.")
         return .notFound
     } else {
-        // Some other error occurred.
         logDebug("Error retrieving item from Keychain: \(status)")
         setError("Error retrieving item from Keychain: \(status)")
         return .failure
@@ -473,10 +467,8 @@ private func createKeyPriv(
             return nil
         }
 
-        // Does not exist, create it.
         let privateKey = try SecureEnclave.P256.Signing.PrivateKey(accessControl: access)
 
-        // Save it now.
         let status = storeDataInKeychain(
             data: privateKey.dataRepresentation, account: keyChainAccountName, service: keyName)
 
@@ -764,7 +756,6 @@ private func verifyStandaloneSignature(
     pk: Data, hash: any Digest, signature: Data
 ) -> AppleOperationResult {
     do {
-        // Recreate public key.
         let publicKey = try P256.Signing.PublicKey.init(x963Representation: pk)
         let ecdsaSignature = try P256.Signing.ECDSASignature(derRepresentation: signature)
 
@@ -834,7 +825,6 @@ func getLastError(error: UnsafeMutablePointer<CChar>?, errorLength: UInt) -> UIn
     let lastError = getError()
     let utf8 = Array(lastError.utf8)
 
-    // Return string size if error is nil.
     if nil == error {
         return UInt(utf8.count)
     }

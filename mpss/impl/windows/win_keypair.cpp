@@ -85,7 +85,6 @@ std::size_t WindowsKeyPair::do_sign_hash(std::span<const std::byte> hash, std::s
         return 0;
     }
 
-    // Get the size of the raw signature.
     DWORD sig_size_dw = 0;
     SECURITY_STATUS status = ::NCryptSignHash(
         key_handle_,
@@ -100,7 +99,6 @@ std::size_t WindowsKeyPair::do_sign_hash(std::span<const std::byte> hash, std::s
         return 0;
     }
 
-    // Get the actual signature.
     std::unique_ptr<BYTE[]> signature_buffer = std::make_unique<BYTE[]>(sig_size_dw);
     status = ::NCryptSignHash(key_handle_,
                               /* pPaddingInfo */ nullptr, reinterpret_cast<PBYTE>(const_cast<std::byte *>(hash.data())),
@@ -112,7 +110,6 @@ std::size_t WindowsKeyPair::do_sign_hash(std::span<const std::byte> hash, std::s
         return 0;
     }
 
-    // We need to reverse the signature bytes.
     const DWORD key_bytes = sig_size_dw / 2;
     std::unique_ptr<BYTE[]> reversed_signature_buffer = std::make_unique<BYTE[]>(sig_size_dw);
     std::span<BYTE> reversed_signature_span(reversed_signature_buffer.get(), sig_size_dw);
@@ -128,7 +125,6 @@ std::size_t WindowsKeyPair::do_sign_hash(std::span<const std::byte> hash, std::s
 
     DWORD encoded_size = 0;
 
-    // Get the size of the encoding.
     if (!::CryptEncodeObjectEx(X509_ASN_ENCODING, X509_ECC_SIGNATURE, &eccSig, 0 /* dwFlags */,
                                /* PCRYPT_ENCODE_PARA */ nullptr,
                                /* pvEncoded */ nullptr, &encoded_size))
@@ -144,7 +140,6 @@ std::size_t WindowsKeyPair::do_sign_hash(std::span<const std::byte> hash, std::s
         return 0;
     }
 
-    // If the signature buffer is too small, return 0.
     if (sig.size() < encoded_size_sz)
     {
         mpss::utils::log_and_set_error("Signature buffer is too small. Expected {} bytes (got {} bytes).",
@@ -152,7 +147,6 @@ std::size_t WindowsKeyPair::do_sign_hash(std::span<const std::byte> hash, std::s
         return 0;
     }
 
-    // Encode the signature.
     if (!::CryptEncodeObjectEx(X509_ASN_ENCODING, X509_ECC_SIGNATURE, &eccSig, 0 /* dwFlags */,
                                /* PCRYPT_ENCODE_PARA */ nullptr, sig.data(), &encoded_size))
     {
@@ -161,7 +155,6 @@ std::size_t WindowsKeyPair::do_sign_hash(std::span<const std::byte> hash, std::s
         return 0;
     }
 
-    // Return the number of bytes written to the signature buffer.
     const std::size_t result = mpss::utils::narrow_or_error<std::size_t>(encoded_size);
     mpss::utils::log_trace("Windows sign produced {} byte signature.", result);
     return result;
@@ -181,7 +174,6 @@ bool WindowsKeyPair::do_verify(std::span<const std::byte> hash, std::span<const 
         return false;
     }
 
-    // Decode the signature.
     std::size_t raw_sig_size = utils::decode_raw_signature(sig, algorithm_, {});
     if (0 == raw_sig_size)
     {
@@ -234,7 +226,6 @@ std::size_t WindowsKeyPair::do_extract_key(std::span<std::byte> public_key) cons
         return 0;
     }
 
-    // Get the public key size.
     DWORD pk_blob_size = 0;
     SECURITY_STATUS status = ::NCryptExportKey(key_handle_,
                                                /* hExportKey */ 0, crypto->public_key_blob_name(),
@@ -257,12 +248,9 @@ std::size_t WindowsKeyPair::do_extract_key(std::span<std::byte> public_key) cons
         return 0;
     }
 
-    // We add 1 to this. The reason is that the Windows API returns just the X and Y
-    // coordinates of the point, whereas we prefer to return a standard format with
-    // the point compression indicator. All returned points are uncompressed (0x04).
+    // The Windows API returns only the X and Y coordinates; the extra byte is the point compression indicator.
     std::size_t pk_size = pk_blob_size - sizeof(crypto_params::key_blob_t) + 1;
 
-    // Actually get the key.
     auto pk_blob = std::make_unique<BYTE[]>(pk_blob_size);
     status = ::NCryptExportKey(key_handle_,
                                /* hExportKey */ 0, crypto->public_key_blob_name(),
@@ -284,7 +272,6 @@ std::size_t WindowsKeyPair::do_extract_key(std::span<std::byte> public_key) cons
     BYTE *pk_data_start = pk_blob.get() + sizeof(crypto_params::key_blob_t);
     BYTE *pk_data_end = pk_data_start + (pk_blob_size - sizeof(crypto_params::key_blob_t));
 
-    // Check the input buffer is big enough
     const std::size_t pk_expected_size = pk_data_end - pk_data_start + 1;
     if (mpss::utils::get_public_key_size(algorithm()) != pk_expected_size)
     {
@@ -293,10 +280,8 @@ std::size_t WindowsKeyPair::do_extract_key(std::span<std::byte> public_key) cons
         return 0;
     }
 
-    // Write the compression indicator to the output buffer.
     public_key[0] = std::byte{0x04}; // Uncompressed point indicator.
 
-    // Copy the public key data to the output buffer.
     std::transform(pk_data_start, pk_data_end, public_key.begin() + 1,
                    [](auto in) { return static_cast<std::byte>(in); });
 

@@ -64,7 +64,6 @@ NCRYPT_PROV_HANDLE GetProvider(LPCWSTR provider_name, bool speculative, bool *co
 {
     NCRYPT_PROV_HANDLE provider_handle = 0;
 
-    // This function uses no extra flags.
     DWORD flags = 0;
 
     SECURITY_STATUS status = ::NCryptOpenStorageProvider(&provider_handle, provider_name, flags);
@@ -665,7 +664,6 @@ std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm, 
         return nullptr;
     }
 
-    // Fail if the key already exists or is already open.
     TryOpenKeyResult existing_key = try_open_key(name);
     if (mpss::impl::KeyProbeStatus::operational_error == existing_key.status)
     {
@@ -784,7 +782,6 @@ bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_k
         return false;
     }
 
-    // Check hash length.
     if (!mpss::utils::check_exact_hash_size(hash, algorithm))
     {
         return false;
@@ -796,17 +793,14 @@ bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_k
         return false;
     }
 
-    // Check compression indicator
     if (std::byte{0x04} != public_key[0])
     {
         mpss::utils::log_and_set_error("Invalid public key format.");
         return false;
     }
 
-    // Get the algorithm info.
     const AlgorithmInfo info = get_algorithm_info(algorithm);
 
-    // Get crypto parameters.
     crypto_params const *const crypto = utils::get_crypto_params(algorithm);
     if (nullptr == crypto)
     {
@@ -814,7 +808,6 @@ bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_k
         return false;
     }
 
-    // Build the key blob.
     const DWORD pk_blob_size =
         mpss::utils::narrow_or_error<DWORD>(sizeof(crypto_params::key_blob_t) + public_key.size() - 1);
     if (0 == pk_blob_size)
@@ -831,7 +824,6 @@ bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_k
         return false;
     }
 
-    // Copy public key data to the blob.
     std::transform(public_key.begin() + 1, public_key.end(), key_blob_buffer.get() + sizeof(crypto_params::key_blob_t),
                    [](auto in) { return static_cast<BYTE>(in); });
 
@@ -843,7 +835,6 @@ bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_k
     }
     SCOPE_GUARD(::NCryptFreeObject(provider));
 
-    // Import the public key.
     NCRYPT_KEY_HANDLE key_handle = 0;
     SECURITY_STATUS status =
         ::NCryptImportKey(provider,
@@ -862,7 +853,6 @@ bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_k
     }
     SCOPE_GUARD(::NCryptFreeObject(key_handle));
 
-    // Extract the raw signature.
     std::size_t raw_sig_size = utils::decode_raw_signature(sig, algorithm, {});
     if (0 == raw_sig_size)
     {

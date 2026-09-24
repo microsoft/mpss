@@ -524,7 +524,6 @@ bool MPSS_CreateKey(const char *keyName, int bitSize, uint64_t *generation, int 
     return false;
   }
 
-  // Define key attributes.
   @autoreleasepool {
     int existingBitSize = 0;
     NSString *keyLabel = GetKeyLabel(keyName);
@@ -653,10 +652,8 @@ bool MPSS_SignHash(const char *keyName, int signatureType, uint64_t generation, 
       return false;
     }
 
-    // Actual signature size.
     *signatureSize = signatureDataSize;
 
-    // Copy signature.
     memcpy(signature, CFDataGetBytePtr(signatureData), signatureDataSize);
     mpss_log_debug([[NSString
         stringWithFormat:@"Signature created successfully. Signature size: %lu", signatureDataSize] UTF8String]);
@@ -706,7 +703,6 @@ int32_t MPSS_VerifySignature(const char *keyName, int signatureType, uint64_t ge
     bool result = SecKeyVerifySignature(publicKeyRef, algorithm, (__bridge CFDataRef)hashData,
                                         (__bridge CFDataRef)signatureData, &error);
 
-    // Release public key.
     CFRelease(publicKeyRef);
 
     if (result) {
@@ -760,7 +756,6 @@ int32_t MPSS_VerifyStandaloneSignature(int signatureType, const uint8_t *hash, s
       return MPSS_APPLE_RESULT_OPERATIONAL_ERROR;
     }
 
-    // Create public key attributes.
     NSDictionary *keyAttributes = @{
       (id)kSecAttrKeyType : (id)kSecAttrKeyTypeECSECPrimeRandom,
       (id)kSecAttrKeyClass : (id)kSecAttrKeyClassPublic,
@@ -768,7 +763,6 @@ int32_t MPSS_VerifyStandaloneSignature(int signatureType, const uint8_t *hash, s
       (id)kSecAttrIsPermanent : @NO
     };
 
-    // Create public key from raw bytes.
     CFErrorRef error = NULL;
     SecKeyRef publicKeyRef =
         SecKeyCreateWithData((__bridge CFDataRef)publicKeyData, (__bridge CFDictionaryRef)keyAttributes, &error);
@@ -780,11 +774,9 @@ int32_t MPSS_VerifyStandaloneSignature(int signatureType, const uint8_t *hash, s
       return MPSS_APPLE_RESULT_OPERATIONAL_ERROR;
     }
 
-    // Verify the signature.
     bool result = SecKeyVerifySignature(publicKeyRef, algorithm, (__bridge CFDataRef)hashData,
                                         (__bridge CFDataRef)signatureData, &error);
 
-    // Release public key.
     CFRelease(publicKeyRef);
 
     if (result) {
@@ -830,7 +822,6 @@ bool MPSS_GetPublicKey(const char *keyName, uint64_t generation, uint8_t *pk, si
       return false;
     }
 
-    // Get PK data.
     CFErrorRef error = NULL;
     CFDataRef pkData = SecKeyCopyExternalRepresentation(publicKeyRef, &error);
 
@@ -842,7 +833,6 @@ bool MPSS_GetPublicKey(const char *keyName, uint64_t generation, uint8_t *pk, si
       return false;
     }
 
-    // Get raw bytes.
     CFIndex length = CFDataGetLength(pkData);
     const UInt8 *pkBytes = CFDataGetBytePtr(pkData);
 
@@ -856,7 +846,6 @@ bool MPSS_GetPublicKey(const char *keyName, uint64_t generation, uint8_t *pk, si
     }
 
     memcpy(pk, pkBytes, length);
-    // Actual size.
     *pkSize = length;
 
     CFRelease(pkData);
@@ -908,7 +897,6 @@ bool MPSS_DeleteKey(const char *keyName) {
 
     NSString *op_status = @"";
 
-    // Create query to delete private key.
     NSMutableDictionary *query = [@{
       (id)kSecClass : (__bridge id)kSecClassKey,
       (id)kSecAttrKeyType : SupportedKeychainKeyType(),
@@ -925,7 +913,6 @@ bool MPSS_DeleteKey(const char *keyName) {
     } else if (errSecItemNotFound == status) {
       mpss_log_trace("Private key not found, nothing to delete.");
     } else {
-      // Append to status.
       op_status = [op_status stringByAppendingFormat:@"Private key deletion failed with status: %d", (int)status];
     }
 
@@ -944,7 +931,6 @@ bool MPSS_DeleteKey(const char *keyName) {
     } else if (errSecItemNotFound == status) {
       mpss_log_trace("Public key not found, nothing to delete.");
     } else {
-      // Append to status.
       op_status = [op_status stringByAppendingFormat:@"Public key deletion failed with status: %d", (int)status];
     }
 

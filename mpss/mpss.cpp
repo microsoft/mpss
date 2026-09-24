@@ -249,7 +249,6 @@ bool is_algorithm_available(Algorithm algorithm)
         }
     }
 
-    // Delegate to the default backend.
     utils::log_trace("Probing algorithm availability for '{}'.", info.type_str);
     const bool available = impl::is_algorithm_available(algorithm);
 
@@ -365,12 +364,10 @@ std::size_t KeyPair::extract_key_size() const
 
 bool KeyPair::release_locked()
 {
-    // A handle is released explicitly by the caller and again when it is destroyed. Doing the work
-    // once keeps a backend that reference counts a shared cache entry from giving up a hold that
-    // belongs to another handle. Latching before the attempt rather than after a successful one
-    // keeps that true of a release that fails part way through, where how much was given up is not
-    // known. What that one attempt reported is remembered, so a later caller is told what actually
-    // happened rather than that a release it never made succeeded.
+    // Doing the work once keeps a backend that reference counts a shared cache entry from giving up
+    // a hold that belongs to another handle. Latching before the attempt rather than after a
+    // successful one keeps that true of a release that fails part way through, where how much was
+    // given up is not known.
     if (released_)
     {
         return release_result_;
@@ -450,9 +447,8 @@ bool KeyPair::delete_key()
         return false;
     }
 
-    // The key is gone, so the name this handle carries no longer identifies anything it opened.
-    // Releasing gives up whatever it held and latches it, so a key created later under the same
-    // name cannot be reached through it. Whatever the release reports is not the caller's
+    // Releasing gives up whatever the handle held and latches it, so a key created later under the
+    // same name cannot be reached through it. Whatever the release reports is not the caller's
     // business: the deletion they asked for succeeded, and a release that could not tidy up has
     // already said so in the log.
     static_cast<void>(release_locked());

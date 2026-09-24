@@ -276,7 +276,6 @@ bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_k
         return false;
     }
 
-    // Check hash length.
     if (!mpss::utils::check_exact_hash_size(hash, algorithm))
     {
         return false;

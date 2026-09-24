@@ -207,7 +207,6 @@ class BackendRegistry
         // store cannot throw, so the ScopeGuard's terminate-on-exception path is unreachable.
         SCOPE_GUARD({ init_attempted_.store(true, std::memory_order_release); });
 
-        // Register available backends.
 #if defined(_WIN32) || defined(__APPLE__) || defined(__ANDROID__)
         install_builtin(std::make_shared<OSBackend>());
 #endif
@@ -215,7 +214,6 @@ class BackendRegistry
         install_builtin(std::make_shared<yubikey::YubiKeyBackend>());
 #endif
 
-        // Check MPSS_DEFAULT_BACKEND environment variable.
         // NOLINTNEXTLINE(concurrency-mt-unsafe) - the environment is only read, under the initialization lock.
         const char *env_backend = std::getenv("MPSS_DEFAULT_BACKEND");
         if (nullptr != env_backend && std::strlen(env_backend) > 0)
@@ -232,7 +230,6 @@ class BackendRegistry
             return;
         }
 
-        // Fall back to platform default.
         const char *default_name = platform_default_backend_name();
         if (nullptr != default_name)
         {
@@ -498,13 +495,11 @@ bool Backend::is_algorithm_available(Algorithm algorithm) const
     std::unique_ptr<KeyPair> key = KeyPair::Create(
         KeyLocation{.backend_name = name(), .name = random_key, .device_id = std::nullopt}, algorithm, KeyPolicy::none);
 
-    // Could we even create a key?
     if (nullptr == key)
     {
         return false;
     }
     SCOPE_GUARD({
-        // Delete the key if it was created.
         const bool key_deleted = key->delete_key();
         if (!key_deleted)
         {
@@ -512,7 +507,6 @@ bool Backend::is_algorithm_available(Algorithm algorithm) const
         }
     });
 
-    // Create some data and sign.
     const std::vector<std::byte> hash(info.hash_bits / 8, static_cast<std::byte>('a'));
     const std::size_t sig_size = key->sign_hash(hash, {});
     if (0 == sig_size)
