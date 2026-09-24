@@ -24,8 +24,7 @@ YubiKeyKeyPair::YubiKeyKeyPair(std::string_view name, Algorithm algorithm, std::
 
 bool YubiKeyKeyPair::is_opened_key(std::span<const std::byte> slot_key) const
 {
-    if (public_key_.empty() || slot_key.size() != public_key_.size() ||
-        !std::equal(public_key_.begin(), public_key_.end(), slot_key.begin()))
+    if (public_key_.empty() || !std::ranges::equal(public_key_, slot_key))
     {
         mpss::utils::log_and_set_error("Key '{}' is no longer the key this handle opened.", name_);
         return false;
@@ -69,7 +68,7 @@ bool YubiKeyKeyPair::do_delete_key()
 
     // Try deleting without PIN authentication first (succeeds when the management key is available without PIN,
     // e.g., via MPSS_YUBIKEY_MGM_KEY or the explicitly enabled factory default).
-    YubiKeyPIV::DeleteResult deleted = piv.delete_key(slot_);
+    YubiKeyPIV::DeleteResult deleted = piv.delete_key(slot_, /* probe */ true);
 
     if (YubiKeyPIV::DeleteResult::unauthenticated == deleted)
     {
@@ -134,29 +133,9 @@ std::size_t YubiKeyKeyPair::do_sign_hash(std::span<const std::byte> hash, std::s
     const bool needs_pin = (YKPIV_PINPOLICY_NEVER != metadata.pin_policy);
     const bool needs_touch = (YKPIV_TOUCHPOLICY_NEVER != metadata.touch_policy);
 
-    // The logic is a bit complicated by the fact that we want to avoid unnecessary PIN prompts, but also avoid
-    // using sign() as a probe when the key has a touch policy (to prevent unexpected blocking waiting for touch).
-    // The rules are:
-    // - If the key has a touch policy, authenticate PIN upfront if needed, then call sign() directly (which may
-    // block for touch).
-    // - If the key has no touch policy, we can use sign() as a probe to check if PIN authentication is needed (it
-    // returns an empty signature if PIN is required but not authenticated). This allows us to avoid unnecessary
-    // PIN prompts when the PIN is already cached from a prior session.
+    // Closing a connection resets the card, so no PIN verified by an earlier operation survives to here.
     if (needs_pin)
     {
-        if (!needs_touch)
-        {
-            // No touch policy, so sign() returns instantly. Use it as a probe to check whether PIN authentication
-            // is actually needed (it may already be cached).
-            const std::size_t written = piv.sign(slot_, hash, algorithm(), sig, /* probe */ true);
-            if (0 != written)
-            {
-                return written;
-            }
-        }
-
-        // Either the key has a touch policy (so we don't probe with sign()) or the sign() probe indicated that PIN
-        // is needed. In either case, we authenticate the PIN now.
         if (!authenticate_pin_interactive(piv, "sign with key '" + name_ + "'"))
         {
             mpss::utils::log_trace("Cannot sign with key '{}': PIN authentication failed.", name_);

@@ -64,7 +64,7 @@ VerifyOutcome openssl_ecdsa_verify(const char *group_name, std::span<const std::
     }
 
     EVP_PKEY *pkey = nullptr;
-    if (EVP_PKEY_fromdata_init(build_ctx) <= 0 || EVP_PKEY_fromdata(build_ctx, &pkey, EVP_PKEY_PUBLIC_KEY, params) <= 0)
+    if (0 >= EVP_PKEY_fromdata_init(build_ctx) || 0 >= EVP_PKEY_fromdata(build_ctx, &pkey, EVP_PKEY_PUBLIC_KEY, params))
     {
         EVP_PKEY_CTX_free(build_ctx);
         return error;
@@ -80,7 +80,7 @@ VerifyOutcome openssl_ecdsa_verify(const char *group_name, std::span<const std::
     }
     SCOPE_GUARD(EVP_PKEY_CTX_free(verify_ctx));
 
-    if (EVP_PKEY_verify_init(verify_ctx) <= 0)
+    if (0 >= EVP_PKEY_verify_init(verify_ctx))
     {
         return error;
     }
@@ -266,18 +266,26 @@ std::unique_ptr<KeyPair> YubiKeyBackend::create_key(const KeyLocation &location,
         return nullptr;
     }
 
-    // Find a free slot.
-    const std::uint8_t slot = piv.find_free_slot();
+    const auto find_free_slot = [&piv]() -> std::uint8_t {
+        const std::uint8_t free_slot = piv.find_free_slot();
+        if (0 == free_slot)
+        {
+            mpss::utils::log_and_set_error("No free PIV slots available on YubiKey.");
+        }
+        return free_slot;
+    };
+
+    std::uint8_t slot = find_free_slot();
     if (0 == slot)
     {
-        mpss::utils::log_and_set_error("No free PIV slots available on YubiKey.");
         return nullptr;
     }
 
     // Try generating the key without PIN authentication first (succeeds when the management key is available
     // without PIN, e.g., via MPSS_YUBIKEY_MGM_KEY or the explicitly enabled factory default).
     std::vector<std::byte> generated_public_key;
-    YubiKeyPIV::GenerateResult generated = piv.generate_key(slot, yk_algorithm, policy, &generated_public_key);
+    YubiKeyPIV::GenerateResult generated =
+        piv.generate_key(slot, yk_algorithm, policy, &generated_public_key, /* probe */ true);
 
     if (YubiKeyPIV::GenerateResult::unauthenticated == generated)
     {
@@ -290,7 +298,14 @@ std::unique_ptr<KeyPair> YubiKeyBackend::create_key(const KeyLocation &location,
             return nullptr;
         }
 
-        // PIN is already verified on this connection.
+        // The prompt above waits on a person, which is long enough for another writer to take the
+        // slot, so one is chosen again now that the PIN is verified on this connection.
+        slot = find_free_slot();
+        if (0 == slot)
+        {
+            return nullptr;
+        }
+
         generated = piv.generate_key(slot, yk_algorithm, policy, &generated_public_key);
     }
 
@@ -450,7 +465,7 @@ bool YubiKeyBackend::delete_key(const KeyLocation &location) const
         return false;
     }
 
-    YubiKeyPIV::DeleteByNameResult result = piv.delete_keys_by_name(key_name);
+    YubiKeyPIV::DeleteByNameResult result = piv.delete_keys_by_name(key_name, /* probe */ true);
     if (result.needs_authentication)
     {
         // Retry only authentication failures; keep the earlier count but use the retry's remaining-failure flags.

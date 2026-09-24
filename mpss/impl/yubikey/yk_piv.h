@@ -97,14 +97,18 @@ class YubiKeyPIV
      * @param retries_out Set to the number of remaining PIN retries on failure, or -1 if unknown.
      * @return The result of the authentication attempt.
      */
+    [[nodiscard]]
     mpss::PinResult authenticate_pin(std::string_view pin, int &retries_out);
 
     /**
      * @brief Authenticate with the management key.
      * Uses the factory-default management key only when explicitly enabled through the environment.
+     * @param probe When true, wanting credentials that verifying the PIN may supply is an expected outcome of the
+     * call and is reported through the trace log only. Any other failure is still reported.
      * @return true if authentication succeeded, false otherwise.
      */
-    bool authenticate_mgm_key();
+    [[nodiscard]]
+    bool authenticate_mgm_key(bool probe = false);
 
     /**
      * @brief Outcome of a key generation attempt.
@@ -129,12 +133,15 @@ class YubiKeyPIV
      * @param[out] public_key Optional. On success, the public key the device reports for the key it
      * just generated. This identifies that key: a slot another writer has filled since holds a
      * different one, and nothing else about the slot distinguishes them.
+     * @param probe When true, a refusal for want of credentials is an expected outcome of the call and
+     * is not reported as an error. Any other failure is still reported.
      * @return GenerateResult::generated on success; GenerateResult::unauthenticated when the device
      * refused for want of credentials, which is the only refusal that verifying a PIN and retrying
      * can change; GenerateResult::refused for every other failure.
      */
+    [[nodiscard]]
     GenerateResult generate_key(std::uint8_t slot, std::uint8_t algorithm, KeyPolicy policy = KeyPolicy::none,
-                                std::vector<std::byte> *public_key = nullptr);
+                                std::vector<std::byte> *public_key = nullptr, bool probe = false);
 
     /**
      * @brief Sign a hash with the key in the specified slot.
@@ -145,12 +152,10 @@ class YubiKeyPIV
      * @param hash The hash to sign.
      * @param algorithm The MPSS algorithm.
      * @param sig Output buffer for the signature. Must be at least get_max_signature_size() bytes.
-     * @param probe When true, an authentication failure is an expected outcome of the call and is not reported as
-     * an error. Any other failure is still reported.
      * @return The number of bytes written to sig, or 0 on failure.
      */
-    std::size_t sign(std::uint8_t slot, std::span<const std::byte> hash, Algorithm algorithm, std::span<std::byte> sig,
-                     bool probe = false);
+    [[nodiscard]]
+    std::size_t sign(std::uint8_t slot, std::span<const std::byte> hash, Algorithm algorithm, std::span<std::byte> sig);
 
     /**
      * @brief Extract the public key from the specified slot.
@@ -162,6 +167,7 @@ class YubiKeyPIV
      *              failure of the operation the caller asked for.
      * @return The number of bytes written to public_key, or 0 on failure.
      */
+    [[nodiscard]]
     std::size_t get_public_key(std::uint8_t slot, std::span<std::byte> public_key, bool probe = false);
 
     /**
@@ -190,6 +196,7 @@ class YubiKeyPIV
      * @param probe When true, a failure is not reported through the last error.
      * @return True when the slot answered and its public key could be read.
      */
+    [[nodiscard]]
     bool read_slot_metadata(std::uint8_t slot, SlotMetadata &metadata, bool probe = false);
 
     /**
@@ -212,19 +219,25 @@ class YubiKeyPIV
      * The caller must authenticate PIN and/or management key beforehand if required.
      *
      * @param slot The PIV slot number.
+     * @param probe When true, a refusal for want of credentials is an expected outcome of the call and
+     * is not reported as an error. Any other failure is still reported.
      * @return DeleteResult::deleted on success; DeleteResult::unauthenticated when the device refused
      * for want of credentials, which is the only refusal that verifying a PIN and retrying can change;
      * DeleteResult::refused for every other failure. The overwrite fallback goes through key
      * generation, so a device that refuses to generate -- a YubiKey FIPS device outside FIPS-approved
      * mode, for instance -- refuses to delete this way too, and for the same unsatisfiable reason.
      */
-    DeleteResult delete_key(std::uint8_t slot);
+    [[nodiscard]]
+    DeleteResult delete_key(std::uint8_t slot, bool probe = false);
 
     /**
      * @brief Check if a key exists in the specified slot.
      * @param slot The PIV slot number.
-     * @return true if a key exists, false otherwise.
+     * @return true if a key exists, and also when occupancy could not be determined, so that a slot
+     * which may hold a live key is never offered as free; false only when the device confirms the slot
+     * is empty.
      */
+    [[nodiscard]]
     bool key_exists(std::uint8_t slot);
 
     /**
@@ -252,6 +265,7 @@ class YubiKeyPIV
      * @param name The key name to store.
      * @return true if the label was written successfully, false otherwise.
      */
+    [[nodiscard]]
     bool write_slot_label(std::uint8_t slot, std::string_view name);
 
     /**
@@ -265,6 +279,7 @@ class YubiKeyPIV
      * KeyProbeStatus::not_found when the slot is confirmed to hold no MPSS certificate, and
      * KeyProbeStatus::operational_error when the slot could not be read or its contents could not be interpreted.
      */
+    [[nodiscard]]
     KeyProbeResult<std::string> read_slot_label(std::uint8_t slot);
 
     /**
@@ -287,6 +302,7 @@ class YubiKeyPIV
      * matched, or KeyProbeStatus::operational_error when the name could neither be located nor ruled out, or when
      * more than one slot matches the name and optional expected key.
      */
+    [[nodiscard]]
     KeyProbeResult<SlotInfo> find_slot_by_name(std::string_view name,
                                                std::span<const std::byte> expected_public_key = {});
 
@@ -318,15 +334,23 @@ class YubiKeyPIV
      * slot survived.
      *
      * @param name The key name to clear.
+     * @param probe When true, a refusal for want of credentials is an expected outcome of the call and
+     * is not reported as an error. Any other failure is still reported.
      * @return How many slots were cleared, and whether any slot refused the delete or could not be
      * read.
      */
-    DeleteByNameResult delete_keys_by_name(std::string_view name);
+    [[nodiscard]]
+    DeleteByNameResult delete_keys_by_name(std::string_view name, bool probe = false);
 
     /**
-     * @brief Find the first free (unoccupied) PIV slot.
+     * @brief Find a free PIV slot.
+     *
+     * A slot whose label marks it as available -- a deleted key overwritten on firmware that cannot
+     * erase a slot -- is preferred over one that is empty.
+     *
      * @return The slot number, or 0 if no free slots are available.
      */
+    [[nodiscard]]
     std::uint8_t find_free_slot();
 
     /**
@@ -338,6 +362,7 @@ class YubiKeyPIV
      *
      * @return An empty list when no reader answers; nullopt when enumeration itself fails.
      */
+    [[nodiscard]]
     static MPSS_DECOR std::optional<std::vector<std::uint32_t>> available_serials();
 
   private:
@@ -374,18 +399,26 @@ class YubiKeyPIV
      * @return A sentence to append to a diagnostic, or an empty string when nothing could be
      * established. Absence of evidence is not evidence that the credentials differ from the defaults.
      */
+    [[nodiscard]]
     std::string describe_default_credentials();
 
+    [[nodiscard]]
     bool connect_to_reader(const std::string &reader, std::uint32_t target_serial);
+
+    /**
+     * @brief Outcome of connecting through the readers cached for a serial.
+     */
     enum class ConnectionResult
     {
-        connected,
-        unavailable,
-        resolution_failed,
-        conflicting_keys
+        connected,         ///< A connection is held; the route that answered is preferred next time.
+        unavailable,       ///< No cached route answered, or none satisfied the requested key identity.
+        resolution_failed, ///< A route answered but could not resolve the key; the last error says why.
+        conflicting_keys   ///< Routes reporting the serial disagree about the key, so none is trusted.
     };
+    [[nodiscard]]
     ConnectionResult connect_to_cached_reader(std::uint32_t serial, std::string_view name,
                                               std::span<const std::byte> expected_public_key, std::uint8_t slot);
+    [[nodiscard]]
     std::optional<std::vector<std::vector<std::byte>>> keys_by_name(std::string_view name);
     void disconnect();
 
@@ -396,6 +429,7 @@ class YubiKeyPIV
      * @return The algorithm, or Algorithm::unsupported when the metadata could not be read or names an
      * algorithm MPSS does not support. Does not set the last error; the caller reports in its own terms.
      */
+    [[nodiscard]]
     Algorithm read_slot_algorithm(std::uint8_t slot);
 
     /**
@@ -421,6 +455,7 @@ class YubiKeyPIV
      * differ or the certificate carries no key, and LabelBinding::undetermined when either key
      * could not be read.
      */
+    [[nodiscard]]
     LabelBinding slot_key_matches_label(std::uint8_t slot, X509 *cert);
 
     /**
@@ -441,9 +476,12 @@ class YubiKeyPIV
      * left untouched and @ref EraseResult::unsupported is returned so the caller can fall back.
      *
      * @param slot The PIV slot number.
+     * @param probe When true, a refusal for want of credentials is an expected outcome of the call and
+     * is not reported as an error. Any other failure is still reported.
      * @return Whether the slot was erased, cannot be erased on this device, or failed to erase.
      */
-    EraseResult erase_slot(std::uint8_t slot);
+    [[nodiscard]]
+    EraseResult erase_slot(std::uint8_t slot, bool probe = false);
 };
 
 /**

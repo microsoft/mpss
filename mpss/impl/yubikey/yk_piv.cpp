@@ -209,7 +209,9 @@ bool rescan_readers()
 namespace mpss::impl::yubikey
 {
 
-// List of usable PIV slots for ECDSA keys (retired slots only). The named slots (9A, 9C, 9D, 9E) won't be used.
+namespace
+{
+// List of usable PIV slots for keys (retired slots only). The named slots (9A, 9C, 9D, 9E) won't be used.
 constexpr std::array<std::uint8_t, 20> usable_slots = {
     YKPIV_KEY_RETIRED1,  YKPIV_KEY_RETIRED2,  YKPIV_KEY_RETIRED3,  YKPIV_KEY_RETIRED4,  YKPIV_KEY_RETIRED5,
     YKPIV_KEY_RETIRED6,  YKPIV_KEY_RETIRED7,  YKPIV_KEY_RETIRED8,  YKPIV_KEY_RETIRED9,  YKPIV_KEY_RETIRED10,
@@ -218,19 +220,12 @@ constexpr std::array<std::uint8_t, 20> usable_slots = {
 
 // Label written to a slot's certificate after the private key has been overwritten
 // with a dummy key. Slots bearing this label are treated as free by find_free_slot.
-constexpr const char *available_slot_label = "(available)";
+constexpr std::string_view available_slot_label = "(available)";
 
 // Destination that turns a key move into a key erasure. Devices that support the command destroy the
 // key rather than relocating it; any other destination moves the key to that slot.
 constexpr std::uint8_t erase_key_destination = 0xFF;
 
-bool is_reserved_key_name(std::string_view name)
-{
-    return available_slot_label == name;
-}
-
-namespace
-{
 // Largest X9.63 uncompressed point MPSS handles (P-521: 1 + 66 * 2). YubiKey PIV tops out at P-384,
 // but sizing to the library maximum keeps the buffer correct if a larger algorithm is ever reachable.
 constexpr std::size_t max_public_key_bytes = 133;
@@ -277,7 +272,7 @@ EVP_PKEY *make_ec_public_key(const char *group_name, std::span<const std::byte> 
     SCOPE_GUARD(EVP_PKEY_CTX_free(ctx));
 
     EVP_PKEY *pkey = nullptr;
-    if (EVP_PKEY_fromdata_init(ctx) <= 0 || EVP_PKEY_fromdata(ctx, &pkey, EVP_PKEY_PUBLIC_KEY, params) <= 0)
+    if (0 >= EVP_PKEY_fromdata_init(ctx) || 0 >= EVP_PKEY_fromdata(ctx, &pkey, EVP_PKEY_PUBLIC_KEY, params))
     {
         return nullptr;
     }
@@ -319,11 +314,11 @@ std::size_t extract_public_point(const ykpiv_metadata &metadata, std::span<std::
 {
     const std::uint8_t *pubkey = metadata.pubkey;
     std::size_t pubkey_len = metadata.pubkey_len;
-    if (pubkey_len >= 2 && 0x86 == pubkey[0])
+    if (2 <= pubkey_len && 0x86 == pubkey[0])
     {
         std::size_t header_len = 2;
         std::size_t num_len_bytes = 0;
-        if (pubkey[1] >= 0x80)
+        if (0x80 <= pubkey[1])
         {
             // Long form: the low bits count the bytes the length is spelled in.
             num_len_bytes = pubkey[1] & 0x7FU;
@@ -378,6 +373,11 @@ std::size_t extract_public_point(const ykpiv_metadata &metadata, std::span<std::
     return pubkey_len;
 }
 } // namespace
+
+bool is_reserved_key_name(std::string_view name)
+{
+    return available_slot_label == name;
+}
 
 YubiKeyPIV::YubiKeyPIV(std::uint32_t serial, std::string_view name, std::span<const std::byte> expected_public_key,
                        std::uint8_t slot)
@@ -710,7 +710,7 @@ mpss::PinResult YubiKeyPIV::authenticate_pin(std::string_view pin, int &retries_
     return mpss::PinResult::wrong_pin;
 }
 
-bool YubiKeyPIV::authenticate_mgm_key()
+bool YubiKeyPIV::authenticate_mgm_key(bool probe)
 {
     if (nullptr == state_)
     {
@@ -720,6 +720,7 @@ bool YubiKeyPIV::authenticate_mgm_key()
 
     // Try PIN-protected management key first (requires PIN to be verified first).
     ykpiv_mgm protected_mgm = {};
+    SCOPE_GUARD(OPENSSL_cleanse(&protected_mgm, sizeof(protected_mgm)));
     ykpiv_rc rc = ykpiv_util_get_protected_mgm(state_, &protected_mgm);
     if (YKPIV_OK == rc)
     {
@@ -756,10 +757,10 @@ bool YubiKeyPIV::authenticate_mgm_key()
     const char *allow_default = std::getenv("MPSS_YUBIKEY_ALLOW_DEFAULT_MGM_KEY");
     if (nullptr == allow_default || !utils::is_affirmative_environment_value(allow_default))
     {
-        mpss::utils::log_and_set_error(
-            "Management key authentication failed. Refusing to try the publicly known factory-default management "
-            "key unless MPSS_YUBIKEY_ALLOW_DEFAULT_MGM_KEY is set to an affirmative value. Configure a "
-            "PIN-protected management key or set MPSS_YUBIKEY_MGM_KEY.");
+        report_failure(probe,
+                       "Management key authentication failed. Refusing to try the publicly known factory-default "
+                       "management key unless MPSS_YUBIKEY_ALLOW_DEFAULT_MGM_KEY is set to an affirmative value. "
+                       "Configure a PIN-protected management key or set MPSS_YUBIKEY_MGM_KEY.");
         return false;
     }
 
@@ -776,22 +777,32 @@ bool YubiKeyPIV::authenticate_mgm_key()
         return true;
     }
 
-    // All probe-based methods failed. Check if the device uses PIN-derived mode, which we don't support.
+    // Nothing this connection holds authenticates. The admin data records which mode the management
+    // key was configured in, and is readable before the PIN is verified.
     ykpiv_config config = {};
-    if (YKPIV_OK == ykpiv_util_get_config(state_, &config) && YKPIV_CONFIG_MGM_DERIVED == config.mgm_type)
+    SCOPE_GUARD(OPENSSL_cleanse(&config, sizeof(config)));
+    const bool config_read = (YKPIV_OK == ykpiv_util_get_config(state_, &config));
+    if (config_read && YKPIV_CONFIG_MGM_DERIVED == config.mgm_type)
     {
         mpss::utils::log_and_set_error(
             "This YubiKey uses a PIN-derived management key, which is not supported by MPSS.");
         return false;
     }
 
-    mpss::utils::log_warning("Management key authentication failed. PIN-protected management key requires prior PIN "
-                             "verification.");
+    if (config_read && YKPIV_CONFIG_MGM_PROTECTED == config.mgm_type)
+    {
+        report_failure(probe, "Management key authentication failed: the PIN-protected management key is available "
+                              "only after the PIN has been verified.");
+        return false;
+    }
+
+    report_failure(probe, "Management key authentication failed: the factory-default management key was refused and "
+                          "MPSS_YUBIKEY_MGM_KEY is not set.");
     return false;
 }
 
 YubiKeyPIV::GenerateResult YubiKeyPIV::generate_key(std::uint8_t slot, std::uint8_t algorithm, KeyPolicy policy,
-                                                    std::vector<std::byte> *public_key)
+                                                    std::vector<std::byte> *public_key, bool probe)
 {
     if (nullptr == state_)
     {
@@ -803,9 +814,8 @@ YubiKeyPIV::GenerateResult YubiKeyPIV::generate_key(std::uint8_t slot, std::uint
     const std::uint8_t pin_policy = utils::resolve_pin_policy(policy);
     const std::uint8_t touch_policy = utils::resolve_touch_policy(policy);
 
-    // Output parameters required by ykpiv_util_generate_key.
-    // We don't use these values (public key is retrieved separately via metadata),
-    // but the API mandates them.
+    // Output parameters of ykpiv_util_generate_key. Only the point is used, to report the key just
+    // generated; the RSA modulus and exponent are mandated by the API.
     std::uint8_t *modulus = nullptr;
     std::size_t modulus_len = 0;
     std::uint8_t *exp = nullptr;
@@ -815,11 +825,6 @@ YubiKeyPIV::GenerateResult YubiKeyPIV::generate_key(std::uint8_t slot, std::uint
 
     // Ensure ykpiv-allocated buffers are guaranteed to be freed.
     auto free_ykpiv_buf = [state = state_](std::uint8_t *&ptr) {
-        if (nullptr == state)
-        {
-            mpss::utils::log_warning("YubiKey state is null in free_ykpiv_buf. Potential memory leak.");
-            return;
-        }
         if (nullptr != ptr)
         {
             ykpiv_rc rc = ykpiv_util_free(state, ptr);
@@ -842,7 +847,7 @@ YubiKeyPIV::GenerateResult YubiKeyPIV::generate_key(std::uint8_t slot, std::uint
         free_ykpiv_buf(exp);
         free_ykpiv_buf(point);
 
-        if (!authenticate_mgm_key())
+        if (!authenticate_mgm_key(probe))
         {
             // The device wants credentials this connection does not have. Verifying the PIN may
             // unlock a PIN-protected management key, so the caller is told a retry is worth trying.
@@ -893,6 +898,7 @@ YubiKeyPIV::GenerateResult YubiKeyPIV::generate_key(std::uint8_t slot, std::uint
 std::string YubiKeyPIV::describe_default_credentials()
 {
     ykpiv_config config = {};
+    SCOPE_GUARD(OPENSSL_cleanse(&config, sizeof(config)));
     if (nullptr == state_ || YKPIV_OK != ykpiv_util_get_config(state_, &config))
     {
         return {};
@@ -920,7 +926,7 @@ std::string YubiKeyPIV::describe_default_credentials()
 }
 
 std::size_t YubiKeyPIV::sign(std::uint8_t slot, std::span<const std::byte> hash, Algorithm algorithm,
-                             std::span<std::byte> sig, bool probe)
+                             std::span<std::byte> sig)
 {
     if (nullptr == state_)
     {
@@ -945,12 +951,7 @@ std::size_t YubiKeyPIV::sign(std::uint8_t slot, std::span<const std::byte> hash,
 
     if (YKPIV_OK != rc)
     {
-        // A probe expects an authentication failure when the PIN is not yet verified, so only a probe suppresses it.
-        if (!probe || YKPIV_AUTHENTICATION_ERROR != rc)
-        {
-            mpss::utils::log_and_set_error("Signing failed in slot {}: {}", utils::get_slot_name(slot),
-                                           ykpiv_strerror(rc));
-        }
+        mpss::utils::log_and_set_error("Signing failed in slot {}: {}", utils::get_slot_name(slot), ykpiv_strerror(rc));
         return 0;
     }
 
@@ -959,7 +960,6 @@ std::size_t YubiKeyPIV::sign(std::uint8_t slot, std::span<const std::byte> hash,
 
 std::size_t YubiKeyPIV::get_public_key(std::uint8_t slot, std::span<std::byte> public_key, bool probe)
 {
-
     if (nullptr == state_)
     {
         report_failure(probe, "YubiKey not connected.");
@@ -1059,12 +1059,12 @@ YubiKeyPIV::LabelBinding YubiKeyPIV::slot_key_matches_label(std::uint8_t slot, X
     return matches ? LabelBinding::match : LabelBinding::mismatch;
 }
 
-YubiKeyPIV::EraseResult YubiKeyPIV::erase_slot(std::uint8_t slot)
+YubiKeyPIV::EraseResult YubiKeyPIV::erase_slot(std::uint8_t slot, bool probe)
 {
     ykpiv_rc rc = ykpiv_move_key(state_, slot, erase_key_destination);
     if (YKPIV_AUTHENTICATION_ERROR == rc)
     {
-        if (!authenticate_mgm_key())
+        if (!authenticate_mgm_key(probe))
         {
             // The management key could not be established. A PIN-protected management key is unlocked
             // by verifying the PIN, so the caller is told a retry is worth trying.
@@ -1106,7 +1106,7 @@ YubiKeyPIV::EraseResult YubiKeyPIV::erase_slot(std::uint8_t slot)
     return EraseResult::erased;
 }
 
-YubiKeyPIV::DeleteResult YubiKeyPIV::delete_key(std::uint8_t slot)
+YubiKeyPIV::DeleteResult YubiKeyPIV::delete_key(std::uint8_t slot, bool probe)
 {
     if (nullptr == state_)
     {
@@ -1115,7 +1115,7 @@ YubiKeyPIV::DeleteResult YubiKeyPIV::delete_key(std::uint8_t slot)
     }
 
     using enum EraseResult;
-    switch (erase_slot(slot))
+    switch (erase_slot(slot, probe))
     {
     case erased:
         return DeleteResult::deleted;
@@ -1127,9 +1127,10 @@ YubiKeyPIV::DeleteResult YubiKeyPIV::delete_key(std::uint8_t slot)
         break;
     }
 
-    // The device cannot erase a slot, so render the key unusable by overwriting it instead.
-    // Policy is irrelevant for the dummy key - KeyPolicy::none resolves to device defaults.
-    const GenerateResult overwritten = generate_key(slot, YKPIV_ALGO_ECCP256);
+    // The device cannot erase a slot, so render the key unusable by overwriting it instead. Policy is
+    // irrelevant for the dummy key; KeyPolicy::none resolves through the MPSS_YUBIKEY_*POLICY
+    // environment to the MPSS defaults.
+    const GenerateResult overwritten = generate_key(slot, YKPIV_ALGO_ECCP256, KeyPolicy::none, nullptr, probe);
     if (GenerateResult::generated != overwritten)
     {
         // Deleting this way is a generation, so it inherits generation's refusals verbatim -- including
@@ -1166,7 +1167,7 @@ bool YubiKeyPIV::key_exists(std::uint8_t slot)
     ykpiv_rc rc = ykpiv_get_metadata(state_, slot, metadata_buf, &metadata_len);
     if (YKPIV_OK == rc)
     {
-        return metadata_len > 0;
+        return 0 < metadata_len;
     }
     if (YKPIV_KEY_ERROR == rc || YKPIV_INVALID_OBJECT == rc)
     {
@@ -1314,7 +1315,7 @@ bool YubiKeyPIV::write_slot_label(std::uint8_t slot, std::string_view name)
     }
 
     // Sign with the ephemeral key.
-    if (X509_sign(cert, ephemeral_key, EVP_sha384()) <= 0)
+    if (0 >= X509_sign(cert, ephemeral_key, EVP_sha384()))
     {
         mpss::utils::log_and_set_error("Failed to sign slot {} certificate.", utils::get_slot_name(slot));
         return false;
@@ -1323,7 +1324,7 @@ bool YubiKeyPIV::write_slot_label(std::uint8_t slot, std::string_view name)
     // Serialize to DER.
     unsigned char *der = nullptr;
     int der_len = i2d_X509(cert, &der);
-    if (der_len <= 0 || nullptr == der)
+    if (0 >= der_len || nullptr == der)
     {
         mpss::utils::log_and_set_error("Failed to serialize slot {} certificate to DER.", utils::get_slot_name(slot));
         return false;
@@ -1460,14 +1461,14 @@ KeyProbeResult<std::string> YubiKeyPIV::read_slot_label(std::uint8_t slot)
     // Check that O = "Microsoft" and OU = "mpss" (this is our certificate, not someone else's).
     char org_buf[16] = {};
     const int org_len = X509_NAME_get_text_by_NID(subject, NID_organizationName, org_buf, sizeof(org_buf));
-    if (org_len <= 0 || std::string_view{org_buf, static_cast<std::size_t>(org_len)} != "Microsoft")
+    if (0 >= org_len || "Microsoft" != std::string_view{org_buf, static_cast<std::size_t>(org_len)})
     {
         return {.status = KeyProbeStatus::not_found, .value = {}};
     }
 
     char ou_buf[8] = {};
     const int ou_len = X509_NAME_get_text_by_NID(subject, NID_organizationalUnitName, ou_buf, sizeof(ou_buf));
-    if (ou_len <= 0 || std::string_view{ou_buf, static_cast<std::size_t>(ou_len)} != "mpss")
+    if (0 >= ou_len || "mpss" != std::string_view{ou_buf, static_cast<std::size_t>(ou_len)})
     {
         return {.status = KeyProbeStatus::not_found, .value = {}};
     }
@@ -1475,7 +1476,7 @@ KeyProbeResult<std::string> YubiKeyPIV::read_slot_label(std::uint8_t slot)
     // Extract CN = key name. Max 64 characters per X.520 ub-common-name, plus null terminator.
     char cn_buf[65] = {};
     const int cn_len = X509_NAME_get_text_by_NID(subject, NID_commonName, cn_buf, sizeof(cn_buf));
-    if (cn_len <= 0)
+    if (0 >= cn_len)
     {
         mpss::utils::log_warning("The MPSS certificate in slot {} has no common name.", utils::get_slot_name(slot));
         return {.status = KeyProbeStatus::operational_error, .value = {}};
@@ -1501,7 +1502,7 @@ KeyProbeResult<std::string> YubiKeyPIV::read_slot_label(std::uint8_t slot)
     return {.status = KeyProbeStatus::found, .value = std::string{cn_buf, static_cast<std::size_t>(cn_len)}};
 }
 
-YubiKeyPIV::DeleteByNameResult YubiKeyPIV::delete_keys_by_name(std::string_view name)
+YubiKeyPIV::DeleteByNameResult YubiKeyPIV::delete_keys_by_name(std::string_view name, bool probe)
 {
     DeleteByNameResult result{};
     if (nullptr == state_)
@@ -1529,7 +1530,7 @@ YubiKeyPIV::DeleteByNameResult YubiKeyPIV::delete_keys_by_name(std::string_view 
             continue;
         }
 
-        const DeleteResult cleared = delete_key(slot);
+        const DeleteResult cleared = delete_key(slot, probe);
         if (DeleteResult::deleted == cleared)
         {
             ++result.deleted;
@@ -1602,7 +1603,7 @@ KeyProbeResult<YubiKeyPIV::SlotInfo> YubiKeyPIV::find_slot_by_name(std::string_v
         ++match_count;
     }
 
-    if (match_count > 1)
+    if (1 < match_count)
     {
         if (expected_public_key.empty())
         {
@@ -1840,7 +1841,7 @@ bool pin_already_rejected(std::uint32_t serial, std::string_view pin)
         return false;
     }
 
-    return std::any_of(entry->second.begin(), entry->second.end(), [&digest](const PinDigest &known) {
+    return std::ranges::any_of(entry->second, [&digest](const PinDigest &known) {
         return same_digest(known, *digest); // NOLINT(bugprone-unchecked-optional-access) - guarded above.
     });
 }
