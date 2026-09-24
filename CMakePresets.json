@@ -183,6 +183,17 @@
             }
         },
         {
+            "name": "win-vs2026-arm64-with-yubikey-shared",
+            "displayName": "Windows VS 2026 (arm64) [Shared, YubiKey]",
+            "inherits": "win-vs2026-arm64-with-yubikey",
+            "cacheVariables": {
+                "MPSS_BUILD_MPSS_CORE_STATIC": "NO",
+                "MPSS_BUILD_MPSS_CORE_SHARED": "YES",
+                "MPSS_BUILD_MPSS_OPENSSL_STATIC": "NO",
+                "MPSS_BUILD_MPSS_OPENSSL_SHARED": "YES"
+            }
+        },
+        {
             "name": "win-vs2022-x64-mock",
             "displayName": "Windows VS 2022 (x64) [NCrypt mock tests]",
             "inherits": "win-vs2022-x64",
@@ -212,17 +223,6 @@
             "inherits": "win-vs2026-arm64",
             "cacheVariables": {
                 "MPSS_BUILD_WIN32_MOCK_TESTS": "YES"
-            }
-        },
-        {
-            "name": "win-vs2026-arm64-with-yubikey-shared",
-            "displayName": "Windows VS 2026 (arm64) [Shared, YubiKey]",
-            "inherits": "win-vs2026-arm64-with-yubikey",
-            "cacheVariables": {
-                "MPSS_BUILD_MPSS_CORE_STATIC": "NO",
-                "MPSS_BUILD_MPSS_CORE_SHARED": "YES",
-                "MPSS_BUILD_MPSS_OPENSSL_STATIC": "NO",
-                "MPSS_BUILD_MPSS_OPENSSL_SHARED": "YES"
             }
         },
         {
@@ -876,6 +876,28 @@
             }
         },
         {
+            "name": "win-vs2026-arm64-with-yubikey-shared-debug",
+            "displayName": "Windows VS 2026 (arm64) [Debug, Shared, YubiKey]",
+            "configurePreset": "win-vs2026-arm64-with-yubikey-shared",
+            "configuration": "Debug",
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            }
+        },
+        {
+            "name": "win-vs2026-arm64-with-yubikey-shared-release",
+            "displayName": "Windows VS 2026 (arm64) [Release, Shared, YubiKey]",
+            "configurePreset": "win-vs2026-arm64-with-yubikey-shared",
+            "configuration": "Release",
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            }
+        },
+        {
             "name": "win-vs2022-x64-mock-debug",
             "displayName": "Windows VS 2022 (x64) [Debug, NCrypt mock tests]",
             "configurePreset": "win-vs2022-x64-mock",
@@ -956,28 +978,6 @@
             "name": "win-vs2026-arm64-mock-release",
             "displayName": "Windows VS 2026 (arm64) [Release, NCrypt mock tests]",
             "configurePreset": "win-vs2026-arm64-mock",
-            "configuration": "Release",
-            "condition": {
-                "type": "equals",
-                "lhs": "${hostSystemName}",
-                "rhs": "Windows"
-            }
-        },
-        {
-            "name": "win-vs2026-arm64-with-yubikey-shared-debug",
-            "displayName": "Windows VS 2026 (arm64) [Debug, Shared, YubiKey]",
-            "configurePreset": "win-vs2026-arm64-with-yubikey-shared",
-            "configuration": "Debug",
-            "condition": {
-                "type": "equals",
-                "lhs": "${hostSystemName}",
-                "rhs": "Windows"
-            }
-        },
-        {
-            "name": "win-vs2026-arm64-with-yubikey-shared-release",
-            "displayName": "Windows VS 2026 (arm64) [Release, Shared, YubiKey]",
-            "configurePreset": "win-vs2026-arm64-with-yubikey-shared",
             "configuration": "Release",
             "condition": {
                 "type": "equals",
