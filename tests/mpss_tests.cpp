@@ -27,6 +27,7 @@
 #include <memory>
 #include <optional>
 #include <ranges>
+#include <set>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -1955,7 +1956,7 @@ TEST(BackendTest, VerifyWithInvalidBackend)
 TEST(KeyPolicyTest, NoneIsZero)
 {
     static_assert(KeyPolicy::none == KeyPolicy{0});
-    static_assert(static_cast<std::uint64_t>(KeyPolicy::none) == 0);
+    static_assert(0 == static_cast<std::uint64_t>(KeyPolicy::none));
 }
 
 TEST(KeyPolicyTest, SizeIs64Bits)
@@ -1965,12 +1966,16 @@ TEST(KeyPolicyTest, SizeIs64Bits)
 
 TEST(KeyPolicyTest, OrWithNoneIsIdentity)
 {
-    static_assert((KeyPolicy::none | KeyPolicy::none) == KeyPolicy::none); // NOLINT(misc-redundant-expression)
+    static_assert(
+        KeyPolicy::none ==
+        (KeyPolicy::none | KeyPolicy::none)); // NOLINT(misc-redundant-expression) - the identity is the point.
 }
 
 TEST(KeyPolicyTest, AndWithNoneIsNone)
 {
-    static_assert((KeyPolicy::none & KeyPolicy::none) == KeyPolicy::none); // NOLINT(misc-redundant-expression)
+    static_assert(
+        KeyPolicy::none ==
+        (KeyPolicy::none & KeyPolicy::none)); // NOLINT(misc-redundant-expression) - the identity is the point.
 }
 
 TEST(KeyPolicyTest, RoundTripThroughUint64)
@@ -1984,38 +1989,38 @@ TEST(KeyPolicyTest, RoundTripThroughUint64)
 
 TEST(KeyPolicyTest, YubikeyPinFieldValues)
 {
-    static_assert(static_cast<std::uint64_t>(KeyPolicy::yubikey_pin_never) == 1);
-    static_assert(static_cast<std::uint64_t>(KeyPolicy::yubikey_pin_once) == 2);
-    static_assert(static_cast<std::uint64_t>(KeyPolicy::yubikey_pin_always) == 3);
+    static_assert(1 == static_cast<std::uint64_t>(KeyPolicy::yubikey_pin_never));
+    static_assert(2 == static_cast<std::uint64_t>(KeyPolicy::yubikey_pin_once));
+    static_assert(3 == static_cast<std::uint64_t>(KeyPolicy::yubikey_pin_always));
 }
 
 TEST(KeyPolicyTest, YubikeyTouchFieldValues)
 {
-    static_assert(static_cast<std::uint64_t>(KeyPolicy::yubikey_touch_never) == (1U << 4U));
-    static_assert(static_cast<std::uint64_t>(KeyPolicy::yubikey_touch_always) == (2U << 4U));
-    static_assert(static_cast<std::uint64_t>(KeyPolicy::yubikey_touch_cached) == (3U << 4U));
+    static_assert((1U << 4U) == static_cast<std::uint64_t>(KeyPolicy::yubikey_touch_never));
+    static_assert((2U << 4U) == static_cast<std::uint64_t>(KeyPolicy::yubikey_touch_always));
+    static_assert((3U << 4U) == static_cast<std::uint64_t>(KeyPolicy::yubikey_touch_cached));
 }
 
 TEST(KeyPolicyTest, PinMaskExtractsPinOnly)
 {
     constexpr auto combined = KeyPolicy::yubikey_pin_once | KeyPolicy::yubikey_touch_cached;
-    static_assert((combined & yubikey_pin_mask) == KeyPolicy::yubikey_pin_once);
+    static_assert(KeyPolicy::yubikey_pin_once == (combined & yubikey_pin_mask));
 }
 
 TEST(KeyPolicyTest, TouchMaskExtractsTouchOnly)
 {
     constexpr auto combined = KeyPolicy::yubikey_pin_once | KeyPolicy::yubikey_touch_cached;
-    static_assert((combined & yubikey_touch_mask) == KeyPolicy::yubikey_touch_cached);
+    static_assert(KeyPolicy::yubikey_touch_cached == (combined & yubikey_touch_mask));
 }
 
 TEST(KeyPolicyTest, FieldsDoNotInterfere)
 {
     // Setting PIN policy does not affect touch field and vice versa.
     constexpr auto pin_only = KeyPolicy::yubikey_pin_always;
-    static_assert((pin_only & yubikey_touch_mask) == KeyPolicy::none);
+    static_assert(KeyPolicy::none == (pin_only & yubikey_touch_mask));
 
     constexpr auto touch_only = KeyPolicy::yubikey_touch_always;
-    static_assert((touch_only & yubikey_pin_mask) == KeyPolicy::none);
+    static_assert(KeyPolicy::none == (touch_only & yubikey_pin_mask));
 }
 
 TEST(KeyPolicyTest, CombineAndExtractAllFields)
@@ -2095,8 +2100,7 @@ TEST(HexStringToBytesTest, OddLengthRejected)
 
 TEST(HexStringToBytesTest, PartialWindowRejected)
 {
-    // "1g": from_chars would parse '1' as 0x01 and stop at 'g'. Without the end-pointer check this
-    // window is silently accepted; it must be rejected instead.
+    // "1g": from_chars parses '1' and stops at 'g', so the window is rejected as a whole.
     EXPECT_FALSE(mpss::utils::hex_string_to_bytes<std::vector<std::byte>>("1g").has_value());
 }
 
@@ -2107,7 +2111,7 @@ TEST(HexStringToBytesTest, LeadingNonHexRejected)
 
 TEST(HexStringToBytesTest, EmbeddedPrefixRejected)
 {
-    // "0x12": the "0x" window parses '0' and stops at 'x'; it must be rejected, not read as 0x00.
+    // "0x12": the "0x" window parses '0' and stops at 'x', so it is rejected rather than read as 0x00.
     EXPECT_FALSE(mpss::utils::hex_string_to_bytes<std::vector<std::byte>>("0x12").has_value());
 }
 
