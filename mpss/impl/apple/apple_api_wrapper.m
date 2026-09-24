@@ -21,9 +21,6 @@
 // Deletion removes the entry even if handles remain open. Closing the last handle also
 // removes the entry, but does not delete the stored key. Reopening then gets a new
 // generation even though the stored key has not changed.
-//
-// Windows instead tracks deletions by name: only deletion assigns a new generation,
-// so closing and reopening a key does not change it.
 @interface MPSSCacheEntry : NSObject
 @property(nonatomic, strong) id key;
 @property(nonatomic, assign) NSInteger holds;

@@ -19,21 +19,13 @@ crypto_params const *get_crypto_params(Algorithm algorithm) noexcept;
 inline constexpr std::uint64_t never_deleted_generation = 0;
 
 /**
- * @brief Return the generation recorded for this key name.
+ * @brief Returns the generation recorded for this key name.
  *
- * A generation is a number used to detect deletion of a key with this name.
- * Creating or opening a handle saves the current number. Deletion through MPSS assigns
- * a new one; a handle whose saved number no longer matches refuses key operations.
- * Closing and reopening without deleting the key does not change the number.
- *
- * Apple and Android use generations to identify cache entries instead: a new entry gets a
- * new number, including when the same stored key is reopened after its last handle closes.
- *
- * This function's mutex protects only the generation map, not the Windows key operation.
- * KeyPair::Create, KeyPair::Open, KeyPair::Delete and deletion through a handle use
- * name_mutex(name) to prevent those operations from overlapping for the same name.
- *
- * Only deletions performed by this MPSS process are tracked.
+ * Creating or opening a handle records the current generation. Deleting through MPSS assigns a
+ * new one, so a handle whose recorded generation no longer matches refuses key operations. Closing
+ * and reopening without deleting does not change it, and only deletions made by this process are
+ * seen. The mutex here protects only the map; the per-name lifecycle lock keeps a read from
+ * overlapping a deletion of the same name.
  *
  * @param name The key name to read.
  * @return The recorded generation, or @ref never_deleted_generation if no deletion is recorded.
