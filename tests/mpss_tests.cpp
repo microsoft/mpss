@@ -2850,8 +2850,8 @@ TEST_F(MultiYubiKeyTest, SameNameUsesIndependentLocationsWithoutEnvironmentSwitc
     };
 
     // Both operations use their recorded devices without changing process-wide defaults.
-    std::jthread thread_a(sign, std::size_t{0});
-    std::jthread thread_b(sign, std::size_t{1});
+    std::thread thread_a(sign, std::size_t{0});
+    std::thread thread_b(sign, std::size_t{1});
     thread_a.join();
     thread_b.join();
 
