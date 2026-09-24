@@ -131,7 +131,7 @@ class TerminalInteractionHandler : public mpss::InteractionHandler
     std::optional<mpss::SecureString> request_pin(const mpss::PinRequestContext &context) override
     {
         // Check environment variable first.
-        const char *env_pin = std::getenv("MPSS_YUBIKEY_PIN"); // NOLINT(concurrency-mt-unsafe)
+        const char *env_pin = std::getenv("MPSS_YUBIKEY_PIN");
         if (nullptr != env_pin && '\0' != env_pin[0])
         {
             // If this is a retry, the env var PIN already failed. Don't retry with the same value.
@@ -145,7 +145,7 @@ class TerminalInteractionHandler : public mpss::InteractionHandler
         // Show retry information.
         if (mpss::PinStatus::wrong_pin == context.last_status)
         {
-            if (context.retries_remaining >= 0)
+            if (0 <= context.retries_remaining)
             {
                 std::cerr << "Wrong PIN (" << context.retries_remaining << " retries remaining). ";
             }
@@ -191,16 +191,25 @@ std::shared_ptr<InteractionHandler> NewDefaultInteractionHandler()
 
 std::shared_ptr<InteractionHandler> GetOrSetInteractionHandler(std::shared_ptr<InteractionHandler> new_handler)
 {
-    static std::shared_mutex mtx;
-    static std::shared_ptr<InteractionHandler> handler = NewDefaultInteractionHandler();
+    struct State
+    {
+        std::shared_mutex mtx;
+        std::shared_ptr<InteractionHandler> handler;
+    };
+    // Immortal singleton, like the logger and BackendRegistry: a host static destroyed after this one
+    // would otherwise lock a destroyed mutex. The one-time allocation is reclaimed by the OS at process
+    // exit.
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory) - intentional immortal singleton, never freed.
+    static State &state = *new State{.handler = NewDefaultInteractionHandler()};
+
     if (nullptr != new_handler)
     {
-        const std::unique_lock lock{mtx};
-        handler = std::move(new_handler);
-        return handler;
+        const std::unique_lock lock{state.mtx};
+        state.handler = std::move(new_handler);
+        return state.handler;
     }
-    const std::shared_lock lock{mtx};
-    return handler;
+    const std::shared_lock lock{state.mtx};
+    return state.handler;
 }
 
 } // namespace mpss
