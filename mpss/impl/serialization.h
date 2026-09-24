@@ -18,8 +18,12 @@ enum class ReferenceError
     unsupported
 };
 
-// Preserve structured diagnostics for the provider's OpenSSL error channel.
+// Preserve structured diagnostics for the provider's OpenSSL error channel. These entry points are
+// internal to MPSS and its provider; the header is not installed.
 [[nodiscard]]
 MPSS_DECOR std::optional<KeyReference> decode_key_reference_der(std::span<const std::byte> der, ReferenceError &error);
+
+[[nodiscard]]
+MPSS_DECOR std::optional<KeyReference> decode_key_reference_pem(std::string_view pem, ReferenceError &error);
 
 } // namespace mpss::impl

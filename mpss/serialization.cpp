@@ -400,9 +400,10 @@ std::optional<std::string> encode_key_reference_pem(const KeyReference &referenc
     return std::string{data, static_cast<std::size_t>(size)};
 }
 
-std::optional<KeyReference> decode_key_reference_pem(std::string_view pem)
+std::optional<KeyReference> impl::decode_key_reference_pem(std::string_view pem, ReferenceError &error)
 {
     clear_error();
+    error = ReferenceError::malformed;
     if (pem.empty() || max_reference_pem_size < pem.size())
     {
         return failure("The key-reference PEM is empty or exceeds the size limit.");
@@ -453,7 +454,13 @@ std::optional<KeyReference> decode_key_reference_pem(std::string_view pem)
         return failure("Unexpected trailing data after the key-reference PEM.");
     }
 
-    return decode_key_reference_der(std::as_bytes(std::span{data, static_cast<std::size_t>(size)}));
+    return impl::decode_key_reference_der(std::as_bytes(std::span{data, static_cast<std::size_t>(size)}), error);
+}
+
+std::optional<KeyReference> decode_key_reference_pem(std::string_view pem)
+{
+    impl::ReferenceError error{};
+    return impl::decode_key_reference_pem(pem, error);
 }
 
 } // namespace mpss
