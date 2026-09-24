@@ -443,8 +443,15 @@ try
     const std::string default_digest{key->hash_name.value_or("")};
     const std::string group_name{key->group_name.value_or("")};
 
+    // A key with no usable pair answers the unknown tier instead of dereferencing one, which is what
+    // every other field here already does. The tier answers all three protection parameters, so they
+    // cannot disagree with each other.
+    mpss::StorageTier storage_tier = mpss::StorageTier::unknown;
+
     if (key->has_valid_key())
     {
+        storage_tier = key->key_pair->key_info().storage_tier;
+
         const mpss::AlgorithmInfo info = key->key_pair->algorithm_info();
         if (std::in_range<std::int32_t>(info.key_bits))
         {
@@ -461,6 +468,8 @@ try
             max_size = static_cast<int>(signature_size);
         }
     }
+
+    const mpss::StorageTierInfo tier_info = mpss::get_storage_tier_info(storage_tier);
 
     OSSL_PARAM *p{nullptr};
     if ((p = OSSL_PARAM_locate(params, "mpss_key_name")) && !OSSL_PARAM_set_utf8_string(p, key_name.data()))
@@ -480,17 +489,15 @@ try
         return 0;
     }
     if ((p = OSSL_PARAM_locate(params, "is_hardware_backed")) &&
-        !OSSL_PARAM_set_int(p, key->key_pair->key_info().is_hardware_backed ? 1 : 0))
+        !OSSL_PARAM_set_int(p, tier_info.is_hardware_backed ? 1 : 0))
     {
         return 0;
     }
-    if ((p = OSSL_PARAM_locate(params, "storage_tier")) &&
-        !OSSL_PARAM_set_int(p, static_cast<int>(key->key_pair->key_info().storage_tier)))
+    if ((p = OSSL_PARAM_locate(params, "storage_tier")) && !OSSL_PARAM_set_int(p, static_cast<int>(tier_info.tier)))
     {
         return 0;
     }
-    if ((p = OSSL_PARAM_locate(params, "storage_description")) &&
-        !OSSL_PARAM_set_utf8_string(p, key->key_pair->key_info().storage_description))
+    if ((p = OSSL_PARAM_locate(params, "storage_description")) && !OSSL_PARAM_set_utf8_string(p, tier_info.description))
     {
         return 0;
     }
