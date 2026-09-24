@@ -25,6 +25,13 @@ using namespace ::mpss_openssl::provider;
 using namespace ::mpss_openssl::utils;
 using mpss::utils::bio_ptr;
 
+// The reference encoder serves the private-key selections; this one answers only for public material.
+[[nodiscard]]
+bool is_public_key_selection(int selection)
+{
+    return 0 != (selection & OSSL_KEYMGMT_SELECT_PUBLIC_KEY) && 0 == (selection & OSSL_KEYMGMT_SELECT_PRIVATE_KEY);
+}
+
 extern "C" void *mpss_encoder_newctx(void *provctx)
 try
 {
@@ -34,14 +41,12 @@ try
         return nullptr;
     }
 
-    // Create the new encoder context.
     mpss_encoder_ctx *ectx = mpss_new<mpss_encoder_ctx>();
     if (nullptr == ectx)
     {
         return nullptr;
     }
 
-    // Copy over the core handle and library context.
     ectx->handle = pctx->handle;
     ectx->libctx = pctx->libctx;
 
@@ -102,13 +107,7 @@ catch (...)
 extern "C" int mpss_encoder_does_selection([[maybe_unused]] void *provctx, int selection)
 try
 {
-    // We only support encoding the public key.
-    if (EVP_PKEY_PUBLIC_KEY == selection)
-    {
-        return 1;
-    }
-
-    return 0;
+    return is_public_key_selection(selection) ? 1 : 0;
 }
 catch (...)
 {
@@ -127,7 +126,7 @@ try
         return 0;
     }
 
-    if (EVP_PKEY_PUBLIC_KEY != selection)
+    if (!is_public_key_selection(selection))
     {
         return 0;
     }
@@ -142,7 +141,6 @@ try
 
     // This callback reads the key data from a returned OSSL_PARAM into vk.
     OSSL_CALLBACK *param_cb = [](const OSSL_PARAM params[], void *arg) -> int {
-        // Read in the param_cb_data.
         param_cb_data_t *param_cb_data = static_cast<param_cb_data_t *>(arg);
         if (nullptr == param_cb_data)
         {
@@ -210,7 +208,6 @@ try
         return 0;
     }
 
-    // Capture may access the backend; encoding the captured reference is an offline operation.
     const auto reference = pkey->key_pair->reference();
     if (!reference)
     {
@@ -267,4 +264,5 @@ const OSSL_ALGORITHM mpss_encoder_algorithms[] = {
     {ec_encoder_names, "provider=mpss,output=pem,structure=MpssKeyReference", mpss_ec_reference_pem_encoder_functions,
      "mpss EC reference PEM encoder"},
     {nullptr, nullptr, nullptr, nullptr}};
-}
+
+} // namespace mpss_openssl::provider

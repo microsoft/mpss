@@ -2214,6 +2214,13 @@ TEST_F(MPSSStore, DeviceParameterRejectsInvalidLocations)
         const OSSL_PARAM params[]{param, OSSL_PARAM_END};
         EXPECT_EQ(0, EVP_PKEY_CTX_set_params(ctx.get(), params));
     }
+
+    // The length cap applies to the identifier, not to its optional terminator.
+    std::array<char, 257> at_limit{};
+    std::fill_n(at_limit.begin(), at_limit.size() - 1, '1');
+    const OSSL_PARAM at_limit_params[]{
+        OSSL_PARAM_construct_utf8_string("mpss_device_id", at_limit.data(), at_limit.size()), OSSL_PARAM_END};
+    EXPECT_EQ(1, EVP_PKEY_CTX_set_params(ctx.get(), at_limit_params));
     ERR_clear_error();
 }
 

@@ -2,7 +2,7 @@
 // Licensed under the MIT license.
 
 #include "mpss-openssl/utils/utils.h"
-#include <mpss/mpss.h>
+#include "mpss/mpss.h"
 #include <openssl/params.h>
 #include <string_view>
 
@@ -13,8 +13,7 @@ using namespace mpss;
 
 bool get_utf8_parameter(const OSSL_PARAM *param, std::string &value)
 {
-    if (nullptr == param || OSSL_PARAM_UTF8_STRING != param->data_type || nullptr == param->data ||
-        256 < param->data_size)
+    if (nullptr == param || OSSL_PARAM_UTF8_STRING != param->data_type || nullptr == param->data)
     {
         return false;
     }
@@ -26,7 +25,7 @@ bool get_utf8_parameter(const OSSL_PARAM *param, std::string &value)
         text.remove_suffix(1);
     }
 
-    if (std::string_view::npos != text.find('\0'))
+    if (256 < text.size() || std::string_view::npos != text.find('\0'))
     {
         return false;
     }

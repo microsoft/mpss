@@ -74,7 +74,7 @@ try
     using namespace ::mpss_openssl::provider;
     using namespace ::mpss_openssl::utils;
 
-    mpss_provider_ctx *ctx = mpss_new<mpss_provider_ctx>();
+    mpss_ptr<mpss_provider_ctx> ctx{mpss_new<mpss_provider_ctx>()};
     ctx->handle = handle;
 
     // Create a new library context from the provider dispatch table.
@@ -85,7 +85,7 @@ try
     }
     ctx->libctx = libctx;
 
-    *provctx = ctx;
+    *provctx = ctx.release();
     *out = mpss_provider_functions;
 
     return 1;
