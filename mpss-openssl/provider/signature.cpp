@@ -43,7 +43,6 @@ struct mpss_signature_ctx
 
 mpss_signature_ctx::~mpss_signature_ctx()
 {
-    // Releasing dctx.
     mpss_delete(dctx);
 
     // NOTE: We are *not* supposed to release the memory for any of these. They are
@@ -61,7 +60,6 @@ try
         return nullptr;
     }
 
-    // Create the new signature context.
     mpss_signature_ctx *sctx = mpss_new<mpss_signature_ctx>();
     sctx->provctx = ctx;
 
@@ -100,7 +98,6 @@ try
         }
     }
 
-    // Copy over the key and provider contexts.
     new_sctx->provctx = sctx->provctx;
     new_sctx->pkey = sctx->pkey;
 
@@ -118,6 +115,7 @@ try
     mpss_signature_ctx *sctx = static_cast<mpss_signature_ctx *>(ctx);
 
     static OSSL_PARAM ret_key_available[] = {OSSL_PARAM_octet_string(OSSL_SIGNATURE_PARAM_ALGORITHM_ID, nullptr, 0),
+                                             OSSL_PARAM_utf8_string(OSSL_SIGNATURE_PARAM_DIGEST, nullptr, 0),
                                              OSSL_PARAM_END};
 
     static OSSL_PARAM ret_key_unavailable[] = {OSSL_PARAM_END};
@@ -145,17 +143,23 @@ try
 
     if (nullptr == sctx->pkey || !sctx->pkey->has_valid_key())
     {
-        // Nothing to return.
         return 1;
     }
 
-    OSSL_PARAM *p = OSSL_PARAM_locate(params, OSSL_SIGNATURE_PARAM_ALGORITHM_ID);
-    if (nullptr == p)
+    // The key mandates its digest, so the context's digest is the key's.
+    OSSL_PARAM *p = OSSL_PARAM_locate(params, OSSL_SIGNATURE_PARAM_DIGEST);
+    // NOLINTNEXTLINE(bugprone-unchecked-optional-access) - guaranteed by has_valid_key() check above.
+    if (nullptr != p && !OSSL_PARAM_set_utf8_string(p, sctx->pkey->hash_name->c_str()))
     {
         return 0;
     }
 
-    // Get the algorithm ID from the name string we constructed above.
+    p = OSSL_PARAM_locate(params, OSSL_SIGNATURE_PARAM_ALGORITHM_ID);
+    if (nullptr == p)
+    {
+        return 1;
+    }
+
     // NOLINTNEXTLINE(bugprone-unchecked-optional-access) - guaranteed by has_valid_key() check above.
     asn1_object_ptr obj(OBJ_txt2obj(sctx->pkey->alg_name->c_str(), 0));
     if (nullptr == obj)
@@ -183,7 +187,7 @@ try
     unsigned char *alg_der_raw = nullptr;
     const int aid_size = i2d_X509_ALGOR(alg.get(), &alg_der_raw);
     const openssl_buf_ptr<unsigned char> alg_der(alg_der_raw);
-    if (aid_size < 0)
+    if (0 > aid_size)
     {
         return 0;
     }
@@ -199,14 +203,12 @@ catch (...)
 extern "C" int mpss_signature_sign_init(void *ctx, void *provkey, [[maybe_unused]] const OSSL_PARAM params[])
 try
 {
-    // Check that the signature context ctx is not null.
     mpss_signature_ctx *sctx = static_cast<mpss_signature_ctx *>(ctx);
     if (nullptr == sctx)
     {
         return 0;
     }
 
-    // Set the key object and check that it is usable.
     mpss_key *pkey = static_cast<mpss_key *>(provkey);
     if (nullptr == pkey || !pkey->has_valid_key())
     {
@@ -224,8 +226,7 @@ catch (...)
 
 // NOLINTNEXTLINE(readability-non-const-parameter) - sig is an output buffer written via std::transform.
 extern "C" int mpss_signature_sign(void *ctx, unsigned char *sig, ::size_t *siglen, ::size_t sigsize,
-                                   const unsigned char *tbs, ::size_t tbslen,
-                                   [[maybe_unused]] const OSSL_PARAM params[])
+                                   const unsigned char *tbs, ::size_t tbslen)
 try
 {
     mpss_signature_ctx *sctx = static_cast<mpss_signature_ctx *>(ctx);
@@ -234,13 +235,11 @@ try
         return 0;
     }
 
-    // Check that the key is valid.
     if (nullptr == sctx->pkey || !sctx->pkey->has_valid_key())
     {
         return 0;
     }
 
-    // Check that tbs and tbslen are valid.
     const std::size_t tbs_expected_bytes = sctx->pkey->key_pair->algorithm_info().hash_bits / 8;
     if (nullptr == tbs || tbslen != tbs_expected_bytes)
     {
@@ -273,13 +272,11 @@ try
         return 0;
     }
 
-    // Copy in the DER-encoded signature.
     auto der_sig_written_end = der_sig.begin();
     std::advance(der_sig_written_end, bytes_written);
     std::transform(der_sig.begin(), der_sig_written_end, sig,
                    [](std::byte b) { return static_cast<unsigned char>(b); });
 
-    // siglen must be set to the actual number of bytes written.
     *siglen = bytes_written;
 
     return 1;
@@ -299,7 +296,6 @@ try
         return 0;
     }
 
-    // Set the key object.
     mpss_key *pkey = static_cast<mpss_key *>(provkey);
     if (nullptr == pkey || !pkey->has_valid_key())
     {
@@ -355,7 +351,6 @@ try
         return 0;
     }
 
-    // Let's make a local copy of the hash name in pkey.
     if (!pkey->hash_name)
     {
         return 0;
@@ -373,7 +368,6 @@ try
         return 0;
     }
 
-    // Create the provider digest context.
     mpss_digest_ctx *dctx = static_cast<mpss_digest_ctx *>(mpss_digest_newctx(sctx->provctx, hash_name.c_str()));
     if (nullptr == dctx)
     {
@@ -387,13 +381,11 @@ try
             break;
         }
 
-        // Replace any existing digest context.
         if (nullptr != sctx->dctx)
         {
             mpss_delete(sctx->dctx);
         }
 
-        // Everything went well, so set the pkey and dctx.
         sctx->pkey = pkey;
         sctx->dctx = dctx;
 
@@ -449,7 +441,7 @@ try
     }
 
     const unsigned char *tbs_ptr = reinterpret_cast<const unsigned char *>(tbs.data());
-    return mpss_signature_sign(ctx, sig, siglen, sigsize, tbs_ptr, tbslen, nullptr);
+    return mpss_signature_sign(ctx, sig, siglen, sigsize, tbs_ptr, tbslen);
 }
 catch (...)
 {
@@ -492,7 +484,6 @@ extern "C" int mpss_signature_digest_verify_init(void *ctx, const char *mdname, 
                                                  const OSSL_PARAM params[])
 try
 {
-    // We simply call mpss_signature_digest_sign_init. There is no difference.
     return mpss_signature_digest_sign_init(ctx, mdname, provkey, params);
 }
 catch (...)
@@ -504,7 +495,6 @@ catch (...)
 extern "C" int mpss_signature_digest_verify_update(void *ctx, const unsigned char *data, ::size_t datalen)
 try
 {
-    // We simply call mpss_signature_digest_sign_update. There is no difference.
     return mpss_signature_digest_sign_update(ctx, data, datalen);
 }
 catch (...)
@@ -535,16 +525,15 @@ try
     // Check that the digest context is available and in the right state.
     // This means that the EVP_MD_CTX and EVP_MD are already set up.
     const digest_state state = sctx->dctx->state;
-    if ((state != digesting) && (state != finalized))
+    if ((digesting != state) && (finalized != state))
     {
         return 0;
     }
 
-    if (state != finalized)
+    if (finalized != state)
     {
         byte_vector digest(EVP_MAX_MD_SIZE);
 
-        // First, we try to finalize the digest.
         unsigned int bytes_written = 0;
         unsigned char *digest_ptr = reinterpret_cast<unsigned char *>(digest.data());
         if (1 != EVP_DigestFinal_ex(sctx->dctx->evp_dctx, digest_ptr, &bytes_written))
@@ -565,12 +554,10 @@ try
             return 0;
         }
 
-        // Resize the vector to the correct size and save in the context.
         digest.resize(digest_bytes);
         sctx->dctx->digest = std::move(digest);
     }
 
-    // The digest was successfully finalized, so we can now verify it.
     const unsigned char *tbs = reinterpret_cast<const unsigned char *>(sctx->dctx->digest.data());
     std::size_t tbslen = sctx->dctx->digest.size();
     return mpss_signature_verify(ctx, sig, siglen, tbs, tbslen);
@@ -631,4 +618,4 @@ const OSSL_ALGORITHM mpss_signature_algorithms[] = {
     {mpss_sig_names[ECDSA_index], "provider=mpss", mpss_ecdsa_functions, "mpss ECDSA implementation"},
     {nullptr, nullptr, nullptr, nullptr}};
 
-}
+} // namespace mpss_openssl::provider

@@ -409,15 +409,20 @@ std::string EncodeReferencePem(EVP_PKEY *key, int selection = EVP_PKEY_PRIVATE_K
 
 std::vector<unsigned char> SignDigest(OSSL_LIB_CTX *libctx, EVP_PKEY *key)
 {
-    constexpr std::array<unsigned char, 32> digest{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a,
-                                                   0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15,
-                                                   0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f};
-
     evp_pkey_ctx_ptr ctx(EVP_PKEY_CTX_new_from_pkey(libctx, key, "provider=mpss"));
     if (nullptr == ctx || 1 != EVP_PKEY_sign_init(ctx.get()))
     {
         return {};
     }
+
+    // The key mandates its digest, and signing checks the digest length against it.
+    const EVP_MD *md = nullptr;
+    if (1 != EVP_PKEY_CTX_get_signature_md(ctx.get(), &md) || nullptr == md || 0 >= EVP_MD_get_size(md))
+    {
+        return {};
+    }
+    std::vector<unsigned char> digest(static_cast<std::size_t>(EVP_MD_get_size(md)));
+    std::iota(digest.begin(), digest.end(), static_cast<unsigned char>(0));
 
     std::size_t sig_len = 0;
     if (1 != EVP_PKEY_sign(ctx.get(), nullptr, &sig_len, digest.data(), digest.size()) || 0 == sig_len)

@@ -8,4 +8,4 @@
 namespace mpss_openssl::provider
 {
 extern const OSSL_ALGORITHM mpss_signature_algorithms[];
-}
+} // namespace mpss_openssl::provider
