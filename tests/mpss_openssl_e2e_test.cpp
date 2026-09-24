@@ -2,7 +2,7 @@
 // Licensed under the MIT license.
 
 #include "mpss-openssl/api.h"
-#include "openssl_raii.h"
+#include "tests/openssl_raii.h"
 #include "tests/test_key_names.h"
 #include <algorithm>
 #include <gtest/gtest.h>
@@ -67,7 +67,6 @@ int add_ca_extensions(X509 *cert)
 namespace mpss_openssl::tests
 {
 using mpss::tests::test_key_name;
-using mpss_openssl::testing::bio_ptr;
 
 class CertificateChainSerializationTest : public ::testing::TestWithParam<const char *>
 {
@@ -205,7 +204,7 @@ TEST_P(CertificateChainSerializationTest, CertificateChainSerialization)
     ASSERT_NE(nullptr, hash_name);
     const EVP_MD *hash_func = EVP_get_digestbyname(hash_name);
     ASSERT_NE(nullptr, hash_func);
-    ASSERT_GT(X509_sign(ca_cert, ca_pkey, hash_func), 0);
+    ASSERT_LT(0, X509_sign(ca_cert, ca_pkey, hash_func));
 
     // RFC 5758 3.2: the emitted ECDSA signatureAlgorithm must omit its parameters field (not carry an
     // explicit ASN.1 NULL). The provider produces this AlgorithmIdentifier in mpss_signature_get_ctx_params;
@@ -251,7 +250,7 @@ TEST_P(CertificateChainSerializationTest, CertificateChainSerialization)
     ASSERT_NE(0, X509_set_issuer_name(end_cert, ca_name));
 
     // Sign with CA key.
-    ASSERT_GT(X509_sign(end_cert, ca_pkey, hash_func), 0);
+    ASSERT_LT(0, X509_sign(end_cert, ca_pkey, hash_func));
 
     // Quick verification before we serialize anything. These are verified by
     // the mpss provider itself. In fact, the verification happens in the secure

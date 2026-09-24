@@ -9,19 +9,19 @@
 #include "mpss/mpss.h"
 #include "mpss/serialization.h"
 #include "mpss/utils/scope_guard.h"
-#include "openssl_raii.h"
-#include "tests/compat_env.h"
+#include "tests/openssl_raii.h"
+#include "tests/scoped_env.h"
 #include "tests/test_key_names.h"
 #include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <gtest/gtest.h>
 #include <memory>
+#include <numeric>
 #include <openssl/asn1.h>
 #include <openssl/bio.h>
 #include <openssl/buffer.h>
@@ -147,19 +147,20 @@ class MPSSDigest : public ::testing::Test
 
         ASSERT_EQ(mpss_digest_len, default_digest_len);
         ASSERT_TRUE(
-            std::equal(mpss_digest, mpss_digest + mpss_digest_len, default_digest)); // NOLINT(modernize-use-ranges)
+            std::ranges::equal(std::span{mpss_digest, mpss_digest_len}, std::span{default_digest, default_digest_len}));
     }
 };
 
 constexpr const char *mpss_p256_algorithm = "ecdsa_secp256r1_sha256";
 
-using mpss_openssl::testing::bio_ptr;
-using mpss_openssl::testing::encoder_ctx_ptr;
-using mpss_openssl::testing::evp_pkey_ctx_ptr;
-using mpss_openssl::testing::evp_pkey_ptr;
-using mpss_openssl::testing::ssl_ctx_ptr;
-using mpss_openssl::testing::ssl_ptr;
-using mpss_openssl::testing::x509_ptr;
+using mpss_openssl::tests::bio_ptr;
+using mpss_openssl::tests::encoder_ctx_ptr;
+using mpss_openssl::tests::evp_md_ctx_ptr;
+using mpss_openssl::tests::evp_pkey_ctx_ptr;
+using mpss_openssl::tests::evp_pkey_ptr;
+using mpss_openssl::tests::ssl_ctx_ptr;
+using mpss_openssl::tests::ssl_ptr;
+using mpss_openssl::tests::x509_ptr;
 
 // Process-unique, like every other key name in this suite, so that two test binaries running at the
 // same time cannot delete each other's fixture key. A function rather than a namespace-scope string
@@ -430,6 +431,22 @@ std::vector<unsigned char> SignDigest(OSSL_LIB_CTX *libctx, EVP_PKEY *key)
     }
     signature.resize(sig_len);
     return signature;
+}
+
+// Count actual reads even if the decoder framework later restores the stream position.
+void CountConsumedBytes(BIO *bio, std::size_t &consumed)
+{
+    BIO_set_callback_arg(bio, reinterpret_cast<char *>(&consumed));
+    BIO_set_callback_ex(bio,
+                        // NOLINTNEXTLINE(readability-non-const-parameter) - OpenSSL requires this callback signature.
+                        [](BIO *callback_bio, int operation, const char *, std::size_t, int, long, int result,
+                           std::size_t *processed) -> long {
+                            if ((BIO_CB_READ | BIO_CB_RETURN) == operation && 0 < result && nullptr != processed)
+                            {
+                                *reinterpret_cast<std::size_t *>(BIO_get_callback_arg(callback_bio)) += *processed;
+                            }
+                            return result;
+                        });
 }
 
 } // namespace
