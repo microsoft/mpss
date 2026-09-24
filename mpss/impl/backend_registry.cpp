@@ -491,8 +491,10 @@ bool Backend::is_algorithm_available(Algorithm algorithm) const
     // error. They remain in the log. Registered before the deletion guard so that it runs last.
     SCOPE_GUARD({ utils::clear_error(); });
 
-    std::unique_ptr<KeyPair> key =
-        create_key(KeyLocation{name(), random_key, std::nullopt}, algorithm, KeyPolicy::none);
+    // Goes through the public entry point so that the probe holds the same lifecycle lock as any
+    // other creation, which is what the backends assume.
+    std::unique_ptr<KeyPair> key = KeyPair::Create(
+        KeyLocation{.backend_name = name(), .name = random_key, .device_id = std::nullopt}, algorithm, KeyPolicy::none);
 
     // Could we even create a key?
     if (nullptr == key)
