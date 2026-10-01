@@ -27,6 +27,7 @@ namespace mpss
  * test on one platform, and then accept apple_keychain and android_software as stronger than a TPM.
  * What ranks tiers against each other is @ref StorageTierInfo::is_hardware_backed.
  */
+// NOLINTNEXTLINE(readability-enum-initial-value) - count is left implicit so that it follows the last tier.
 enum class StorageTier : std::uint8_t
 {
     unknown = 0,                     /**< The tier could not be established. */
@@ -65,17 +66,27 @@ struct StorageTierInfo
  * false answers apart.
  */
 inline constexpr std::array<StorageTierInfo, 11> storage_tiers = {
-    StorageTierInfo{StorageTier::unknown, false, "Unknown"},
-    StorageTierInfo{StorageTier::windows_software, false, "Software Protection"},
-    StorageTierInfo{StorageTier::windows_vbs, false, "Virtualization Based Security"},
-    StorageTierInfo{StorageTier::windows_tpm, true, "TPM Protection"},
-    StorageTierInfo{StorageTier::apple_keychain, false, "Keychain"},
-    StorageTierInfo{StorageTier::apple_secure_enclave, true, "Secure Enclave"},
-    StorageTierInfo{StorageTier::android_software, false, "Software"},
-    StorageTierInfo{StorageTier::android_unknown_secure, true, "Unknown Secure"},
-    StorageTierInfo{StorageTier::android_trusted_environment, true, "Trusted Environment"},
-    StorageTierInfo{StorageTier::android_strongbox, true, "StrongBox"},
-    StorageTierInfo{StorageTier::yubikey_piv, true, "YubiKey PIV"},
+    StorageTierInfo{.tier = StorageTier::unknown, .is_hardware_backed = false, .description = "Unknown"},
+
+    StorageTierInfo{
+        .tier = StorageTier::windows_software, .is_hardware_backed = false, .description = "Software Protection"},
+    StorageTierInfo{
+        .tier = StorageTier::windows_vbs, .is_hardware_backed = false, .description = "Virtualization Based Security"},
+    StorageTierInfo{.tier = StorageTier::windows_tpm, .is_hardware_backed = true, .description = "TPM Protection"},
+
+    StorageTierInfo{.tier = StorageTier::apple_keychain, .is_hardware_backed = false, .description = "Keychain"},
+    StorageTierInfo{
+        .tier = StorageTier::apple_secure_enclave, .is_hardware_backed = true, .description = "Secure Enclave"},
+
+    StorageTierInfo{.tier = StorageTier::android_software, .is_hardware_backed = false, .description = "Software"},
+    StorageTierInfo{
+        .tier = StorageTier::android_unknown_secure, .is_hardware_backed = true, .description = "Unknown Secure"},
+    StorageTierInfo{.tier = StorageTier::android_trusted_environment,
+                    .is_hardware_backed = true,
+                    .description = "Trusted Environment"},
+    StorageTierInfo{.tier = StorageTier::android_strongbox, .is_hardware_backed = true, .description = "StrongBox"},
+
+    StorageTierInfo{.tier = StorageTier::yubikey_piv, .is_hardware_backed = true, .description = "YubiKey PIV"},
 };
 
 /**
@@ -84,7 +95,7 @@ inline constexpr std::array<StorageTierInfo, 11> storage_tiers = {
  * @return The row @ref storage_tiers holds for it, or the unknown row if it holds none.
  */
 [[nodiscard]]
-inline constexpr StorageTierInfo get_storage_tier_info(StorageTier tier) noexcept
+constexpr StorageTierInfo get_storage_tier_info(StorageTier tier) noexcept
 {
     for (const StorageTierInfo &info : storage_tiers)
     {
@@ -97,7 +108,7 @@ inline constexpr StorageTierInfo get_storage_tier_info(StorageTier tier) noexcep
     // A tier with no row is a tier this build does not know, which is not something to report as
     // protection. Spelled out rather than taken from the table, so that reordering the rows cannot
     // turn the answer for an unknown tier into hardware backing.
-    return StorageTierInfo{StorageTier::unknown, false, "Unknown"};
+    return StorageTierInfo{.tier = StorageTier::unknown, .is_hardware_backed = false, .description = "Unknown"};
 }
 
 // Every tier has a row, and every row answers for the tier it names. A tier added to the enum

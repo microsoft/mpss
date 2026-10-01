@@ -123,6 +123,45 @@ void release_cached_key(JNIEnv *env, jclass key_management, jstring key_name, st
     static_cast<void>(utils::check_and_clear_exception(env, "calling KeyManagement.CloseKey"));
 }
 
+// Delete the key a create just made. It is addressed by the generation the create took, so if the
+// name has since moved on to another key, the delete is refused instead of removing that key.
+// AndroidKeyPair::delete_key does the same, but it takes the name's lock, which KeyPair::Create
+// already holds while this runs.
+bool delete_created_key(JNIEnv *env, jclass key_management, jstring key_name, std::uint64_t generation)
+{
+    jmethodID method = JNIHelper::method(JNIHelper::JavaMethod::delete_key_by_generation);
+    if (nullptr == method)
+    {
+        mpss::utils::log_and_set_error("Could not get KeyManagement.DeleteKey Java method.");
+        return false;
+    }
+
+    jni_object result(env,
+                      env->CallStaticObjectMethod(key_management, method, key_name, static_cast<jlong>(generation)));
+    if (utils::check_and_clear_exception(env, "calling KeyManagement.DeleteKey"))
+    {
+        return false;
+    }
+    if (result.is_null())
+    {
+        utils::report_java_error(env, "KeyManagement.DeleteKey");
+        return false;
+    }
+
+    const std::optional<bool> deleted = utils::unbox_boolean(env, result.get());
+    if (!deleted.has_value())
+    {
+        return false;
+    }
+    if (!deleted.value())
+    {
+        utils::report_java_error(env, "KeyManagement.DeleteKey");
+        return false;
+    }
+
+    return true;
+}
+
 OpenKeyResult try_open_key(std::string_view name)
 {
     mpss::utils::log_trace("Attempting to open key '{}' on Android backend.", name);
@@ -524,7 +563,18 @@ std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm, 
     StorageTier storage_tier = StorageTier::unknown;
     if (!get_key_properties(name, generation, storage_tier))
     {
-        // Error happened getting key properties. This is reported by get_key_properties, so we just return here.
+        // Returning null tells the caller no key was created, so the key must not be left behind.
+        // This runs before the guard above releases the hold: releasing the last hold drops the
+        // cache entry, and the delete would then be refused.
+        const std::string tier_error = mpss::utils::get_error();
+        if (!delete_created_key(env, key_management, key_name.get(), generation))
+        {
+            // The caller still sees why the create failed. The failed cleanup is only logged.
+            mpss::utils::log_warning("Could not delete key '{}' after failing to establish its storage tier: {}", name,
+                                     mpss::utils::get_error());
+            mpss::utils::set_error(tier_error);
+        }
+
         return nullptr;
     }
 
