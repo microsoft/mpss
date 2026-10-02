@@ -25,9 +25,9 @@ reports false; read the tier rather than the flag to tell VBS from software stor
 ## Threat Model
 
 MPSS exposes no way to retrieve private key material: `extract_key()` returns the public key, and
-the OpenSSL provider's reference encoder emits the key's location and public key, never private material. Signing happens inside
-the backend. How much that is worth depends on the storage a key actually obtained, which is what
-`key_info()` reports.
+the OpenSSL provider's reference encoder emits the key's location and public key, never private
+material. Signing happens inside the backend. How much that is worth depends on the storage a key
+actually obtained, which is what `key_info()` reports.
 
 `is_hardware_backed` is true when the private key is held outside the operating system's reach, in
 storage the platform vendor classifies as secure hardware: TPM on Windows, the Secure Enclave on
@@ -53,9 +53,9 @@ backing. `is_hardware_backed` is what ranks tiers against each other.
 **An algorithm constrains which tiers are eligible, but does not settle which one a key gets.** On
 Apple, MPSS asks the Secure Enclave to hold every key and establishes from the key itself whether it
 did. Which algorithms the enclave accepts, and what happens when it declines, differ between the two
-paths Apple provides; see [Apple: which store answers](#apple-which-store-answers). A key reports the
-protection it actually has, so a caller that reads `key_info()` sees a change in platform behavior
-rather than silently losing a guarantee it believed it had.
+paths Apple provides; see [Apple: which store answers](#apple-which-store-answers). A key reports
+the protection it actually has, so a caller that reads `key_info()` sees a change in platform
+behavior rather than silently losing a guarantee it believed it had.
 
 ### Apple: which store answers
 
@@ -63,14 +63,15 @@ Apple offers two ways to reach the enclave. MPSS uses both, and they establish t
 
 | Path | Taken for | Where the key lives | How the tier is established |
 |---|---|---|---|
-| CryptoKit | P-256, where the platform reports an enclave | The enclave holds the key. MPSS stores its `dataRepresentation`, a blob wrapped to that enclave and inert anywhere else, as a Keychain generic password | The type. A `SecureEnclave.P256.Signing.PrivateKey` cannot be held anywhere else, so there is nothing to read back |
+| CryptoKit | P-256, where the platform reports an enclave | The enclave holds the key. MPSS stores its `dataRepresentation`, a blob wrapped to that enclave and inert on any other device, as a Keychain generic password | The type. A `SecureEnclave.P256.Signing.PrivateKey` cannot be held anywhere else, so there is nothing to read back |
 | Security framework | P-384 and P-521, and anything where no enclave is reported | A Keychain key, held in the enclave if it accepted the request | Read back from `kSecAttrTokenID` on the key that was created |
 
 The CryptoKit path needs no entitlement, because what it persists is a password item rather than a
 key the enclave owns. The Security framework path asks for a persistent enclave key, which on macOS
-requires a provisioning profile; a command-line tool never has one, so the request fails with
-`-34018` and the key is created in software. An iOS application does have one, which is why the same
-P-384 request reaches the enclave on a phone and not in a terminal.
+requires a provisioning profile. A command-line tool has none unless it is wrapped in an app-like
+bundle, so its request fails with `-34018` and the key is created in software. An iOS application
+does have one, which is why the same P-384 request reaches the enclave on a phone and not in a
+terminal.
 
 **A P-256 create does not fall back.** Where an enclave is reported, it is the only place MPSS will
 put that key: if the enclave declines, creation fails rather than quietly returning a software key.
@@ -90,6 +91,8 @@ The simulator accepts `kSecAttrTokenIDSecureEnclave` and hands the attribute bac
 software speed and keeps the key in a file on the host. MPSS reports those keys as `apple_keychain`:
 there is no enclave for them to be in.
 
+### What protection covers
+
 **What a hardware-backed key defends against.** A key generated inside secure hardware and never
 exported cannot be read out of a backup, scraped from process memory, or committed to a repository,
 and whoever reaches the host cannot carry it away to use elsewhere afterwards, so their use of it
@@ -108,10 +111,56 @@ to use a key it can already reach. MPSS runs inside the process it is protecting
 makes is advisory: what holds is what the storage enforces, and what a relying party verifies off
 the machine. Hardware backing bounds the theft of a key, not its use.
 
-A key name is an identifier, not a secret. Which other code can reach the same key is decided by the
-backend: Windows keys belong to the current user, Apple follows Keychain access-group rules,
-AndroidKeyStore aliases are scoped to the application, and a YubiKey answers whoever can reach the
-device and satisfy its PIN and touch policy.
+A key name is an identifier, not a secret. Who else can reach a key depends on the backend:
+
+- **Windows.** Keys belong to the current user, and MPSS sets no PIN or UI policy on them: other
+  programs running as that user can open, use and delete a key by name, whether or not they use
+  MPSS.
+- **iOS.** A key goes into the application's default
+  [Keychain access group](https://developer.apple.com/documentation/security/sharing-access-to-keychain-items-among-a-collection-of-apps):
+  the first group its Keychain Sharing capability lists, or else its app ID. An iOS application
+  running on a Mac follows the same rules.
+  - *Updates* keep the key.
+  - *Sharing:* to share keys with your extensions and other applications, list the same Keychain
+    Sharing group first in each of them before they create keys. Only applications from your team
+    can list it.
+  - *Other applications* cannot see, use or delete the key.
+- **macOS.** A key normally lives in the user's login keychain, a
+  [file-based keychain](https://developer.apple.com/documentation/technotes/tn3137-on-mac-keychains)
+  in which it belongs to the application that created it.
+  - *Updates* you sign the same way, with Developer ID or for the Mac App Store, keep the key
+    without the user being asked: the keychain recognizes the application by its
+    [code signature](https://developer.apple.com/library/archive/documentation/Security/Conceptual/CodeSigningGuide/Introduction/Introduction.html),
+    not by where it is installed. Development builds signed with your Apple Development certificate
+    keep their keys across rebuilds.
+  - *Sharing:* any other application, your own helpers and extensions included, can use the key
+    only if the user allows it in a system dialog, and is refused where no dialog can be shown. To
+    avoid dialogs when several of your programs sign with the same key, let one program create the
+    key and do all the signing: the others send that program the hashes they need signed, for
+    example over XPC, and get the signatures back. Make sure that program signs only for your own
+    programs, not for any program that asks; XPC can check each caller's code signature for you.
+  - *Other applications*, sandboxed or not, can create a key under a name yours uses and delete a
+    software (`apple_keychain`) key without the user being asked. If the user lets one read a P-256
+    enclave key, even once, it can keep a copy that works only on that Mac and sign with it from
+    then on.
+  - *Exception:* a key the [Security framework path](#apple-which-store-answers) places in the
+    enclave, which needs a provisioned application, is kept in the data protection keychain and
+    follows the iOS rules, though other applications can still create a key under its name.
+- **Android.** A key belongs to the application's Linux user ID, which its updates keep and which
+  differs in each Android user and work profile. Another application shares that ID only if both
+  declare the same `android:sharedUserId` and are signed with the same certificate, a mechanism
+  Android has deprecated. Android 16 lets an application grant one of its keys to another
+  application; MPSS does not do so, and does not open a key granted to it.
+- **YubiKey.** A key belongs to the device. Any program with access to the device can read the key's
+  name, use the key once its PIN and touch policies are satisfied, and replace or delete it with the
+  management credentials.
+
+Wherever other code can create a key under a name your application uses, it can take that name
+first or make it ambiguous, and where it can also delete your key, it can put its own in its place.
+To recognize the same key over time, keep its public key where that code cannot change it and
+compare against it, as [Key Management](#key-management) describes. The OpenSSL provider runs
+inside whichever program loads it, so that program is the application in the rules above; on macOS,
+the `openssl` command is a different application from yours.
 
 Android and YubiKey refuse a key that was not generated in the key store itself, which they read
 from origin metadata the store records at generation. That says how a key came to be there rather
@@ -135,8 +184,8 @@ Windows and Android have platform facilities for this that MPSS does not expose.
 showing that someone was present. Unless told otherwise MPSS creates YubiKey keys with the `cached`
 touch policy, under which the device asks for another touch only once more than 15 seconds have
 passed since the last one; `always` spends a touch on every signature. Apple evaluates its
-user-presence check inside the Secure Enclave rather than trusting a result the application supplies,
-though the application still chooses when to ask and what digest to submit.
+user-presence check inside the Secure Enclave rather than trusting a result the application
+supplies, though the application still chooses when to ask and what digest to submit.
 
 A touch or a presence check establishes that someone was there, not that they agreed to the
 operation that ran. Neither shows the user what is about to be signed, and on a compromised host the
@@ -726,7 +775,7 @@ do not reuse the name until a later call succeeds.
 
 Windows skips providers it cannot open, so success does not establish absence there.
 YubiKey deletion by name requires a valid [slot label](#yubikey-backend-limitations-and-considerations).
-Handles to a deleted key cannot reach it afterwards, whichever API deleted it.
+In the process that deletes a key, no handle can reach it afterwards, whichever API deleted it.
 
 ### Handle Lifetime
 
@@ -919,10 +968,12 @@ exactly once between them, and the rest are told the handle is released.
 
 `KeyPair::Create`, `KeyPair::Open` and `KeyPair::Delete` may be called concurrently, though two of
 them naming the same key run one after the other, so that each sees a settled answer rather than
-one another half finished. Each handle has its own lock, but that is all it owns: handles
+one another half finished. This ordering holds within one process. MPSS does not coordinate with
+other processes, so an application that creates or deletes the same key from more than one process
+must order those calls itself. Each handle has its own lock, but that is all it owns: handles
 addressing the same key, or the same device, are still coupled through whatever they share.
-Deleting a key invalidates every handle to it, and a YubiKey serves one operation at a time
-whichever handle asks.
+Deleting a key invalidates every handle to it in the process that deletes it, and a YubiKey serves
+one operation at a time whichever handle asks.
 
 Destroying a handle is not an operation. Like any other object, a `KeyPair` must not be destroyed
 while another thread is still inside it.
