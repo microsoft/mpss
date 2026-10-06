@@ -775,8 +775,10 @@ bool cleared_on_yubikey = KeyPair::Delete("my-key", "yubikey");
 Invalid input, unavailable storage, or refused authentication fails. Failure can be partial;
 do not reuse the name until a later call succeeds.
 
-On Windows, a provider that cannot be opened rules a name out only when it is the TPM provider and the TPM Base Services report that the machine has no TPM.
-Any other provider that cannot be opened leaves the name unresolved: clearing the name fails, and creating or opening a name that no readable provider holds fails rather than treating that provider as empty.
+On Windows, a provider that cannot be opened rules a name out only when it is the TPM provider and the
+TPM Base Services report that the machine has no TPM.
+Any other provider that cannot be opened leaves the name unresolved: clearing the name fails, and creating
+or opening a name that no readable provider holds fails rather than treating that provider as empty.
 YubiKey deletion by name requires a valid [slot label](#yubikey-backend-limitations-and-considerations).
 In the process that deletes a key, no handle can reach it afterwards, whichever API deleted it.
 

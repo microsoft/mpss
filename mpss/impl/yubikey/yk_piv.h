@@ -447,8 +447,9 @@ class YubiKeyPIV
     /**
      * @brief Whether a label certificate describes the key the slot currently holds.
      *
-     * Compares the encoded subject public key of the certificate with the slot's own public key, without
-     * decoding either.
+     * The certificate's subject public key must name the same key type and group as the slot's key and carry
+     * the same encoded point. Neither key is decoded, so the answer does not depend on the OpenSSL
+     * configuration.
      *
      * @param slot The PIV slot number.
      * @param cert The certificate read from that slot.

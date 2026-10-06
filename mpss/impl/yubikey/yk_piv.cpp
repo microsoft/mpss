@@ -1000,25 +1000,43 @@ YubiKeyPIV::LabelBinding YubiKeyPIV::slot_key_matches_label(std::uint8_t slot, c
     // Failing to read either side is not the same as the two sides disagreeing. A slot whose key
     // could not be read may still carry the name, so the caller must be able to tell an answer from
     // the absence of one.
+    ykpiv_metadata metadata = {};
+    if (nullptr == state_ || !read_parsed_metadata(state_, slot, metadata, /* probe */ true))
+    {
+        return LabelBinding::undetermined;
+    }
+
     std::array<std::byte, max_public_key_bytes> slot_point{};
-    const std::size_t slot_point_len = get_public_key(slot, slot_point, /* probe */ true);
+    const std::size_t slot_point_len = extract_public_point(metadata, slot_point, slot, /* probe */ true);
     if (0 == slot_point_len)
     {
         return LabelBinding::undetermined;
     }
 
-    // Compare the encoded keys rather than decoding the label's, which would make the answer depend on
-    // what an OpenSSL configuration can decode. Labels carry the key exactly as the slot reports it.
-    const unsigned char *label_key = nullptr;
-    int label_key_len = 0;
-    if (1 != X509_PUBKEY_get0_param(nullptr, &label_key, &label_key_len, nullptr, X509_get_X509_PUBKEY(cert)))
+    // Read the label's key as stored rather than decoding it, so the answer does not depend on what the
+    // application's OpenSSL configuration can decode.
+    ASN1_OBJECT *label_algorithm = nullptr;
+    const unsigned char *label_point = nullptr;
+    int label_point_len = 0;
+    X509_ALGOR *label_identifier = nullptr;
+    if (1 != X509_PUBKEY_get0_param(&label_algorithm, &label_point, &label_point_len, &label_identifier,
+                                    X509_get_X509_PUBKEY(cert)))
     {
         return LabelBinding::undetermined;
     }
 
-    const bool matches =
-        std::cmp_equal(label_key_len, slot_point_len) && 0 == std::memcmp(label_key, slot_point.data(), slot_point_len);
-    return matches ? LabelBinding::match : LabelBinding::mismatch;
+    // A point identifies a key only together with its type and group, so the label must name the slot key's.
+    int parameter_type = 0;
+    const void *parameter_value = nullptr;
+    X509_ALGOR_get0(nullptr, &parameter_type, &parameter_value, label_identifier);
+    const int slot_group_nid = utils::get_group_nid(utils::yk_to_mpss_algorithm(metadata.algorithm));
+    const bool same_group = NID_undef != slot_group_nid && NID_X9_62_id_ecPublicKey == OBJ_obj2nid(label_algorithm) &&
+                            V_ASN1_OBJECT == parameter_type &&
+                            slot_group_nid == OBJ_obj2nid(static_cast<const ASN1_OBJECT *>(parameter_value));
+
+    const bool same_point = std::cmp_equal(label_point_len, slot_point_len) &&
+                            0 == std::memcmp(label_point, slot_point.data(), slot_point_len);
+    return (same_group && same_point) ? LabelBinding::match : LabelBinding::mismatch;
 }
 
 YubiKeyPIV::EraseResult YubiKeyPIV::erase_slot(std::uint8_t slot, bool probe)
