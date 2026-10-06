@@ -27,6 +27,7 @@ namespace
 {
 
 using jni_bytearray = mpss::impl::os::utils::JNIObj<jbyteArray>;
+using jni_class = mpss::impl::os::utils::JNIObj<jclass>;
 using jni_object = mpss::impl::os::utils::JNIObj<jobject>;
 using jni_string = mpss::impl::os::utils::JNIObj<jstring>;
 
@@ -413,7 +414,105 @@ std::optional<std::int64_t> java_create_key(std::string_view key_name, mpss::Alg
     return mpss::impl::os::utils::unbox_long(env, result.get());
 }
 
+// Changes the key store without going through MPSS, as any code in the same application can.
+bool call_direct_key_store(const char *method_name, std::string_view key_name)
+{
+    mpss::impl::os::JNIEnvGuard guard;
+    if (!guard.valid())
+    {
+        mpss::utils::set_error("Could not get JNI environment.");
+        return false;
+    }
+    JNIEnv *const env = guard.env();
+
+    jni_class direct_key_store(env, env->FindClass("com/microsoft/mpss/tests/DirectKeyStore"));
+    if (mpss::impl::os::utils::check_and_clear_exception(env, "finding the DirectKeyStore Java class"))
+    {
+        return false;
+    }
+    if (direct_key_store.is_null())
+    {
+        mpss::utils::set_error("Could not get DirectKeyStore Java class.");
+        return false;
+    }
+
+    jmethodID method = env->GetStaticMethodID(direct_key_store.get(), method_name, "(Ljava/lang/String;)V");
+    if (mpss::impl::os::utils::check_and_clear_exception(env, "resolving a DirectKeyStore method"))
+    {
+        return false;
+    }
+    if (nullptr == method)
+    {
+        mpss::utils::set_error("Could not get DirectKeyStore Java method.");
+        return false;
+    }
+
+    const std::string key_name_string{key_name};
+    jni_string java_key_name(env, env->NewStringUTF(key_name_string.c_str()));
+    if (mpss::impl::os::utils::check_and_clear_exception(env, "converting an Android key name to a Java string"))
+    {
+        return false;
+    }
+    if (java_key_name.is_null())
+    {
+        mpss::utils::set_error("Could not convert key name to Java String.");
+        return false;
+    }
+
+    env->CallStaticVoidMethod(direct_key_store.get(), method, java_key_name.get());
+    return !mpss::impl::os::utils::check_and_clear_exception(env, "calling DirectKeyStore");
+}
+
 } // namespace
+
+TEST(AndroidSecurityTest, ImportedKeyIsRefused)
+{
+    using enum mpss::Algorithm;
+
+    if (!mpss::is_algorithm_available(ecdsa_secp256r1_sha256))
+    {
+        GTEST_SKIP() << "Algorithm not supported by current backend";
+    }
+
+    const std::string key_name = "test_android_imported_key";
+    ASSERT_TRUE(mpss::KeyPair::Delete(key_name)) << mpss::get_error();
+    SCOPE_GUARD(static_cast<void>(mpss::KeyPair::Delete(key_name)));
+
+    ASSERT_TRUE(call_direct_key_store("importKey", key_name)) << mpss::get_error();
+
+    EXPECT_EQ(nullptr, mpss::KeyPair::Open(key_name));
+    EXPECT_NE(std::string::npos, mpss::get_error().find("origin: imported")) << mpss::get_error();
+
+    EXPECT_EQ(nullptr, mpss::KeyPair::Create(key_name, ecdsa_secp256r1_sha256));
+    EXPECT_NE(std::string::npos, mpss::get_error().find("origin: imported")) << mpss::get_error();
+
+    EXPECT_TRUE(mpss::KeyPair::Delete(key_name)) << mpss::get_error();
+}
+
+TEST(AndroidSecurityTest, JavaCreateKeyRefusesNameStillOpen)
+{
+    using enum mpss::Algorithm;
+
+    if (!mpss::is_algorithm_available(ecdsa_secp256r1_sha256))
+    {
+        GTEST_SKIP() << "Algorithm not supported by current backend";
+    }
+
+    const std::string key_name = "test_android_java_create_still_open";
+    ASSERT_TRUE(mpss::KeyPair::Delete(key_name)) << mpss::get_error();
+    SCOPE_GUARD(static_cast<void>(mpss::KeyPair::Delete(key_name)));
+
+    std::unique_ptr<mpss::KeyPair> handle = mpss::KeyPair::Create(key_name, ecdsa_secp256r1_sha256);
+    ASSERT_NE(nullptr, handle) << mpss::get_error();
+    ASSERT_TRUE(call_direct_key_store("deleteEntry", key_name)) << mpss::get_error();
+
+    EXPECT_EQ(nullptr, mpss::KeyPair::Create(key_name, ecdsa_secp256r1_sha256));
+
+    // The Java layer is called directly because the backend refuses before it calls KeyManagement.CreateKey.
+    const std::optional<std::int64_t> created = java_create_key(key_name, ecdsa_secp256r1_sha256);
+    EXPECT_FALSE(created.has_value());
+    EXPECT_NE(std::string::npos, mpss::get_error().find("Key with same name is still open")) << mpss::get_error();
+}
 
 TEST(AndroidSecurityTest, JavaCreateKeyRefusesToReplaceExistingKey)
 {

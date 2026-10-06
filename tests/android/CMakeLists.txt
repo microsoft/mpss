@@ -54,6 +54,7 @@ set(mpss_ANDROID_TEST_GRADLE_FILES
     "${CMAKE_CURRENT_LIST_DIR}/build.gradle"
     "${CMAKE_CURRENT_LIST_DIR}/app/build.gradle"
     "${CMAKE_CURRENT_LIST_DIR}/app/src/main/AndroidManifest.xml"
+    "${CMAKE_CURRENT_LIST_DIR}/app/src/main/java/com/microsoft/mpss/tests/DirectKeyStore.java"
     "${CMAKE_CURRENT_LIST_DIR}/app/src/main/java/com/microsoft/mpss/tests/TestRunner.java"
     "${mpss_ANDROID_TEST_GRADLEW}"
     "${CMAKE_CURRENT_LIST_DIR}/gradle/wrapper/gradle-wrapper.jar"
