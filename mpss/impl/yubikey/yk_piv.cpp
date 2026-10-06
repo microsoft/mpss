@@ -4,6 +4,8 @@
 #include "mpss/impl/yubikey/yk_piv.h"
 #include "mpss/impl/yubikey/yk_utils.h"
 #include "mpss/interaction_handler.h"
+#include "mpss/utils/host_context.h"
+#include "mpss/utils/ossl_ptr.h"
 #include "mpss/utils/scope_guard.h"
 #include "mpss/utils/utilities.h"
 #include <algorithm>
@@ -14,10 +16,8 @@
 #include <map>
 #include <memory>
 #include <mutex>
-#include <openssl/core_names.h>
 #include <openssl/crypto.h>
 #include <openssl/evp.h>
-#include <openssl/hmac.h>
 #include <openssl/rand.h>
 #include <openssl/sha.h>
 #include <openssl/x509.h>
@@ -246,38 +246,6 @@ template <typename... Args> void report_failure(bool probe, std::format_string<A
     {
         mpss::utils::log_and_set_error(fmt, std::forward<Args>(args)...);
     }
-}
-
-/**
- * @brief Build an EC public key from a raw X9.63 uncompressed point.
- *
- * @param group_name OpenSSL group name for the point.
- * @param point The uncompressed point (04 || X || Y).
- * @return An owning EVP_PKEY the caller must free, or nullptr on failure.
- */
-EVP_PKEY *make_ec_public_key(const char *group_name, std::span<const std::byte> point)
-{
-    OSSL_PARAM params[] = {
-        OSSL_PARAM_construct_utf8_string(OSSL_PKEY_PARAM_GROUP_NAME, const_cast<char *>(group_name), 0),
-        OSSL_PARAM_construct_octet_string(
-            OSSL_PKEY_PARAM_PUB_KEY, const_cast<unsigned char *>(reinterpret_cast<const unsigned char *>(point.data())),
-            point.size()),
-        OSSL_PARAM_END};
-
-    EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_from_name(nullptr, "EC", nullptr);
-    if (nullptr == ctx)
-    {
-        return nullptr;
-    }
-    SCOPE_GUARD(EVP_PKEY_CTX_free(ctx));
-
-    EVP_PKEY *pkey = nullptr;
-    if (0 >= EVP_PKEY_fromdata_init(ctx) || 0 >= EVP_PKEY_fromdata(ctx, &pkey, EVP_PKEY_PUBLIC_KEY, params))
-    {
-        return nullptr;
-    }
-
-    return pkey;
 }
 
 // Reads and parses a slot's metadata. Every answer metadata carries comes from this one exchange
@@ -1027,7 +995,7 @@ Algorithm YubiKeyPIV::read_slot_algorithm(std::uint8_t slot)
     return utils::yk_to_mpss_algorithm(metadata.algorithm);
 }
 
-YubiKeyPIV::LabelBinding YubiKeyPIV::slot_key_matches_label(std::uint8_t slot, X509 *cert)
+YubiKeyPIV::LabelBinding YubiKeyPIV::slot_key_matches_label(std::uint8_t slot, const X509 *cert)
 {
     // Failing to read either side is not the same as the two sides disagreeing. A slot whose key
     // could not be read may still carry the name, so the caller must be able to tell an answer from
@@ -1039,23 +1007,17 @@ YubiKeyPIV::LabelBinding YubiKeyPIV::slot_key_matches_label(std::uint8_t slot, X
         return LabelBinding::undetermined;
     }
 
-    EVP_PKEY *cert_key = X509_get0_pubkey(cert);
-    if (nullptr == cert_key)
-    {
-        // The certificate carries no key, so it describes nothing the slot could hold.
-        return LabelBinding::mismatch;
-    }
-
-    unsigned char *cert_point = nullptr;
-    const std::size_t cert_point_len = EVP_PKEY_get1_encoded_public_key(cert_key, &cert_point);
-    if (0 == cert_point_len || nullptr == cert_point)
+    // Compare the encoded keys rather than decoding the label's, which would make the answer depend on
+    // what an OpenSSL configuration can decode. Labels carry the key exactly as the slot reports it.
+    const unsigned char *label_key = nullptr;
+    int label_key_len = 0;
+    if (1 != X509_PUBKEY_get0_param(nullptr, &label_key, &label_key_len, nullptr, X509_get_X509_PUBKEY(cert)))
     {
         return LabelBinding::undetermined;
     }
-    SCOPE_GUARD(OPENSSL_free(cert_point));
 
     const bool matches =
-        cert_point_len == slot_point_len && 0 == std::memcmp(cert_point, slot_point.data(), slot_point_len);
+        std::cmp_equal(label_key_len, slot_point_len) && 0 == std::memcmp(label_key, slot_point.data(), slot_point_len);
     return matches ? LabelBinding::match : LabelBinding::mismatch;
 }
 
@@ -1202,28 +1164,27 @@ bool YubiKeyPIV::write_slot_label(std::uint8_t slot, std::string_view name)
     }
 
     const Algorithm slot_algorithm = read_slot_algorithm(slot);
-    const char *group_name = utils::get_group_name(slot_algorithm);
-    if (nullptr == group_name)
+    const int group_nid = utils::get_group_nid(slot_algorithm);
+    if (NID_undef == group_nid)
     {
         mpss::utils::log_and_set_error("Cannot label slot {}: its key uses an unsupported algorithm.",
                                        utils::get_slot_name(slot));
         return false;
     }
 
-    EVP_PKEY *slot_key = make_ec_public_key(group_name, std::span{slot_point_buf}.first(slot_point_len));
-    if (nullptr == slot_key)
+    OSSL_LIB_CTX *host = mpss::utils::host_context();
+    if (nullptr == host)
     {
-        mpss::utils::log_and_set_error("Failed to load the public key of slot {} for labeling.",
+        mpss::utils::log_and_set_error("Failed to initialize OpenSSL for the label of slot {}.",
                                        utils::get_slot_name(slot));
         return false;
     }
-    SCOPE_GUARD(EVP_PKEY_free(slot_key));
 
     // The slot's private key cannot sign here without a PIN and, under a touch policy, a user touch,
     // so the certificate is signed by an ephemeral key. The signature therefore proves nothing; the
     // binding that matters is the subject public key set below. X.509 mandates a signature and hence a
     // digest, so one is produced to satisfy the format and no property of that hash is relied upon.
-    EVP_PKEY *ephemeral_key = EVP_EC_gen("P-384"); // NOLINT(cppcoreguidelines-pro-type-cstyle-cast)
+    EVP_PKEY *ephemeral_key = EVP_PKEY_Q_keygen(host, "provider=default", "EC", const_cast<char *>("P-384"));
     if (nullptr == ephemeral_key)
     {
         mpss::utils::log_and_set_error("Failed to generate ephemeral key for slot label.");
@@ -1231,8 +1192,8 @@ bool YubiKeyPIV::write_slot_label(std::uint8_t slot, std::string_view name)
     }
     SCOPE_GUARD(EVP_PKEY_free(ephemeral_key));
 
-    // Create a minimal X.509 certificate to carry the label.
-    X509 *cert = X509_new();
+    // Create a minimal X.509 certificate to carry the label. X509_sign fetches in the certificate's context.
+    X509 *cert = X509_new_ex(host, "provider=default");
     if (nullptr == cert)
     {
         mpss::utils::log_and_set_error("Failed to create X509 certificate for slot label.");
@@ -1307,12 +1268,19 @@ bool YubiKeyPIV::write_slot_label(std::uint8_t slot, std::string_view name)
         return false;
     }
 
-    // Bind the label to the slot's key: the subject public key is the key this name describes.
-    if (0 == X509_set_pubkey(cert, slot_key))
+    // Bind the label to the slot's key: the subject public key is the key this name describes. Set the
+    // fields directly: setting an EVP_PKEY would decode it in the application's default context.
+    // OBJ_nid2obj returns static objects, which the structure holds without owning them.
+    mpss::utils::openssl_buf_ptr<unsigned char> point(
+        static_cast<unsigned char *>(OPENSSL_memdup(slot_point_buf.data(), slot_point_len)));
+    if (!point ||
+        1 != X509_PUBKEY_set0_param(X509_get_X509_PUBKEY(cert), OBJ_nid2obj(NID_X9_62_id_ecPublicKey), V_ASN1_OBJECT,
+                                    OBJ_nid2obj(group_nid), point.get(), static_cast<int>(slot_point_len)))
     {
         mpss::utils::log_and_set_error("Failed to set public key for slot {} certificate.", utils::get_slot_name(slot));
         return false;
     }
+    static_cast<void>(point.release());
 
     // Sign with the ephemeral key.
     if (0 >= X509_sign(cert, ephemeral_key, EVP_sha384()))
@@ -1441,9 +1409,19 @@ KeyProbeResult<std::string> YubiKeyPIV::read_slot_label(std::uint8_t slot)
     }
     SCOPE_GUARD(ykpiv_util_free(state_, cert_data));
 
-    // Parse the DER-encoded certificate.
+    // Parse in MPSS's own context: parsing decodes the embedded key, and the default context belongs to the
+    // application.
+    OSSL_LIB_CTX *host = mpss::utils::host_context();
+    if (nullptr == host)
+    {
+        mpss::utils::log_warning("Could not initialize OpenSSL to read the certificate in slot {}.",
+                                 utils::get_slot_name(slot));
+        return {.status = KeyProbeStatus::operational_error, .value = {}};
+    }
+
     const unsigned char *p = cert_data;
-    X509 *cert = d2i_X509(nullptr, &p, static_cast<long>(cert_len));
+    X509 *cert = reinterpret_cast<X509 *>(
+        ASN1_item_d2i_ex(nullptr, &p, static_cast<long>(cert_len), ASN1_ITEM_rptr(X509), host, "provider=default"));
     if (nullptr == cert)
     {
         mpss::utils::log_warning("Could not parse the certificate in slot {}.", utils::get_slot_name(slot));
@@ -1738,7 +1716,8 @@ RejectedPins &rejected_pins()
         // The key must stay secret: anyone holding it could recover a PIN from a stored fingerprint by
         // trying the few million candidates, so it is drawn from the private DRBG rather than the public
         // one.
-        if (1 != RAND_priv_bytes(fresh->key.data(), static_cast<int>(fresh->key.size())))
+        OSSL_LIB_CTX *host = mpss::utils::host_context();
+        if (nullptr == host || 1 != RAND_priv_bytes_ex(host, fresh->key.data(), fresh->key.size(), 0))
         {
             // The key only raises the cost of recovering a PIN from a fingerprint. Losing it weakens that
             // and nothing else, so keep the lockout protection rather than trading it away.
@@ -1759,11 +1738,17 @@ RejectedPins &rejected_pins()
 [[nodiscard]]
 std::optional<PinDigest> fingerprint_pin(const RejectedPins &state, std::string_view pin)
 {
+    OSSL_LIB_CTX *host = mpss::utils::host_context();
+    if (nullptr == host)
+    {
+        return std::nullopt;
+    }
+
     PinDigest digest{};
-    unsigned int digest_size = 0;
-    const unsigned char *result =
-        HMAC(EVP_sha384(), state.key.data(), static_cast<int>(state.key.size()),
-             reinterpret_cast<const unsigned char *>(pin.data()), pin.size(), digest.data(), &digest_size);
+    std::size_t digest_size = 0;
+    const unsigned char *result = EVP_Q_mac(host, "HMAC", "provider=default", "SHA384", nullptr, state.key.data(),
+                                            state.key.size(), reinterpret_cast<const unsigned char *>(pin.data()),
+                                            pin.size(), digest.data(), digest.size(), &digest_size);
     if (nullptr == result || digest.size() != digest_size)
     {
         return std::nullopt;

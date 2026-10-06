@@ -40,6 +40,8 @@
 #include "mpss/impl/yubikey/yk_piv.h"
 #ifndef MPSS_CORE_IS_SHARED
 #include "mpss/impl/yubikey/yk_utils.h"
+#include <openssl/crypto.h>
+#include <openssl/evp.h>
 #include <ykpiv/ykpiv.h>
 #endif
 #endif
@@ -106,6 +108,7 @@ void SignAndVerify(Algorithm algorithm, std::string_view suffix, std::size_t has
 
     // Delete key if it exists
     MPSS::DeleteKey(key_name);
+    SCOPE_GUARD(MPSS::DeleteKey(key_name));
 
     // Create a key pair for testing
     std::unique_ptr<mpss::KeyPair> handle = MPSS::CreateKey(key_name, algorithm);
@@ -164,9 +167,6 @@ void SignAndVerify(Algorithm algorithm, std::string_view suffix, std::size_t has
 
     // Release the key pair
     handle->release_key();
-
-    // Delete the key pair
-    MPSS::DeleteKey(key_name);
 }
 
 void DoubleCreation(Algorithm algorithm, std::string_view suffix)
@@ -180,6 +180,7 @@ void DoubleCreation(Algorithm algorithm, std::string_view suffix)
 
     // Delete key if it exists
     MPSS::DeleteKey(key_name);
+    SCOPE_GUARD(MPSS::DeleteKey(key_name));
 
     // Create the key pair
     std::unique_ptr<mpss::KeyPair> handle = mpss::KeyPair::Create(key_name, algorithm);
@@ -221,6 +222,7 @@ void ReopenReportsTheSameProtection(Algorithm algorithm, std::string_view suffix
 
     const std::string key_name = test_key_name("test_protection_"s + suffix.data());
     MPSS::DeleteKey(key_name);
+    SCOPE_GUARD(MPSS::DeleteKey(key_name));
 
     std::string created_storage;
     bool created_hardware_backed = false;
@@ -261,6 +263,7 @@ void ReleaseDoesNotDisturbAnotherHandle(Algorithm algorithm, std::string_view su
 
     const std::string key_name = test_key_name("release_test_"s + suffix.data());
     MPSS::DeleteKey(key_name);
+    SCOPE_GUARD(MPSS::DeleteKey(key_name));
 
     {
         std::unique_ptr<mpss::KeyPair> created = MPSS::CreateKey(key_name, algorithm);
@@ -299,6 +302,7 @@ void ReleasedHandleRefusesOperations(Algorithm algorithm, std::string_view suffi
 
     const std::string key_name = test_key_name("released_test_"s + suffix.data());
     MPSS::DeleteKey(key_name);
+    SCOPE_GUARD(MPSS::DeleteKey(key_name));
 
     std::unique_ptr<mpss::KeyPair> handle = MPSS::CreateKey(key_name, algorithm);
     ASSERT_NE(nullptr, handle);
@@ -333,9 +337,6 @@ void ReleasedHandleRefusesOperations(Algorithm algorithm, std::string_view suffi
     // The handle still answers what it recorded when it was opened.
     EXPECT_EQ(algorithm, handle->algorithm());
     EXPECT_NE(nullptr, handle->key_info().storage_description);
-
-    handle.reset();
-    MPSS::DeleteKey(key_name);
 }
 
 // Deleting a name and creating it again while a handle to the old key is still alive must not let
@@ -350,6 +351,7 @@ void StaleHandleDoesNotDisturbARecreatedKey(Algorithm algorithm, std::string_vie
 
     const std::string key_name = test_key_name("stale_test_"s + suffix.data());
     MPSS::DeleteKey(key_name);
+    SCOPE_GUARD(MPSS::DeleteKey(key_name));
 
     std::unique_ptr<mpss::KeyPair> stale = MPSS::CreateKey(key_name, algorithm);
     ASSERT_NE(nullptr, stale);
@@ -385,6 +387,7 @@ void DeletingThroughAHandleInvalidatesIt(Algorithm algorithm, std::string_view s
 
     const std::string key_name = test_key_name("deleted_test_"s + suffix.data());
     MPSS::DeleteKey(key_name);
+    SCOPE_GUARD(MPSS::DeleteKey(key_name));
 
     std::unique_ptr<mpss::KeyPair> handle = MPSS::CreateKey(key_name, algorithm);
     ASSERT_NE(nullptr, handle);
@@ -433,6 +436,7 @@ void StaleHandleCannotReachAReplacementKey(Algorithm algorithm, std::string_view
 
     const std::string key_name = test_key_name("reach_test_"s + suffix.data());
     MPSS::DeleteKey(key_name);
+    SCOPE_GUARD(MPSS::DeleteKey(key_name));
 
     std::unique_ptr<mpss::KeyPair> original = MPSS::CreateKey(key_name, algorithm);
     ASSERT_NE(nullptr, original);
@@ -649,6 +653,7 @@ TEST_F(MPSS, DeleteByNameClearsAName)
 {
     const std::string key_name = "delete_by_name_key";
     DeleteKey(key_name);
+    SCOPE_GUARD(DeleteKey(key_name));
 
     std::unique_ptr<mpss::KeyPair> key = CreateKey(key_name, ecdsa_secp256r1_sha256);
     if (nullptr == key)
@@ -718,6 +723,7 @@ void GetKey(Algorithm algorithm, std::string_view suffix)
 
     // Delete key if it exists
     MPSS::DeleteKey(key_name);
+    SCOPE_GUARD(MPSS::DeleteKey(key_name));
 
     // Create a key pair for testing
     std::unique_ptr<mpss::KeyPair> handle = MPSS::CreateKey(key_name, algorithm);
@@ -736,9 +742,6 @@ void GetKey(Algorithm algorithm, std::string_view suffix)
 
     // Release the key pair handle
     handle->release_key();
-
-    // Delete the key pair
-    MPSS::DeleteKey(key_name);
 }
 
 void GetKeySmallBuffer(Algorithm algorithm, std::string_view suffix)
@@ -752,6 +755,7 @@ void GetKeySmallBuffer(Algorithm algorithm, std::string_view suffix)
 
     // Delete key if it exists
     MPSS::DeleteKey(key_name);
+    SCOPE_GUARD(MPSS::DeleteKey(key_name));
 
     // Create a key pair for testing
     std::unique_ptr<mpss::KeyPair> handle = MPSS::CreateKey(key_name, algorithm);
@@ -769,9 +773,6 @@ void GetKeySmallBuffer(Algorithm algorithm, std::string_view suffix)
 
     // Release the key pair handle
     handle->release_key();
-
-    // Delete the key pair
-    MPSS::DeleteKey(key_name);
 }
 
 TEST_F(MPSS, GetKey256)
@@ -814,6 +815,7 @@ void VerifyStandaloneSignature(Algorithm algorithm, std::string_view suffix, std
     const std::string key_name = test_key_name("test_key_4_"s + suffix.data());
     // Delete key if it exists
     MPSS::DeleteKey(key_name);
+    SCOPE_GUARD(MPSS::DeleteKey(key_name));
 
     // Create a key pair for testing
     std::unique_ptr<mpss::KeyPair> handle = MPSS::CreateKey(key_name, algorithm);
@@ -881,6 +883,7 @@ TEST_F(MPSS, DefaultBackendHonorsErrorContract)
 
     const std::string key_name = test_key_name("mpss_error_contract_test_key");
     DeleteKey(key_name);
+    SCOPE_GUARD(DeleteKey(key_name));
 
     std::unique_ptr<mpss::KeyPair> handle = CreateKey(key_name, ecdsa_secp256r1_sha256);
     ASSERT_NE(nullptr, handle);
@@ -936,7 +939,6 @@ TEST_F(MPSS, DefaultBackendHonorsErrorContract)
 
     ASSERT_TRUE(handle->delete_key());
     EXPECT_TRUE(mpss::get_error().empty());
-    DeleteKey(key_name);
 }
 
 TEST(ErrorContract, HasErrorAndClearErrorTrackTheLastError)
@@ -1248,6 +1250,7 @@ TEST_F(MPSS, ConcurrentSigningOnOneHandle)
 
     const std::string key_name = test_key_name("concurrent_sign");
     MPSS::DeleteKey(key_name);
+    SCOPE_GUARD(MPSS::DeleteKey(key_name));
 
     std::unique_ptr<mpss::KeyPair> handle = MPSS::CreateKey(key_name, algorithm);
     ASSERT_NE(nullptr, handle);
@@ -1292,8 +1295,6 @@ TEST_F(MPSS, ConcurrentSigningOnOneHandle)
 
     EXPECT_EQ(thread_count * per_thread, signed_count.load(std::memory_order_relaxed));
     EXPECT_EQ(thread_count * per_thread, verified_count.load(std::memory_order_relaxed));
-
-    MPSS::DeleteKey(key_name);
 }
 
 // A name is the only identity the library has, so creating one is a decision made once. Threads
@@ -1313,6 +1314,7 @@ TEST_F(MPSS, ConcurrentCreateOfOneNameProducesOneKey)
 
     const std::string key_name = test_key_name("concurrent_create");
     MPSS::DeleteKey(key_name);
+    SCOPE_GUARD(MPSS::DeleteKey(key_name));
 
     std::atomic<int> created{0};
     std::atomic<bool> go{false};
@@ -1343,9 +1345,6 @@ TEST_F(MPSS, ConcurrentCreateOfOneNameProducesOneKey)
     }
 
     EXPECT_EQ(1, created.load(std::memory_order_relaxed));
-
-    handles.clear();
-    MPSS::DeleteKey(key_name);
 }
 
 #if defined(__APPLE__) && !defined(MPSS_CORE_IS_SHARED)
@@ -1410,6 +1409,7 @@ TEST_F(MPSS, DISABLED_SecureEnclaveUserPresenceInteractiveSigning)
 
     const std::string key_name = test_key_name("mpss_apple_user_presence_signing_test");
     DeleteKey(key_name);
+    SCOPE_GUARD(DeleteKey(key_name));
     std::unique_ptr<mpss::KeyPair> handle =
         mpss::KeyPair::Create(key_name, ecdsa_secp256r1_sha256, "os", KeyPolicy::apple_secure_enclave_user_presence);
     ASSERT_NE(nullptr, handle);
@@ -1457,6 +1457,7 @@ TEST_F(MPSS, InvalidSignatureClearsOperationalError)
 
     const std::string key_name = test_key_name("mpss_apple_invalid_signature_error_test");
     DeleteKey(key_name);
+    SCOPE_GUARD(DeleteKey(key_name));
     std::unique_ptr<mpss::KeyPair> handle = CreateKey(key_name, ecdsa_secp256r1_sha256);
     ASSERT_NE(nullptr, handle);
 
@@ -1491,6 +1492,7 @@ TEST_F(MPSS, VerificationErrorSurvivesKeyDestruction)
 
     const std::string key_name = test_key_name("mpss_apple_destroyed_key_error_test");
     DeleteKey(key_name);
+    SCOPE_GUARD(DeleteKey(key_name));
     std::unique_ptr<mpss::KeyPair> handle = CreateKey(key_name, ecdsa_secp256r1_sha256);
     ASSERT_NE(nullptr, handle);
 
@@ -1500,7 +1502,6 @@ TEST_F(MPSS, VerificationErrorSurvivesKeyDestruction)
 
     handle.reset();
     EXPECT_EQ(verification_error, mpss::get_error());
-    DeleteKey(key_name);
 }
 #endif
 
@@ -1655,9 +1656,9 @@ TEST_F(MPSS, ResolvedLocationAndReferenceRoundTrip)
 
     const std::string name = test_key_name("reference_roundtrip");
     MPSS::DeleteKey(name);
+    SCOPE_GUARD(MPSS::DeleteKey(name));
     auto original = KeyPair::Create(name, ecdsa_secp256r1_sha256);
     ASSERT_NE(nullptr, original) << mpss::get_error();
-    SCOPE_GUARD(static_cast<void>(original->delete_key()));
 
     const auto location = original->location();
     EXPECT_EQ(name, location.name);
@@ -1706,9 +1707,9 @@ TEST_F(MPSS, ResolvedLocationAndReferenceRoundTrip)
     // The bound handle verifies against the referenced key, so another key's signature is refused.
     const std::string other_name = test_key_name("reference_other");
     MPSS::DeleteKey(other_name);
+    SCOPE_GUARD(MPSS::DeleteKey(other_name));
     auto other = KeyPair::Create(other_name, ecdsa_secp256r1_sha256);
     ASSERT_NE(nullptr, other) << mpss::get_error();
-    SCOPE_GUARD(static_cast<void>(other->delete_key()));
     std::vector<std::byte> other_signature(other->sign_hash_size());
     const auto other_written = other->sign_hash(hash, other_signature);
     ASSERT_GT(other_written, std::size_t{0}) << mpss::get_error();
@@ -1730,6 +1731,7 @@ TEST_F(MPSS, ReferenceBoundHandleRefusesAReplacementKey)
 
     const std::string name = test_key_name("reference_replaced");
     MPSS::DeleteKey(name);
+    SCOPE_GUARD(MPSS::DeleteKey(name));
     auto original = KeyPair::Create(name, ecdsa_secp256r1_sha256);
     ASSERT_NE(nullptr, original) << mpss::get_error();
 
@@ -1742,7 +1744,6 @@ TEST_F(MPSS, ReferenceBoundHandleRefusesAReplacementKey)
     original.reset();
     auto fresh = KeyPair::Create(name, ecdsa_secp256r1_sha256);
     ASSERT_NE(nullptr, fresh) << mpss::get_error();
-    SCOPE_GUARD(static_cast<void>(fresh->delete_key()));
 
     // The name now holds a different key, which the bound handle must neither use nor delete.
     const std::vector<std::byte> hash(32, std::byte{0x7B});
@@ -1768,14 +1769,10 @@ TEST(BackendTest, CreateKeyWithExplicitBackend)
 
     const std::string key_name = test_key_name("test_explicit_key");
     MPSS::DeleteKey(key_name);
+    SCOPE_GUARD(MPSS::DeleteKey(key_name));
 
     auto key = mpss::KeyPair::Create(key_name, ecdsa_secp256r1_sha256, default_backend);
     EXPECT_NE(nullptr, key);
-
-    if (nullptr != key)
-    {
-        key->delete_key();
-    }
 }
 
 TEST(BackendTest, OpenKeyWithExplicitBackend)
@@ -1786,6 +1783,7 @@ TEST(BackendTest, OpenKeyWithExplicitBackend)
 
     const std::string key_name = test_key_name("test_explicit_open_key");
     MPSS::DeleteKey(key_name);
+    SCOPE_GUARD(MPSS::DeleteKey(key_name));
 
     // Create a key first.
     auto key = mpss::KeyPair::Create(key_name, ecdsa_secp256r1_sha256, default_backend);
@@ -1795,11 +1793,6 @@ TEST(BackendTest, OpenKeyWithExplicitBackend)
     // Open the key using the explicit backend.
     auto opened = mpss::KeyPair::Open(key_name, default_backend);
     EXPECT_NE(nullptr, opened);
-
-    if (nullptr != opened)
-    {
-        opened->delete_key();
-    }
 }
 
 TEST(BackendTest, BackendNameSetOnCreate)
@@ -1815,12 +1808,12 @@ TEST(BackendTest, BackendNameSetOnCreate)
 
     const std::string key_name = test_key_name("test_backend_name_create");
     MPSS::DeleteKey(key_name);
+    SCOPE_GUARD(MPSS::DeleteKey(key_name));
 
     // Create with default backend.
     auto key = mpss::KeyPair::Create(key_name, ecdsa_secp256r1_sha256);
     ASSERT_NE(nullptr, key);
     EXPECT_STREQ(default_backend, key->backend_name());
-    key->delete_key();
 }
 
 TEST(BackendTest, BackendNameSetOnCreateExplicit)
@@ -1836,12 +1829,12 @@ TEST(BackendTest, BackendNameSetOnCreateExplicit)
 
     const std::string key_name = test_key_name("test_backend_name_create_explicit");
     MPSS::DeleteKey(key_name);
+    SCOPE_GUARD(MPSS::DeleteKey(key_name));
 
     // Create with explicit backend.
     auto key = mpss::KeyPair::Create(key_name, ecdsa_secp256r1_sha256, default_backend);
     ASSERT_NE(nullptr, key);
     EXPECT_STREQ(default_backend, key->backend_name());
-    key->delete_key();
 }
 
 TEST(BackendTest, BackendNameSetOnOpen)
@@ -1857,6 +1850,7 @@ TEST(BackendTest, BackendNameSetOnOpen)
 
     const std::string key_name = test_key_name("test_backend_name_open");
     MPSS::DeleteKey(key_name);
+    SCOPE_GUARD(MPSS::DeleteKey(key_name));
 
     // Create, then reopen with default backend.
     auto key = mpss::KeyPair::Create(key_name, ecdsa_secp256r1_sha256);
@@ -1866,7 +1860,6 @@ TEST(BackendTest, BackendNameSetOnOpen)
     auto opened = mpss::KeyPair::Open(key_name);
     ASSERT_NE(nullptr, opened);
     EXPECT_STREQ(default_backend, opened->backend_name());
-    opened->delete_key();
 }
 
 TEST(BackendTest, BackendNameSetOnOpenExplicit)
@@ -1882,6 +1875,7 @@ TEST(BackendTest, BackendNameSetOnOpenExplicit)
 
     const std::string key_name = test_key_name("test_backend_name_open_explicit");
     MPSS::DeleteKey(key_name);
+    SCOPE_GUARD(MPSS::DeleteKey(key_name));
 
     // Create, then reopen with explicit backend.
     auto key = mpss::KeyPair::Create(key_name, ecdsa_secp256r1_sha256, default_backend);
@@ -1891,7 +1885,6 @@ TEST(BackendTest, BackendNameSetOnOpenExplicit)
     auto opened = mpss::KeyPair::Open(key_name, default_backend);
     ASSERT_NE(nullptr, opened);
     EXPECT_STREQ(default_backend, opened->backend_name());
-    opened->delete_key();
 }
 
 TEST(BackendTest, CreateKeyWithInvalidBackend)
@@ -1919,6 +1912,7 @@ TEST(BackendTest, VerifyWithExplicitBackend)
 
     const std::string key_name = test_key_name("test_verify_explicit");
     MPSS::DeleteKey(key_name);
+    SCOPE_GUARD(MPSS::DeleteKey(key_name));
 
     // Create and sign with a key.
     auto key = mpss::KeyPair::Create(key_name, ecdsa_secp256r1_sha256, default_backend);
@@ -2057,6 +2051,7 @@ TEST(KeyPolicyTest, CreateKeyWithPolicyNone)
 
     const std::string key_name = test_key_name("test_key_policy_none");
     MPSS::DeleteKey(key_name);
+    SCOPE_GUARD(MPSS::DeleteKey(key_name));
 
     auto key = mpss::KeyPair::Create(key_name, ecdsa_secp256r1_sha256, KeyPolicy::none);
     ASSERT_NE(nullptr, key);
@@ -2069,8 +2064,6 @@ TEST(KeyPolicyTest, CreateKeyWithPolicyNone)
     ASSERT_GT(written, std::size_t{0});
     signature.resize(written);
     EXPECT_TRUE(key->verify(hash, signature));
-
-    key->delete_key();
 }
 
 // --- hex_string_to_bytes tests ---
@@ -2146,11 +2139,10 @@ TEST_F(MPSS, KeyNameMaxLength)
 
     const std::string key_name = test_key_name_of_length(64);
     MPSS::DeleteKey(key_name);
+    SCOPE_GUARD(MPSS::DeleteKey(key_name));
 
     auto handle = MPSS::CreateKey(key_name, ecdsa_secp256r1_sha256);
     ASSERT_NE(nullptr, handle);
-
-    handle->delete_key();
 }
 
 TEST_F(MPSS, KeyNameMaxLengthDistinguished)
@@ -2169,6 +2161,8 @@ TEST_F(MPSS, KeyNameMaxLengthDistinguished)
 
     MPSS::DeleteKey(name_a);
     MPSS::DeleteKey(name_b);
+    SCOPE_GUARD(MPSS::DeleteKey(name_a));
+    SCOPE_GUARD(MPSS::DeleteKey(name_b));
 
     auto handle_a = MPSS::CreateKey(name_a, ecdsa_secp256r1_sha256);
     ASSERT_NE(nullptr, handle_a);
@@ -2189,9 +2183,6 @@ TEST_F(MPSS, KeyNameMaxLengthDistinguished)
 
     // Verify with key B fails - these are distinct keys.
     EXPECT_FALSE(handle_b->verify(hash, signature));
-
-    handle_a->delete_key();
-    handle_b->delete_key();
 }
 
 namespace
@@ -2246,6 +2237,7 @@ TEST_F(CrossBackendTest, SignOnOneBackendVerifyOnAnother)
     // Create and sign with the OS backend.
     const std::string key_name = test_key_name("test_cross_backend_sign");
     MPSS::DeleteKey(key_name);
+    SCOPE_GUARD(MPSS::DeleteKey(key_name));
 
     auto key = mpss::KeyPair::Create(key_name, ecdsa_secp256r1_sha256, "os");
     ASSERT_NE(nullptr, key);
@@ -2277,6 +2269,8 @@ TEST_F(CrossBackendTest, CreateKeyOnEachBackend)
 
     MPSS::DeleteKey(os_key_name);
     MPSS::DeleteKey(yk_key_name);
+    SCOPE_GUARD(MPSS::DeleteKey(os_key_name));
+    SCOPE_GUARD(MPSS::DeleteKey(yk_key_name));
 
     // Create a key on the OS backend.
     auto os_key = mpss::KeyPair::Create(os_key_name, ecdsa_secp256r1_sha256, "os");
@@ -2290,10 +2284,8 @@ TEST_F(CrossBackendTest, CreateKeyOnEachBackend)
                                         KeyPolicy::yubikey_touch_never | KeyPolicy::yubikey_pin_once);
     if (nullptr == yk_key)
     {
-        // Read before the clean-up below, which replaces the last error.
         const bool device_reason = yubikey_cannot_create_keys();
         const std::string reason = mpss::get_error();
-        os_key->delete_key();
         ASSERT_TRUE(device_reason) << reason;
         GTEST_SKIP() << "YubiKey cannot create keys: " << reason;
     }
@@ -2310,9 +2302,6 @@ TEST_F(CrossBackendTest, CreateKeyOnEachBackend)
     std::vector<std::byte> yk_sig(yk_sig_size);
     const std::size_t yk_written = yk_key->sign_hash(hash, yk_sig);
     EXPECT_GT(yk_written, std::size_t{0});
-
-    os_key->delete_key();
-    yk_key->delete_key();
 }
 
 #ifdef MPSS_BACKEND_YUBIKEY
@@ -2493,6 +2482,7 @@ TEST_F(YubiKeySlotBinding, LabelDoesNotResolveAfterSlotKeyIsReplaced)
 
     const std::string key_name = test_key_name("mpss_yk_slot_binding_test");
     MPSS::DeleteKey(key_name);
+    SCOPE_GUARD(MPSS::DeleteKey(key_name));
 
     if (nullptr == mpss::KeyPair::Create(key_name, ecdsa_secp256r1_sha256, "yubikey"))
     {
@@ -2525,6 +2515,41 @@ TEST_F(YubiKeySlotBinding, LabelDoesNotResolveAfterSlotKeyIsReplaced)
     }
 
     EXPECT_FALSE(opened);
+}
+
+// The application owns OpenSSL's default context and may leave it unable to decode keys. Labels still
+// resolve, and clearing never reports success while the key remains.
+TEST_F(YubiKeySlotBinding, LabelsResolveWhenTheDefaultContextCannotDecodeKeys)
+{
+    const KeyLocation location{
+        .backend_name = "yubikey", .name = test_key_name("default_context"), .device_id = std::to_string(serials_[0])};
+    static_cast<void>(KeyPair::Delete(location));
+    SCOPE_GUARD(static_cast<void>(KeyPair::Delete(location)));
+
+    if (nullptr == KeyPair::Create(location, ecdsa_secp256r1_sha256))
+    {
+        ASSERT_TRUE(yubikey_cannot_create_keys()) << mpss::get_error();
+        GTEST_SKIP() << "YubiKey cannot create keys: " << mpss::get_error();
+    }
+
+    bool deleted = false;
+    {
+        OSSL_LIB_CTX *application_context = OSSL_LIB_CTX_new();
+        ASSERT_NE(nullptr, application_context);
+        SCOPE_GUARD(OSSL_LIB_CTX_free(application_context));
+        ASSERT_EQ(1, EVP_set_default_properties(application_context, "provider=unavailable"));
+        OSSL_LIB_CTX *previous_context = OSSL_LIB_CTX_set0_default(application_context);
+        SCOPE_GUARD(OSSL_LIB_CTX_set0_default(previous_context));
+
+        EXPECT_NE(nullptr, KeyPair::Open(location)) << mpss::get_error();
+
+        // Where libykpiv uses OpenSSL, it authenticates the management key in this context, so clearing
+        // may fail here.
+        deleted = KeyPair::Delete(location);
+    }
+
+    const bool present = (nullptr != KeyPair::Open(location));
+    EXPECT_NE(deleted, present);
 }
 
 TEST_F(YubiKeySlotBinding, ReferenceDisambiguatesOnlySlotsWithTheRequestedName)
@@ -2650,15 +2675,10 @@ TEST_F(YubiKeySlotBinding, ExplicitLocationsOverrideEnvironmentAndReportActualSe
     // Explicit selection ignores the wrong default and reports the canonical device identifier.
     const auto actual_id = std::to_string(serials_[0]);
     const KeyLocation requested{"yubikey", test_key_name("explicit_location"), "000" + actual_id};
+    static_cast<void>(KeyPair::Delete(requested));
+    SCOPE_GUARD(static_cast<void>(KeyPair::Delete(requested)));
     auto created = KeyPair::Create(requested, ecdsa_secp256r1_sha256);
     ASSERT_NE(nullptr, created) << mpss::get_error();
-    bool deleted = false;
-    SCOPE_GUARD({
-        if (!deleted)
-        {
-            static_cast<void>(created->delete_key());
-        }
-    });
 
     const auto actual = created->location();
     EXPECT_EQ(std::optional<std::string>{actual_id}, actual.device_id);
@@ -2703,7 +2723,7 @@ TEST_F(YubiKeySlotBinding, ExplicitLocationsOverrideEnvironmentAndReportActualSe
     ASSERT_NE(nullptr, opened) << mpss::get_error();
     EXPECT_EQ(actual.device_id, opened->location().device_id);
 
-    deleted = KeyPair::Delete(actual.name, "yubikey");
+    const bool deleted = KeyPair::Delete(actual.name, "yubikey");
     EXPECT_TRUE(deleted) << mpss::get_error();
 }
 
@@ -2776,6 +2796,7 @@ TEST_F(MultiYubiKeyTest, OpenKeyFindsKeyOnNonFirstDevice)
     TargetDevice(serials_[1]);
 
     const std::string key_name = test_key_name("test_multi_yk_open");
+    const KeyLocation location{.backend_name = "yubikey", .name = key_name, .device_id = std::to_string(serials_[1])};
 
     // Clean up any leftover from a previous run.
     auto leftover = mpss::KeyPair::Open(key_name, "yubikey");
@@ -2784,6 +2805,8 @@ TEST_F(MultiYubiKeyTest, OpenKeyFindsKeyOnNonFirstDevice)
         leftover->delete_key();
         leftover.reset();
     }
+    static_cast<void>(KeyPair::Delete(location));
+    SCOPE_GUARD(static_cast<void>(KeyPair::Delete(location)));
 
     auto key = mpss::KeyPair::Create(key_name, ecdsa_secp256r1_sha256, "yubikey", unattended_policy);
     ASSERT_NE(nullptr, key);
@@ -2802,9 +2825,6 @@ TEST_F(MultiYubiKeyTest, OpenKeyFindsKeyOnNonFirstDevice)
     signature.resize(written);
 
     EXPECT_TRUE(opened->verify(hash, signature));
-
-    // Clean up. The opened handle has the correct serial stored, so delete_key targets the right device.
-    opened->delete_key();
 }
 
 TEST_F(MultiYubiKeyTest, SameNameUsesIndependentLocationsWithoutEnvironmentSwitching)
@@ -2812,20 +2832,16 @@ TEST_F(MultiYubiKeyTest, SameNameUsesIndependentLocationsWithoutEnvironmentSwitc
     const auto name = test_key_name("two_device_locations");
     const KeyLocation first{"yubikey", name, std::to_string(serials_[0])};
     const KeyLocation second{"yubikey", name, std::to_string(serials_[1])};
+    static_cast<void>(KeyPair::Delete(first));
+    static_cast<void>(KeyPair::Delete(second));
+    SCOPE_GUARD(static_cast<void>(KeyPair::Delete(first)));
+    SCOPE_GUARD(static_cast<void>(KeyPair::Delete(second)));
 
     auto key_a = KeyPair::Create(first, ecdsa_secp256r1_sha256, unattended_policy);
     ASSERT_NE(nullptr, key_a) << mpss::get_error();
-    bool first_deleted = false;
-    SCOPE_GUARD({
-        if (!first_deleted)
-        {
-            static_cast<void>(key_a->delete_key());
-        }
-    });
 
     auto key_b = KeyPair::Create(second, ecdsa_secp256r1_sha256, unattended_policy);
     ASSERT_NE(nullptr, key_b) << mpss::get_error();
-    SCOPE_GUARD(static_cast<void>(key_b->delete_key()));
 
     KeyReference reference_a{key_a->location(), key_a->algorithm(), std::vector<std::byte>(key_a->extract_key_size())};
     KeyReference reference_b{key_b->location(), key_b->algorithm(), std::vector<std::byte>(key_b->extract_key_size())};
@@ -2865,7 +2881,7 @@ TEST_F(MultiYubiKeyTest, SameNameUsesIndependentLocationsWithoutEnvironmentSwitc
     }
 
     // Deleting the name on one device must not affect the same name on the other.
-    first_deleted = KeyPair::Delete(first);
+    const bool first_deleted = KeyPair::Delete(first);
     EXPECT_TRUE(first_deleted);
     EXPECT_EQ(nullptr, KeyPair::Open(first));
     EXPECT_NE(nullptr, KeyPair::Open(second));
@@ -2875,6 +2891,10 @@ TEST_F(MultiYubiKeyTest, KeysOnDifferentDevicesAreIndependent)
 {
     const std::string key_name_a = test_key_name("test_multi_yk_a");
     const std::string key_name_b = test_key_name("test_multi_yk_b");
+    const KeyLocation location_a{
+        .backend_name = "yubikey", .name = key_name_a, .device_id = std::to_string(serials_[0])};
+    const KeyLocation location_b{
+        .backend_name = "yubikey", .name = key_name_b, .device_id = std::to_string(serials_[1])};
 
     // Clean up any leftovers, targeting each device in turn.
     for (const std::uint32_t serial : serials_)
@@ -2891,6 +2911,8 @@ TEST_F(MultiYubiKeyTest, KeysOnDifferentDevicesAreIndependent)
             leftover_b->delete_key();
         }
     }
+    SCOPE_GUARD(static_cast<void>(KeyPair::Delete(location_a)));
+    SCOPE_GUARD(static_cast<void>(KeyPair::Delete(location_b)));
 
     // Create key A on device 0.
     TargetDevice(serials_[0]);
@@ -2927,10 +2949,6 @@ TEST_F(MultiYubiKeyTest, KeysOnDifferentDevicesAreIndependent)
     // Cross-verification fails (different keys on different devices).
     EXPECT_FALSE(key_a->verify(hash, sig_b));
     EXPECT_FALSE(key_b->verify(hash, sig_a));
-
-    // Clean up.
-    key_a->delete_key();
-    key_b->delete_key();
 }
 
 // The suite pins a serial, so automatic selection is exercised by clearing it here.
@@ -2953,6 +2971,8 @@ TEST_F(MultiYubiKeyTest, AnAmbiguousDeviceIsRefusedRatherThanGuessed)
         leftover->delete_key();
         leftover.reset();
     }
+    const KeyLocation location{.backend_name = "yubikey", .name = key_name, .device_id = std::to_string(serials_[0])};
+    SCOPE_GUARD(static_cast<void>(KeyPair::Delete(location)));
 
     std::unique_ptr<mpss::KeyPair> created =
         mpss::KeyPair::Create(key_name, ecdsa_secp256r1_sha256, "yubikey", unattended_policy);
@@ -3069,6 +3089,28 @@ TEST(YubiKeyRejectedPins, ARejectionOnOneDeviceDoesNotBlockAnother)
     EXPECT_FALSE(pin_already_rejected(other_serial, "not-a-real-pin-a"));
 }
 
+// The record does not depend on what the application has done to OpenSSL's default context.
+TEST(YubiKeyRejectedPins, TheRecordDoesNotDependOnTheDefaultContext)
+{
+    using namespace mpss::impl::yubikey;
+
+    const std::uint32_t serial = unique_test_serial();
+    remember_rejected_pin(serial, "not-a-real-pin-a");
+
+    OSSL_LIB_CTX *application_context = OSSL_LIB_CTX_new();
+    ASSERT_NE(nullptr, application_context);
+    SCOPE_GUARD(OSSL_LIB_CTX_free(application_context));
+    ASSERT_EQ(1, EVP_set_default_properties(application_context, "provider=unavailable"));
+    OSSL_LIB_CTX *previous_context = OSSL_LIB_CTX_set0_default(application_context);
+    SCOPE_GUARD(OSSL_LIB_CTX_set0_default(previous_context));
+
+    EXPECT_TRUE(pin_already_rejected(serial, "not-a-real-pin-a"));
+    EXPECT_FALSE(pin_already_rejected(serial, "not-a-real-pin-b"));
+
+    remember_rejected_pin(serial, "not-a-real-pin-b");
+    EXPECT_TRUE(pin_already_rejected(serial, "not-a-real-pin-b"));
+}
+
 TEST(YubiKeyDeviceIdentifier, AcceptsOnlyNonzeroDecimalSerials)
 {
     using mpss::impl::yubikey::utils::parse_serial;
@@ -3162,6 +3204,7 @@ TEST_F(YubiKeyPinGuard, AnAlreadyRejectedPinIsNotPresentedToTheDevice)
 {
     const std::string key_name = test_key_name("mpss_yk_pin_guard");
     MPSS::DeleteKey(key_name);
+    SCOPE_GUARD(MPSS::DeleteKey(key_name));
 
     std::unique_ptr<mpss::KeyPair> handle = mpss::KeyPair::Create(key_name, ecdsa_secp256r1_sha256, "yubikey");
     if (nullptr == handle)
@@ -3183,7 +3226,6 @@ TEST_F(YubiKeyPinGuard, AnAlreadyRejectedPinIsNotPresentedToTheDevice)
     EXPECT_NE(std::string::npos, mpss::get_error().find("already rejected"));
 
     restore_pin();
-    MPSS::DeleteKey(key_name);
 }
 
 // Every PIN request must be answered by exactly one result, including when the PIN never reaches the
@@ -3268,6 +3310,7 @@ TEST_F(YubiKeyPinGuard, EveryPinRequestIsAnsweredByExactlyOneResult)
 
     const std::string key_name = test_key_name("mpss_yk_one_result");
     MPSS::DeleteKey(key_name);
+    SCOPE_GUARD(MPSS::DeleteKey(key_name));
     std::unique_ptr<mpss::KeyPair> handle = mpss::KeyPair::Create(key_name, ecdsa_secp256r1_sha256, "yubikey");
     if (nullptr == handle)
     {
@@ -3304,7 +3347,6 @@ TEST_F(YubiKeyPinGuard, EveryPinRequestIsAnsweredByExactlyOneResult)
     EXPECT_EQ(mpss::PinResult::not_attempted, throwing->last_result);
 
     mpss::ResetDefaultInteractionHandler();
-    MPSS::DeleteKey(key_name);
 }
 #endif // MPSS_CORE_IS_SHARED
 

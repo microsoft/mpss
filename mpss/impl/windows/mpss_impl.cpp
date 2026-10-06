@@ -14,6 +14,7 @@
 #include <ncrypt.h>
 #include <optional>
 #include <string>
+#include <tbs.h>
 
 namespace
 {
@@ -88,6 +89,20 @@ NCRYPT_PROV_HANDLE GetProvider(LPCWSTR provider_name, bool speculative, bool *co
     return provider_handle;
 }
 
+bool IsTpmProvider(LPCWSTR provider_name)
+{
+    return 0 == std::wcscmp(tpm_provider_name, provider_name);
+}
+
+// Whether the TPM Base Services report that this machine has no TPM. Opening the platform provider has
+// no status documented to mean that, and the ones it returns without a TPM are also returned by a TPM
+// that is present but not ready, so only this answer rules out keys held by a TPM.
+bool TpmConfirmedAbsent()
+{
+    TPM_DEVICE_INFO info{};
+    return static_cast<TBS_RESULT>(TBS_E_TPM_NOT_FOUND) == ::Tbsi_GetDeviceInfo(sizeof(info), &info);
+}
+
 // The three-outcome result of looking for a key in one provider. A handle-or-zero answer cannot
 // distinguish a provider that holds no such key from one that could not be read, and creating a key
 // on the strength of the second is what overwrites a key that is already there.
@@ -108,12 +123,26 @@ OpenKeyResult OpenKeyInProvider(LPCWSTR provider_name, std::string_view name)
             return {.status = operational_error, .value = 0};
         }
 
-        // A provider that cannot be opened holds no key that anything can reach, including this
-        // backend's own creation path, so it does not make the name indeterminate. This is what a
-        // machine without a TPM looks like, and creation has to keep working there. It is also an
-        // assumption rather than a proof: a key another tool put in a provider this process cannot
-        // open is invisible here, so clearing a name cannot speak for such a provider.
-        return {.status = not_found, .value = 0};
+        // A machine without a TPM cannot open the platform provider, and no key can be held there, so
+        // that is the one provider failure that rules the name out. Creation has to keep working on such
+        // a machine. Any other provider that cannot be opened may hold the name.
+        const std::string reason{mpss::get_error()};
+        if (IsTpmProvider(provider_name))
+        {
+            if (TpmConfirmedAbsent())
+            {
+                return {.status = not_found, .value = 0};
+            }
+
+            mpss::utils::log_and_set_error("Cannot look for key '{}' in the TPM provider: {} The TPM Base Services did "
+                                           "not report that this machine has no TPM, so the name cannot be ruled out.",
+                                           name, reason);
+            return {.status = operational_error, .value = 0};
+        }
+
+        mpss::utils::log_and_set_error("Cannot look for key '{}' in the software key storage provider: {}", name,
+                                       reason);
+        return {.status = operational_error, .value = 0};
     }
 
     SCOPE_GUARD(::NCryptFreeObject(provider_handle));

@@ -5,13 +5,13 @@
 #include "mpss/impl/yubikey/yk_keypair.h"
 #include "mpss/impl/yubikey/yk_piv.h"
 #include "mpss/impl/yubikey/yk_utils.h"
+#include "mpss/utils/host_context.h"
 #include "mpss/utils/scope_guard.h"
 #include "mpss/utils/utilities.h"
 #include <algorithm>
 #include <cstdint>
 #include <openssl/core_names.h>
 #include <openssl/evp.h>
-#include <openssl/provider.h>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -35,19 +35,11 @@ VerifyOutcome openssl_ecdsa_verify(const char *group_name, std::span<const std::
     using enum VerifyOutcome;
 
     // Host verification must not inherit application-loaded providers or default properties.
-    OSSL_LIB_CTX *libctx = OSSL_LIB_CTX_new();
+    OSSL_LIB_CTX *libctx = mpss::utils::host_context();
     if (nullptr == libctx)
     {
         return error;
     }
-    SCOPE_GUARD(OSSL_LIB_CTX_free(libctx));
-
-    OSSL_PROVIDER *provider = OSSL_PROVIDER_load(libctx, "default");
-    if (nullptr == provider)
-    {
-        return error;
-    }
-    SCOPE_GUARD(OSSL_PROVIDER_unload(provider));
 
     // Build an EVP_PKEY from the raw uncompressed EC point (X9.63: 04||X||Y).
     OSSL_PARAM params[] = {

@@ -4,6 +4,7 @@
 #include "mpss/serialization.h"
 #include "mpss/impl/serialization.h"
 #include "mpss/mpss.h"
+#include "mpss/utils/host_context.h"
 #include "mpss/utils/ossl_ptr.h"
 #include "mpss/utils/scope_guard.h"
 #include "mpss/utils/utilities.h"
@@ -15,7 +16,6 @@
 #include <openssl/core_names.h>
 #include <openssl/evp.h>
 #include <openssl/pem.h>
-#include <openssl/provider.h>
 #include <openssl/x509.h>
 #include <utility>
 
@@ -28,6 +28,7 @@ using mpss::utils::bio_ptr;
 using mpss::utils::evp_pkey_ctx_ptr;
 using mpss::utils::evp_pkey_ptr;
 using mpss::utils::fn_deleter;
+using mpss::utils::host_context;
 using mpss::utils::openssl_buf_ptr;
 
 constexpr std::uint64_t reference_version = 1;
@@ -60,25 +61,6 @@ constexpr std::array algorithm_parameters{std::pair{Algorithm::ecdsa_secp256r1_s
 
 // OpenSSL keeps a BIT STRING's unused-bit count in these flag bits.
 constexpr unsigned long unused_bits_flags = ASN1_STRING_FLAG_BITS_LEFT | 7U;
-
-// Public keys are validated in a private context, so the application's providers and default properties
-// cannot affect the result. Immortal like BackendRegistry::Instance(): never freed, so it outlives host
-// statics that serialize during exit; OSSL_LIB_CTX use is thread-safe.
-[[nodiscard]]
-OSSL_LIB_CTX *host_context()
-{
-    static OSSL_LIB_CTX *const context = [] {
-        OSSL_LIB_CTX *created = OSSL_LIB_CTX_new();
-        if (nullptr != created && nullptr == OSSL_PROVIDER_load(created, "default"))
-        {
-            OSSL_LIB_CTX_free(created);
-            created = nullptr;
-        }
-
-        return created;
-    }();
-    return context;
-}
 
 [[nodiscard]]
 std::nullopt_t failure(std::string_view message)

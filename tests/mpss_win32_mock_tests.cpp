@@ -27,6 +27,7 @@
 
 #include <Windows.h>
 #include <ncrypt.h>
+#include <tbs.h>
 
 using ::testing::_;
 using ::testing::AnyNumber;
@@ -50,6 +51,7 @@ MOCK_STDCALL_FUNC(SECURITY_STATUS, NCryptExportKey, NCRYPT_KEY_HANDLE, NCRYPT_KE
 MOCK_STDCALL_FUNC(SECURITY_STATUS, NCryptSignHash, NCRYPT_KEY_HANDLE, VOID *, PBYTE, DWORD, PBYTE, DWORD, DWORD *,
                   DWORD);
 MOCK_STDCALL_FUNC(SECURITY_STATUS, NCryptVerifySignature, NCRYPT_KEY_HANDLE, VOID *, PBYTE, DWORD, PBYTE, DWORD, DWORD);
+MOCK_STDCALL_FUNC(TBS_RESULT, Tbsi_GetDeviceInfo, UINT32, PVOID);
 
 namespace
 {
@@ -61,6 +63,11 @@ constexpr SECURITY_STATUS status_not_found = static_cast<SECURITY_STATUS>(NTE_BA
 constexpr SECURITY_STATUS status_failure = static_cast<SECURITY_STATUS>(NTE_FAIL);
 constexpr SECURITY_STATUS status_not_supported = static_cast<SECURITY_STATUS>(NTE_NOT_SUPPORTED);
 constexpr SECURITY_STATUS status_exists = static_cast<SECURITY_STATUS>(NTE_EXISTS);
+
+// What the TPM Base Services answer when asked whether the machine has a TPM.
+constexpr TBS_RESULT tpm_present = TBS_SUCCESS;
+constexpr TBS_RESULT tpm_absent = static_cast<TBS_RESULT>(TBS_E_TPM_NOT_FOUND);
+constexpr TBS_RESULT tbs_disabled = static_cast<TBS_RESULT>(TBS_E_SERVICE_DISABLED);
 
 // What a key without a named group reports when asked for one. Measured on Windows: a key created
 // through a suffixed algorithm identifier answers NTE_NOT_FOUND, not NTE_NOT_SUPPORTED.
@@ -117,6 +124,7 @@ class WindowsKeyCreation : public ::testing::Test
 
         EXPECT_MODULE_FUNC_CALL(NCryptDeleteKey, _, _).Times(AnyNumber()).WillRepeatedly(Return(ERROR_SUCCESS));
         EXPECT_MODULE_FUNC_CALL(NCryptFreeObject, _).Times(AnyNumber()).WillRepeatedly(Return(ERROR_SUCCESS));
+        EXPECT_MODULE_FUNC_CALL(Tbsi_GetDeviceInfo, _, _).Times(AnyNumber()).WillRepeatedly(Return(tpm_present));
     }
 
     void TearDown() override
@@ -129,6 +137,7 @@ class WindowsKeyCreation : public ::testing::Test
         RESTORE_MODULE_FUNC(NCryptGetProperty);
         RESTORE_MODULE_FUNC(NCryptDeleteKey);
         RESTORE_MODULE_FUNC(NCryptFreeObject);
+        RESTORE_MODULE_FUNC(Tbsi_GetDeviceInfo);
 
         VERIFY_AND_CLEAR_MODULE_FUNC(NCryptOpenStorageProvider);
         VERIFY_AND_CLEAR_MODULE_FUNC(NCryptOpenKey);
@@ -138,9 +147,13 @@ class WindowsKeyCreation : public ::testing::Test
         VERIFY_AND_CLEAR_MODULE_FUNC(NCryptGetProperty);
         VERIFY_AND_CLEAR_MODULE_FUNC(NCryptDeleteKey);
         VERIFY_AND_CLEAR_MODULE_FUNC(NCryptFreeObject);
+        VERIFY_AND_CLEAR_MODULE_FUNC(Tbsi_GetDeviceInfo);
     }
 
-    static void FailTpmProvider()
+    // The platform provider cannot be opened. By default the TPM Base Services report that the
+    // machine has no TPM, which is what a host without one looks like; the other answers describe a
+    // TPM that may hold keys this process cannot reach.
+    static void FailTpmProvider(TBS_RESULT device_info = tpm_absent)
     {
         EXPECT_MODULE_FUNC_CALL(NCryptOpenStorageProvider, _, _, _)
             .Times(AnyNumber())
@@ -150,6 +163,22 @@ class WindowsKeyCreation : public ::testing::Test
                     return status_failure;
                 }
                 *out = ksp_provider_handle;
+                return ERROR_SUCCESS;
+            });
+        EXPECT_MODULE_FUNC_CALL(Tbsi_GetDeviceInfo, _, _).Times(AnyNumber()).WillRepeatedly(Return(device_info));
+    }
+
+    // The software key storage provider cannot be opened, while the platform provider can.
+    static void FailSoftwareKsp()
+    {
+        EXPECT_MODULE_FUNC_CALL(NCryptOpenStorageProvider, _, _, _)
+            .Times(AnyNumber())
+            .WillRepeatedly([](NCRYPT_PROV_HANDLE *out, LPCWSTR provider, DWORD) -> SECURITY_STATUS {
+                if (!IsTpmProvider(provider))
+                {
+                    return status_failure;
+                }
+                *out = tpm_provider_handle;
                 return ERROR_SUCCESS;
             });
     }
@@ -761,9 +790,10 @@ TEST_F(WindowsKeyCreation, OpenOfAnAbsentKeyReportsNoError)
 }
 
 // Scenario: the platform provider cannot be opened at all, and the software KSP reports that it does
-// not hold the key. This is what a machine with no usable TPM looks like.
+// not hold the key. This is what a machine without a TPM looks like, which the TPM Base Services
+// confirm.
 // Expected behavior: a clean negative. One rung failing to open does not make the whole lookup an
-// operational failure when the remaining rung answered.
+// operational failure when that rung cannot hold a key.
 TEST_F(WindowsKeyCreation, OpenOfAnAbsentKeyWithNoTpmStillReportsNoError)
 {
     FailTpmProvider();
@@ -773,6 +803,67 @@ TEST_F(WindowsKeyCreation, OpenOfAnAbsentKeyWithNoTpmStillReportsNoError)
 
     EXPECT_EQ(nullptr, key);
     EXPECT_FALSE(mpss::has_error());
+}
+
+// Scenario: a provider cannot be opened where it may hold keys: the platform provider on a machine
+// whose TPM Base Services report a TPM or cannot answer, or the software KSP, which is always present.
+// Expected behavior: the name is not ruled out. Opening an absent key, creating, and clearing the name
+// all fail rather than treating the provider as empty.
+TEST_F(WindowsKeyCreation, AProviderThatCannotBeOpenedDoesNotRuleTheNameOut)
+{
+    struct ProviderFailure
+    {
+        const char *description;
+        void (*apply)();
+    };
+    const std::array failures{
+        ProviderFailure{.description = "TPM present", .apply = [] { FailTpmProvider(tpm_present); }},
+        ProviderFailure{.description = "TPM Base Services disabled", .apply = [] { FailTpmProvider(tbs_disabled); }},
+        ProviderFailure{.description = "software KSP", .apply = [] { FailSoftwareKsp(); }},
+    };
+
+    int create_attempts = 0;
+    EXPECT_MODULE_FUNC_CALL(NCryptCreatePersistedKey, _, _, _, _, _, _)
+        .Times(AnyNumber())
+        .WillRepeatedly([&create_attempts](NCRYPT_PROV_HANDLE, NCRYPT_KEY_HANDLE *out, LPCWSTR, LPCWSTR, DWORD,
+                                           DWORD) -> SECURITY_STATUS {
+            ++create_attempts;
+            *out = fake_key_handle;
+            return ERROR_SUCCESS;
+        });
+
+    for (const ProviderFailure &failure : failures)
+    {
+        SCOPED_TRACE(failure.description);
+        failure.apply();
+        create_attempts = 0;
+
+        EXPECT_EQ(nullptr, OpenOsKey());
+        EXPECT_TRUE(mpss::has_error());
+
+        EXPECT_EQ(nullptr, CreateOsKey());
+        EXPECT_EQ(0, create_attempts);
+        EXPECT_TRUE(mpss::has_error());
+
+        EXPECT_FALSE(mpss::KeyPair::Delete("mock_win32_key", "os"));
+        EXPECT_TRUE(mpss::has_error());
+    }
+}
+
+// Scenario: the platform provider cannot be opened on a machine with a TPM, and the software KSP holds
+// the key.
+// Expected behavior: the key opens. A provider that could not be read does not veto a key that another
+// provider holds.
+TEST_F(WindowsKeyCreation, AKeyInTheSoftwareKspOpensWhenTheTpmProviderCannotBeRead)
+{
+    FailTpmProvider(tpm_present);
+    KeyLivesIn(ksp_provider_handle);
+    AnswerKeyProperties(Isolation::not_isolated);
+
+    std::unique_ptr<mpss::KeyPair> key = OpenOsKey();
+
+    ASSERT_NE(nullptr, key);
+    EXPECT_EQ(mpss::StorageTier::windows_software, key->key_info().storage_tier);
 }
 
 // Scenario: creation is asked for a name whose store could not be read. Creation itself would

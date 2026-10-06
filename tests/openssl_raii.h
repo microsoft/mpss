@@ -16,11 +16,16 @@ namespace mpss_openssl::tests
 using mpss::utils::bio_ptr;
 using mpss::utils::evp_pkey_ctx_ptr;
 using mpss::utils::evp_pkey_ptr;
+using mpss::utils::ossl_lib_ctx_ptr;
+using mpss::utils::ossl_provider_ptr;
 
 // Test-only OpenSSL objects use the same shared deleter.
 using encoder_ctx_ptr = std::unique_ptr<OSSL_ENCODER_CTX, mpss::utils::fn_deleter<OSSL_ENCODER_CTX_free>>;
 using evp_md_ctx_ptr = std::unique_ptr<EVP_MD_CTX, mpss::utils::fn_deleter<EVP_MD_CTX_free>>;
+using evp_md_ptr = std::unique_ptr<EVP_MD, mpss::utils::fn_deleter<EVP_MD_free>>;
 using x509_ptr = std::unique_ptr<X509, mpss::utils::fn_deleter<X509_free>>;
+using x509_store_ctx_ptr = std::unique_ptr<X509_STORE_CTX, mpss::utils::fn_deleter<X509_STORE_CTX_free>>;
+using x509_store_ptr = std::unique_ptr<X509_STORE, mpss::utils::fn_deleter<X509_STORE_free>>;
 using ssl_ctx_ptr = std::unique_ptr<SSL_CTX, mpss::utils::fn_deleter<SSL_CTX_free>>;
 using ssl_ptr = std::unique_ptr<SSL, mpss::utils::fn_deleter<SSL_free>>;
 

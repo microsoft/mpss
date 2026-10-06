@@ -446,8 +446,9 @@ if(TARGET ${mpss_TARGET})
 
     # Platform-specific dependencies.
     if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
-        # mpss on Windows requires ncrypt.lib.
+        # mpss on Windows requires ncrypt.lib, and tbs.lib to confirm that a machine has no TPM.
         target_link_libraries(${mpss_TARGET} PRIVATE ncrypt)
+        target_link_libraries(${mpss_TARGET} PRIVATE tbs)
         target_link_libraries(${mpss_TARGET} PRIVATE crypt32)
     elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin" OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
         target_link_libraries(${mpss_TARGET} PRIVATE

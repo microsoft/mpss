@@ -299,13 +299,13 @@ public class KeyManagement {
                 try {
                     kp = CreateKey(keyName, algorithm, useStrongbox);
                 } catch (StrongBoxUnavailableException ex) {
-                    Log.w("MPSS", "StrongBox is not available.");
+                    Log.i("MPSS", "StrongBox is not available.");
                 }
 
                 if (!useStrongbox && null == kp) {
                     // If we are not using StrongBox, no need to try again.
                     String msg = "Failed to create key in TEE.";
-                    Log.w("MPSS", msg);
+                    Log.e("MPSS", msg);
                     SetError(msg);
                     return null;
                 }

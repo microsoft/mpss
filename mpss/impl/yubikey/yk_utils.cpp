@@ -8,6 +8,7 @@
 #include <charconv>
 #include <cstdlib>
 #include <format>
+#include <openssl/obj_mac.h>
 #include <ykpiv/ykpiv.h>
 
 namespace
@@ -306,6 +307,19 @@ const char *get_group_name(Algorithm algorithm)
         return "P-384";
     default:
         return nullptr;
+    }
+}
+
+int get_group_nid(Algorithm algorithm)
+{
+    switch (algorithm)
+    {
+    case ecdsa_secp256r1_sha256:
+        return NID_X9_62_prime256v1;
+    case ecdsa_secp384r1_sha384:
+        return NID_secp384r1;
+    default:
+        return NID_undef;
     }
 }
 

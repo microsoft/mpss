@@ -440,23 +440,23 @@ class YubiKeyPIV
     enum class LabelBinding
     {
         match,       ///< The certificate describes the key the slot holds.
-        mismatch,    ///< The two differ, or the certificate carries no key at all.
+        mismatch,    ///< The certificate describes a different key, or none.
         undetermined ///< Either side could not be read, so the slot may still carry the name.
     };
 
     /**
      * @brief Whether a label certificate describes the key the slot currently holds.
      *
-     * Compares the certificate's subject public key against the slot's own public key.
+     * Compares the encoded subject public key of the certificate with the slot's own public key, without
+     * decoding either.
      *
      * @param slot The PIV slot number.
      * @param cert The certificate read from that slot.
      * @return LabelBinding::match when the two keys are the same, LabelBinding::mismatch when they
-     * differ or the certificate carries no key, and LabelBinding::undetermined when either key
-     * could not be read.
+     * differ, and LabelBinding::undetermined when either key could not be read.
      */
     [[nodiscard]]
-    LabelBinding slot_key_matches_label(std::uint8_t slot, X509 *cert);
+    LabelBinding slot_key_matches_label(std::uint8_t slot, const X509 *cert);
 
     /**
      * @brief Outcome of an attempt to erase a slot outright.

@@ -15,9 +15,11 @@ Enable YubiKey support with `MPSS_BACKEND_YUBIKEY=ON`. It is optional on Windows
 required on Linux, and unsupported on iOS/Android.
 
 **Windows protection is per key.** Creation tries TPM, VBS, then software storage; unsupported
-TPM algorithms can fall back without leaving an error. There is no minimum-storage-tier
-parameter. Read `key_info().storage_tier` for `StorageTier::windows_tpm`,
-`StorageTier::windows_vbs`, or `StorageTier::windows_software`.
+TPM algorithms can fall back without leaving an error. If the TPM provider cannot be opened and the
+TPM Base Services do not report that the machine has no TPM, creation fails rather than falling
+back, because a TPM may already hold the name. There is no minimum-storage-tier parameter. Read
+`key_info().storage_tier` for `StorageTier::windows_tpm`, `StorageTier::windows_vbs`, or
+`StorageTier::windows_software`.
 `is_hardware_backed` is **true only for TPM keys**. A VBS key is not exportable either, but its
 isolation rests on the hypervisor and its protection at rest on conditions MPSS cannot check, so it
 reports false; read the tier rather than the flag to tell VBS from software storage.
@@ -773,7 +775,8 @@ bool cleared_on_yubikey = KeyPair::Delete("my-key", "yubikey");
 Invalid input, unavailable storage, or refused authentication fails. Failure can be partial;
 do not reuse the name until a later call succeeds.
 
-Windows skips providers it cannot open, so success does not establish absence there.
+On Windows, a provider that cannot be opened rules a name out only when it is the TPM provider and the TPM Base Services report that the machine has no TPM.
+Any other provider that cannot be opened leaves the name unresolved: clearing the name fails, and creating or opening a name that no readable provider holds fails rather than treating that provider as empty.
 YubiKey deletion by name requires a valid [slot label](#yubikey-backend-limitations-and-considerations).
 In the process that deletes a key, no handle can reach it afterwards, whichever API deleted it.
 
@@ -1238,8 +1241,11 @@ An invalid value fails the operation, whether it comes from the environment or f
 Existing handles keep their selected device when the default changes.
 A serial identifies a target but does not authenticate hardware.
 
-YubiKey host-side signature verification uses an isolated OpenSSL context with the built-in default provider.
+The YubiKey backend does its own OpenSSL work, verifying signatures, reading and writing slot labels, and fingerprinting refused PINs, in an isolated OpenSSL context with the built-in default provider.
 It does not inherit the application's provider configuration or FIPS property selection.
+The exception is management-key authentication, which creating and deleting keys require: libykpiv performs it, and on macOS and Linux it uses OpenSSL's default library context.
+If the application's configuration leaves that context unable to provide the management key's cipher or random number generation, those operations fail with a management-key authentication error, even when the key is correct.
+On Windows, libykpiv uses CNG for this instead.
 
 Each device has its own PIN, while `MPSS_YUBIKEY_PIN` holds a single value. MPSS declines to present
 a PIN that a device has already refused, and reports that as the reason the operation failed, so a

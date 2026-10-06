@@ -26,7 +26,11 @@ inline std::string der_value(int tag, std::string_view content, bool constructed
     std::string result(static_cast<std::size_t>(size), '\0');
     auto *cursor = reinterpret_cast<unsigned char *>(result.data());
     ASN1_put_object(&cursor, constructed ? 1 : 0, static_cast<int>(content.size()), tag, tag_class);
-    std::memcpy(cursor, content.data(), content.size());
+    if (!content.empty())
+    {
+        std::memcpy(cursor, content.data(), content.size());
+    }
+
     return result;
 }
 

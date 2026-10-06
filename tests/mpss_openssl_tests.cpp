@@ -55,6 +55,19 @@ using namespace std::string_view_literals;
 namespace
 {
 
+using mpss::tests::der_value;
+using mpss::tests::public_key_der;
+using mpss::tests::reference_der;
+using mpss_openssl::tests::bio_ptr;
+using mpss_openssl::tests::encoder_ctx_ptr;
+using mpss_openssl::tests::evp_md_ctx_ptr;
+using mpss_openssl::tests::evp_md_ptr;
+using mpss_openssl::tests::evp_pkey_ctx_ptr;
+using mpss_openssl::tests::evp_pkey_ptr;
+using mpss_openssl::tests::ssl_ctx_ptr;
+using mpss_openssl::tests::ssl_ptr;
+using mpss_openssl::tests::x509_ptr;
+
 [[nodiscard]]
 bool has_algorithm_name(const char *algorithm_names, std::string_view expected)
 {
@@ -126,26 +139,23 @@ class MPSSDigest : public ::testing::Test
         unsigned int mpss_digest_len = 0;
         unsigned int default_digest_len = 0;
 
-        EVP_MD *md = EVP_MD_fetch(mpss_libctx, hash_name, "provider=mpss");
+        const evp_md_ptr md(EVP_MD_fetch(mpss_libctx, hash_name, "provider=mpss"));
         ASSERT_NE(nullptr, md);
-        EVP_MD_CTX *mdctx = EVP_MD_CTX_new();
+        const evp_md_ctx_ptr mdctx(EVP_MD_CTX_new());
         ASSERT_NE(nullptr, mdctx);
-        ASSERT_EQ(1, EVP_DigestInit(mdctx, md));
-        ASSERT_EQ(1, EVP_DigestUpdate(mdctx, in.data(), in.size()));
+        ASSERT_EQ(1, EVP_DigestInit(mdctx.get(), md.get()));
+        ASSERT_EQ(1, EVP_DigestUpdate(mdctx.get(), in.data(), in.size()));
         unsigned int digest_len = 0;
-        ASSERT_EQ(1, EVP_DigestFinal(mdctx, mpss_digest, &digest_len));
+        ASSERT_EQ(1, EVP_DigestFinal(mdctx.get(), mpss_digest, &digest_len));
         mpss_digest_len = digest_len;
-        EVP_MD_CTX_free(mdctx);
-        EVP_MD_free(md);
 
         const EVP_MD *default_md = evp_md_func();
         ASSERT_NE(nullptr, default_md);
-        mdctx = EVP_MD_CTX_new();
-        ASSERT_NE(nullptr, mdctx);
-        ASSERT_EQ(1, EVP_DigestInit(mdctx, default_md));
-        ASSERT_EQ(1, EVP_DigestUpdate(mdctx, in.data(), in.size()));
-        ASSERT_EQ(1, EVP_DigestFinal(mdctx, default_digest, &default_digest_len));
-        EVP_MD_CTX_free(mdctx);
+        const evp_md_ctx_ptr default_mdctx(EVP_MD_CTX_new());
+        ASSERT_NE(nullptr, default_mdctx);
+        ASSERT_EQ(1, EVP_DigestInit(default_mdctx.get(), default_md));
+        ASSERT_EQ(1, EVP_DigestUpdate(default_mdctx.get(), in.data(), in.size()));
+        ASSERT_EQ(1, EVP_DigestFinal(default_mdctx.get(), default_digest, &default_digest_len));
 
         ASSERT_EQ(mpss_digest_len, default_digest_len);
         ASSERT_TRUE(
@@ -154,18 +164,6 @@ class MPSSDigest : public ::testing::Test
 };
 
 constexpr const char *mpss_p256_algorithm = "ecdsa_secp256r1_sha256";
-
-using mpss::tests::der_value;
-using mpss::tests::public_key_der;
-using mpss::tests::reference_der;
-using mpss_openssl::tests::bio_ptr;
-using mpss_openssl::tests::encoder_ctx_ptr;
-using mpss_openssl::tests::evp_md_ctx_ptr;
-using mpss_openssl::tests::evp_pkey_ctx_ptr;
-using mpss_openssl::tests::evp_pkey_ptr;
-using mpss_openssl::tests::ssl_ctx_ptr;
-using mpss_openssl::tests::ssl_ptr;
-using mpss_openssl::tests::x509_ptr;
 
 // Process-unique, like every other key name in this suite, so that two test binaries running at the
 // same time cannot delete each other's fixture key. A function rather than a namespace-scope string
@@ -774,16 +772,17 @@ TEST(MPSS_OpenSSL, GetKeyDescriptors)
     const std::string key_name_str = test_key_name("test_key_params");
     const char *key_name = key_name_str.c_str();
     const bool _ = mpss_delete_key(key_name);
+    SCOPE_GUARD(mpss_delete_key(key_name));
 
-    OSSL_LIB_CTX *mpss_libctx = OSSL_LIB_CTX_new();
+    const ossl_lib_ctx_ptr mpss_libctx(OSSL_LIB_CTX_new());
     ASSERT_NE(nullptr, mpss_libctx);
-    ASSERT_NE(0, OSSL_PROVIDER_add_builtin(mpss_libctx, "mpss", OSSL_provider_init));
-    OSSL_PROVIDER *mpss_prov = OSSL_PROVIDER_load(mpss_libctx, "mpss");
+    ASSERT_NE(0, OSSL_PROVIDER_add_builtin(mpss_libctx.get(), "mpss", OSSL_provider_init));
+    ossl_provider_ptr mpss_prov(OSSL_PROVIDER_load(mpss_libctx.get(), "mpss"));
     ASSERT_NE(nullptr, mpss_prov);
 
-    EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_from_name(mpss_libctx, "EC", "provider=mpss");
+    evp_pkey_ctx_ptr ctx(EVP_PKEY_CTX_new_from_name(mpss_libctx.get(), "EC", "provider=mpss"));
     ASSERT_NE(nullptr, ctx);
-    ASSERT_EQ(1, EVP_PKEY_keygen_init(ctx));
+    ASSERT_EQ(1, EVP_PKEY_keygen_init(ctx.get()));
     OSSL_PARAM params[] = {
         OSSL_PARAM_construct_utf8_string("mpss_key_name", const_cast<char *>(key_name), 0),
 
@@ -791,10 +790,11 @@ TEST(MPSS_OpenSSL, GetKeyDescriptors)
         // this works just fine.
         OSSL_PARAM_construct_utf8_string("mpss_algorithm", const_cast<char *>("ecdsa with p256 and sha256"), 0),
         OSSL_PARAM_END};
-    ASSERT_EQ(1, EVP_PKEY_CTX_set_params(ctx, params));
-    EVP_PKEY *pkey = nullptr;
-    ASSERT_EQ(1, EVP_PKEY_generate(ctx, &pkey));
-    EVP_PKEY_CTX_free(ctx);
+    ASSERT_EQ(1, EVP_PKEY_CTX_set_params(ctx.get(), params));
+    EVP_PKEY *generated = nullptr;
+    ASSERT_EQ(1, EVP_PKEY_generate(ctx.get(), &generated));
+    evp_pkey_ptr pkey(generated);
+    ctx.reset();
 
     // Query gettable parameters
     OSSL_PARAM get_params[4];
@@ -806,7 +806,7 @@ TEST(MPSS_OpenSSL, GetKeyDescriptors)
     get_params[2] = OSSL_PARAM_construct_int("storage_tier", &tier);
     get_params[3] = OSSL_PARAM_END;
 
-    ASSERT_EQ(1, EVP_PKEY_get_params(pkey, get_params));
+    ASSERT_EQ(1, EVP_PKEY_get_params(pkey.get(), get_params));
     // is_hardware_backed should be 0 or 1
     ASSERT_TRUE(0 == is_hw || 1 == is_hw);
     // storage_description should not be empty
@@ -821,10 +821,9 @@ TEST(MPSS_OpenSSL, GetKeyDescriptors)
     EXPECT_EQ(is_hw, tier_info.is_hardware_backed ? 1 : 0);
     EXPECT_EQ(std::string(storage_desc), std::string(tier_info.description));
 
-    EVP_PKEY_free(pkey);
+    pkey.reset();
     ASSERT_EQ(1, mpss_delete_key(key_name));
-    ASSERT_NE(0, OSSL_PROVIDER_unload(mpss_prov));
-    OSSL_LIB_CTX_free(mpss_libctx);
+    ASSERT_NE(0, OSSL_PROVIDER_unload(mpss_prov.release()));
 }
 
 TEST(MPSS_OpenSSL, GenSetParamsRejectsNullString)
@@ -832,23 +831,22 @@ TEST(MPSS_OpenSSL, GenSetParamsRejectsNullString)
     // A keygen string param whose data pointer is NULL must be rejected cleanly:
     // OSSL_PARAM_get_utf8_string_ptr reports success with a nullptr value for such a param. No key is
     // generated here (set_params runs before generate), so this is backend-independent (never skipped).
-    OSSL_LIB_CTX *mpss_libctx = OSSL_LIB_CTX_new();
+    const ossl_lib_ctx_ptr mpss_libctx(OSSL_LIB_CTX_new());
     ASSERT_NE(nullptr, mpss_libctx);
-    ASSERT_NE(0, OSSL_PROVIDER_add_builtin(mpss_libctx, "mpss", OSSL_provider_init));
-    OSSL_PROVIDER *mpss_prov = OSSL_PROVIDER_load(mpss_libctx, "mpss");
+    ASSERT_NE(0, OSSL_PROVIDER_add_builtin(mpss_libctx.get(), "mpss", OSSL_provider_init));
+    ossl_provider_ptr mpss_prov(OSSL_PROVIDER_load(mpss_libctx.get(), "mpss"));
     ASSERT_NE(nullptr, mpss_prov);
 
-    EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_from_name(mpss_libctx, "EC", "provider=mpss");
+    evp_pkey_ctx_ptr ctx(EVP_PKEY_CTX_new_from_name(mpss_libctx.get(), "EC", "provider=mpss"));
     ASSERT_NE(nullptr, ctx);
-    ASSERT_EQ(1, EVP_PKEY_keygen_init(ctx));
+    ASSERT_EQ(1, EVP_PKEY_keygen_init(ctx.get()));
 
     // data pointer NULL, type OSSL_PARAM_UTF8_STRING -> get_utf8_string_ptr yields (1, nullptr).
     OSSL_PARAM params[] = {OSSL_PARAM_construct_utf8_string("mpss_key_name", nullptr, 0), OSSL_PARAM_END};
-    ASSERT_EQ(0, EVP_PKEY_CTX_set_params(ctx, params));
+    ASSERT_EQ(0, EVP_PKEY_CTX_set_params(ctx.get(), params));
 
-    EVP_PKEY_CTX_free(ctx);
-    ASSERT_NE(0, OSSL_PROVIDER_unload(mpss_prov));
-    OSSL_LIB_CTX_free(mpss_libctx);
+    ctx.reset();
+    ASSERT_NE(0, OSSL_PROVIDER_unload(mpss_prov.release()));
 }
 
 TEST(MPSS_OpenSSL, GenerateRequiresAlgorithm)
@@ -929,41 +927,42 @@ TEST(MPSS_OpenSSL, DefaultBackendReturned)
     const std::string key_name_str = test_key_name("test_key_default_backend");
     const char *key_name = key_name_str.c_str();
     const bool _ = mpss_delete_key(key_name);
+    SCOPE_GUARD(mpss_delete_key(key_name));
 
     const char *default_backend = mpss_get_default_backend_name();
     ASSERT_NE(nullptr, default_backend);
     ASSERT_LT(0U, strlen(default_backend));
 
-    OSSL_LIB_CTX *mpss_libctx = OSSL_LIB_CTX_new();
+    const ossl_lib_ctx_ptr mpss_libctx(OSSL_LIB_CTX_new());
     ASSERT_NE(nullptr, mpss_libctx);
-    ASSERT_NE(0, OSSL_PROVIDER_add_builtin(mpss_libctx, "mpss", OSSL_provider_init));
-    OSSL_PROVIDER *mpss_prov = OSSL_PROVIDER_load(mpss_libctx, "mpss");
+    ASSERT_NE(0, OSSL_PROVIDER_add_builtin(mpss_libctx.get(), "mpss", OSSL_provider_init));
+    ossl_provider_ptr mpss_prov(OSSL_PROVIDER_load(mpss_libctx.get(), "mpss"));
     ASSERT_NE(nullptr, mpss_prov);
 
     // Create a key without specifying mpss_backend.
-    EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_from_name(mpss_libctx, "EC", "provider=mpss");
+    evp_pkey_ctx_ptr ctx(EVP_PKEY_CTX_new_from_name(mpss_libctx.get(), "EC", "provider=mpss"));
     ASSERT_NE(nullptr, ctx);
-    ASSERT_EQ(1, EVP_PKEY_keygen_init(ctx));
+    ASSERT_EQ(1, EVP_PKEY_keygen_init(ctx.get()));
     OSSL_PARAM params[] = {
         OSSL_PARAM_construct_utf8_string("mpss_key_name", const_cast<char *>(key_name), 0),
         OSSL_PARAM_construct_utf8_string("mpss_algorithm", const_cast<char *>("ecdsa_secp256r1_sha256"), 0),
         OSSL_PARAM_END};
-    ASSERT_EQ(1, EVP_PKEY_CTX_set_params(ctx, params));
-    EVP_PKEY *pkey = nullptr;
-    ASSERT_EQ(1, EVP_PKEY_generate(ctx, &pkey));
-    EVP_PKEY_CTX_free(ctx);
+    ASSERT_EQ(1, EVP_PKEY_CTX_set_params(ctx.get(), params));
+    EVP_PKEY *generated = nullptr;
+    ASSERT_EQ(1, EVP_PKEY_generate(ctx.get(), &generated));
+    evp_pkey_ptr pkey(generated);
+    ctx.reset();
 
     // Query mpss_backend - should return the default backend even though we didn't set it.
     char backend_buf[256] = {0};
     OSSL_PARAM get_params[] = {OSSL_PARAM_construct_utf8_string("mpss_backend", backend_buf, sizeof(backend_buf)),
                                OSSL_PARAM_END};
-    ASSERT_EQ(1, EVP_PKEY_get_params(pkey, get_params));
+    ASSERT_EQ(1, EVP_PKEY_get_params(pkey.get(), get_params));
     ASSERT_STREQ(default_backend, backend_buf);
 
-    EVP_PKEY_free(pkey);
+    pkey.reset();
     ASSERT_EQ(1, mpss_delete_key(key_name));
-    ASSERT_NE(0, OSSL_PROVIDER_unload(mpss_prov));
-    OSSL_LIB_CTX_free(mpss_libctx);
+    ASSERT_NE(0, OSSL_PROVIDER_unload(mpss_prov.release()));
 }
 
 TEST(MPSS_OpenSSL, ExplicitBackend)
@@ -976,41 +975,42 @@ TEST(MPSS_OpenSSL, ExplicitBackend)
     const std::string key_name_str = test_key_name("test_key_explicit_backend");
     const char *key_name = key_name_str.c_str();
     const bool _ = mpss_delete_key(key_name);
+    SCOPE_GUARD(mpss_delete_key(key_name));
 
     const char *default_backend = mpss_get_default_backend_name();
     ASSERT_NE(nullptr, default_backend);
     ASSERT_LT(0U, strlen(default_backend));
 
-    OSSL_LIB_CTX *mpss_libctx = OSSL_LIB_CTX_new();
+    const ossl_lib_ctx_ptr mpss_libctx(OSSL_LIB_CTX_new());
     ASSERT_NE(nullptr, mpss_libctx);
-    ASSERT_NE(0, OSSL_PROVIDER_add_builtin(mpss_libctx, "mpss", OSSL_provider_init));
-    OSSL_PROVIDER *mpss_prov = OSSL_PROVIDER_load(mpss_libctx, "mpss");
+    ASSERT_NE(0, OSSL_PROVIDER_add_builtin(mpss_libctx.get(), "mpss", OSSL_provider_init));
+    ossl_provider_ptr mpss_prov(OSSL_PROVIDER_load(mpss_libctx.get(), "mpss"));
     ASSERT_NE(nullptr, mpss_prov);
 
     // Create a key with an explicit backend.
-    EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_from_name(mpss_libctx, "EC", "provider=mpss");
+    evp_pkey_ctx_ptr ctx(EVP_PKEY_CTX_new_from_name(mpss_libctx.get(), "EC", "provider=mpss"));
     ASSERT_NE(nullptr, ctx);
-    ASSERT_EQ(1, EVP_PKEY_keygen_init(ctx));
+    ASSERT_EQ(1, EVP_PKEY_keygen_init(ctx.get()));
     OSSL_PARAM params[] = {
         OSSL_PARAM_construct_utf8_string("mpss_key_name", const_cast<char *>(key_name), 0),
         OSSL_PARAM_construct_utf8_string("mpss_algorithm", const_cast<char *>("ecdsa_secp256r1_sha256"), 0),
         OSSL_PARAM_construct_utf8_string("mpss_backend", const_cast<char *>(default_backend), 0), OSSL_PARAM_END};
-    ASSERT_EQ(1, EVP_PKEY_CTX_set_params(ctx, params));
-    EVP_PKEY *pkey = nullptr;
-    ASSERT_EQ(1, EVP_PKEY_generate(ctx, &pkey));
-    EVP_PKEY_CTX_free(ctx);
+    ASSERT_EQ(1, EVP_PKEY_CTX_set_params(ctx.get(), params));
+    EVP_PKEY *generated = nullptr;
+    ASSERT_EQ(1, EVP_PKEY_generate(ctx.get(), &generated));
+    evp_pkey_ptr pkey(generated);
+    ctx.reset();
 
     // Query the backend via gettable params.
     char backend_buf[256] = {0};
     OSSL_PARAM get_params[] = {OSSL_PARAM_construct_utf8_string("mpss_backend", backend_buf, sizeof(backend_buf)),
                                OSSL_PARAM_END};
-    ASSERT_EQ(1, EVP_PKEY_get_params(pkey, get_params));
+    ASSERT_EQ(1, EVP_PKEY_get_params(pkey.get(), get_params));
     ASSERT_STREQ(default_backend, backend_buf);
 
-    EVP_PKEY_free(pkey);
+    pkey.reset();
     ASSERT_EQ(1, mpss_delete_key(key_name));
-    ASSERT_NE(0, OSSL_PROVIDER_unload(mpss_prov));
-    OSSL_LIB_CTX_free(mpss_libctx);
+    ASSERT_NE(0, OSSL_PROVIDER_unload(mpss_prov.release()));
 }
 
 TEST(MPSS_OpenSSL, DeleteKeyFromBackend)
@@ -1022,10 +1022,10 @@ TEST(MPSS_OpenSSL, DeleteKeyFromBackend)
         GTEST_SKIP() << "No backends available.";
     }
 
-    OSSL_LIB_CTX *mpss_libctx = OSSL_LIB_CTX_new();
+    const ossl_lib_ctx_ptr mpss_libctx(OSSL_LIB_CTX_new());
     ASSERT_NE(nullptr, mpss_libctx);
-    ASSERT_NE(0, OSSL_PROVIDER_add_builtin(mpss_libctx, "mpss", OSSL_provider_init));
-    OSSL_PROVIDER *mpss_prov = OSSL_PROVIDER_load(mpss_libctx, "mpss");
+    ASSERT_NE(0, OSSL_PROVIDER_add_builtin(mpss_libctx.get(), "mpss", OSSL_provider_init));
+    ossl_provider_ptr mpss_prov(OSSL_PROVIDER_load(mpss_libctx.get(), "mpss"));
     ASSERT_NE(nullptr, mpss_prov);
 
     int backends_tested = 0;
@@ -1042,26 +1042,25 @@ TEST(MPSS_OpenSSL, DeleteKeyFromBackend)
 
         // Clean up a possible leftover from a previous run.
         mpss_delete_key_from_backend(key_name.c_str(), backend);
+        SCOPE_GUARD(mpss_delete_key_from_backend(key_name.c_str(), backend));
 
         // Create a key in this specific backend. The backend may be registered
         // without an underlying device being currently available (e.g., no
         // YubiKey plugged in), so treat key generation failure as "backend not
         // currently usable" and continue to the next one.
-        EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_from_name(mpss_libctx, "EC", "provider=mpss");
+        const evp_pkey_ctx_ptr ctx(EVP_PKEY_CTX_new_from_name(mpss_libctx.get(), "EC", "provider=mpss"));
         ASSERT_NE(nullptr, ctx);
-        ASSERT_EQ(1, EVP_PKEY_keygen_init(ctx));
+        ASSERT_EQ(1, EVP_PKEY_keygen_init(ctx.get()));
         OSSL_PARAM params[] = {
             OSSL_PARAM_construct_utf8_string("mpss_key_name", const_cast<char *>(key_name.c_str()), 0),
             OSSL_PARAM_construct_utf8_string("mpss_algorithm", const_cast<char *>("ecdsa_secp256r1_sha256"), 0),
             OSSL_PARAM_construct_utf8_string("mpss_backend", const_cast<char *>(backend), 0), OSSL_PARAM_END};
-        ASSERT_EQ(1, EVP_PKEY_CTX_set_params(ctx, params));
+        ASSERT_EQ(1, EVP_PKEY_CTX_set_params(ctx.get(), params));
         EVP_PKEY *pkey = nullptr;
-        if (1 != EVP_PKEY_generate(ctx, &pkey))
+        if (1 != EVP_PKEY_generate(ctx.get(), &pkey))
         {
-            EVP_PKEY_CTX_free(ctx);
             continue;
         }
-        EVP_PKEY_CTX_free(ctx);
         EVP_PKEY_free(pkey);
 
         // Delete the key from this specific backend.
@@ -1073,8 +1072,7 @@ TEST(MPSS_OpenSSL, DeleteKeyFromBackend)
         ++backends_tested;
     }
 
-    ASSERT_NE(0, OSSL_PROVIDER_unload(mpss_prov));
-    OSSL_LIB_CTX_free(mpss_libctx);
+    ASSERT_NE(0, OSSL_PROVIDER_unload(mpss_prov.release()));
 
     if (0 == backends_tested)
     {
@@ -1125,16 +1123,17 @@ TEST(MPSS_OpenSSL, CreateKeyWithPolicyParam)
     const std::string key_name_str = test_key_name("test_key_policy_provider");
     const char *key_name = key_name_str.c_str();
     const bool _ = mpss_delete_key(key_name);
+    SCOPE_GUARD(mpss_delete_key(key_name));
 
-    OSSL_LIB_CTX *mpss_libctx = OSSL_LIB_CTX_new();
+    const ossl_lib_ctx_ptr mpss_libctx(OSSL_LIB_CTX_new());
     ASSERT_NE(nullptr, mpss_libctx);
-    ASSERT_NE(0, OSSL_PROVIDER_add_builtin(mpss_libctx, "mpss", OSSL_provider_init));
-    OSSL_PROVIDER *mpss_prov = OSSL_PROVIDER_load(mpss_libctx, "mpss");
+    ASSERT_NE(0, OSSL_PROVIDER_add_builtin(mpss_libctx.get(), "mpss", OSSL_provider_init));
+    ossl_provider_ptr mpss_prov(OSSL_PROVIDER_load(mpss_libctx.get(), "mpss"));
     ASSERT_NE(nullptr, mpss_prov);
 
-    EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_from_name(mpss_libctx, "EC", "provider=mpss");
+    evp_pkey_ctx_ptr ctx(EVP_PKEY_CTX_new_from_name(mpss_libctx.get(), "EC", "provider=mpss"));
     ASSERT_NE(nullptr, ctx);
-    ASSERT_EQ(1, EVP_PKEY_keygen_init(ctx));
+    ASSERT_EQ(1, EVP_PKEY_keygen_init(ctx.get()));
 
     // Pass mpss_key_policy = MPSS_KEY_POLICY_NONE through the provider parameter.
     std::uint64_t policy = MPSS_KEY_POLICY_NONE;
@@ -1142,16 +1141,16 @@ TEST(MPSS_OpenSSL, CreateKeyWithPolicyParam)
         OSSL_PARAM_construct_utf8_string("mpss_key_name", const_cast<char *>(key_name), 0),
         OSSL_PARAM_construct_utf8_string("mpss_algorithm", const_cast<char *>("ecdsa_secp256r1_sha256"), 0),
         OSSL_PARAM_construct_uint64("mpss_key_policy", &policy), OSSL_PARAM_END};
-    ASSERT_EQ(1, EVP_PKEY_CTX_set_params(ctx, params));
-    EVP_PKEY *pkey = nullptr;
-    ASSERT_EQ(1, EVP_PKEY_generate(ctx, &pkey));
+    ASSERT_EQ(1, EVP_PKEY_CTX_set_params(ctx.get(), params));
+    EVP_PKEY *generated = nullptr;
+    ASSERT_EQ(1, EVP_PKEY_generate(ctx.get(), &generated));
+    evp_pkey_ptr pkey(generated);
     ASSERT_NE(nullptr, pkey);
-    EVP_PKEY_CTX_free(ctx);
-    EVP_PKEY_free(pkey);
+    ctx.reset();
+    pkey.reset();
 
     ASSERT_TRUE(mpss_delete_key(key_name));
-    ASSERT_NE(0, OSSL_PROVIDER_unload(mpss_prov));
-    OSSL_LIB_CTX_free(mpss_libctx);
+    ASSERT_NE(0, OSSL_PROVIDER_unload(mpss_prov.release()));
 }
 
 // Fixture for the OSSL_STORE "open existing key by name" flow. Loads the mpss provider (key
@@ -1196,7 +1195,7 @@ class MPSSStore : public ::testing::Test
 
     // Open "mpss:<key_name>" through OSSL_STORE, optionally selecting a backend via the mpss_backend
     // ctx parameter, and return the reopened key (or nullptr if none was produced).
-    EVP_PKEY *store_open_key(const std::string &key_name, const char *backend, const char *device_id = nullptr)
+    evp_pkey_ptr store_open_key(const std::string &key_name, const char *backend, const char *device_id = nullptr)
     {
         const std::string uri = "mpss:" + key_name;
         OSSL_PARAM backend_params[3]{};
@@ -1217,7 +1216,7 @@ class MPSSStore : public ::testing::Test
         {
             return nullptr;
         }
-        EVP_PKEY *pkey = nullptr;
+        evp_pkey_ptr pkey;
         while (0 == OSSL_STORE_eof(store))
         {
             OSSL_STORE_INFO *info = OSSL_STORE_load(store);
@@ -1227,7 +1226,7 @@ class MPSSStore : public ::testing::Test
             }
             if (OSSL_STORE_INFO_PKEY == OSSL_STORE_INFO_get_type(info))
             {
-                pkey = OSSL_STORE_INFO_get1_PKEY(info);
+                pkey.reset(OSSL_STORE_INFO_get1_PKEY(info));
             }
             OSSL_STORE_INFO_free(info);
         }
@@ -1266,14 +1265,11 @@ class MPSSStore : public ::testing::Test
                           bool creation_may_be_unavailable = false)
     {
         const bool from_backend = (nullptr != backend);
-        if (from_backend)
-        {
-            mpss_delete_key_from_backend(key_name, backend);
-        }
-        else
-        {
-            mpss_delete_key(key_name);
-        }
+        const auto delete_key = [key_name, backend, from_backend] {
+            return from_backend ? mpss_delete_key_from_backend(key_name, backend) : mpss_delete_key(key_name);
+        };
+        static_cast<void>(delete_key());
+        SCOPE_GUARD(static_cast<void>(delete_key()));
 
         // Create and capture the public key (SubjectPublicKeyInfo DER).
         evp_pkey_ptr pkey = GenerateKey(libctx, key_name, backend, key_policy);
@@ -1283,50 +1279,42 @@ class MPSSStore : public ::testing::Test
         }
         ASSERT_NE(nullptr, pkey);
 
-        unsigned char *spki_created = nullptr;
-        const int spki_created_len = i2d_PUBKEY(pkey.get(), &spki_created);
-        ASSERT_LT(0, spki_created_len);
+        const std::string spki_created = public_key_der(pkey.get());
+        ASSERT_FALSE(spki_created.empty());
         pkey.reset(); // close
 
         // Reopen by name (selecting the backend when one was given).
-        EVP_PKEY *reopened = store_open_key(key_name, backend);
+        evp_pkey_ptr reopened = store_open_key(key_name, backend);
         ASSERT_NE(nullptr, reopened);
 
         // Identity: the reopened key exposes the same public key as the created one.
-        unsigned char *spki_reopened = nullptr;
-        const int spki_reopened_len = i2d_PUBKEY(reopened, &spki_reopened);
-        ASSERT_LT(0, spki_reopened_len);
-        ASSERT_EQ(spki_created_len, spki_reopened_len);
-        ASSERT_EQ(0, memcmp(spki_created, spki_reopened, static_cast<std::size_t>(spki_created_len)));
+        ASSERT_EQ(spki_created, public_key_der(reopened.get()));
 
         // Usability: sign with the reopened key, verify under the default provider against the
         // captured public key.
         const std::string_view message = "reopened key signing test";
         const auto *msg = reinterpret_cast<const unsigned char *>(message.data());
-        EVP_MD_CTX *sign_ctx = EVP_MD_CTX_new();
+        evp_md_ctx_ptr sign_ctx(EVP_MD_CTX_new());
         ASSERT_NE(nullptr, sign_ctx);
-        ASSERT_EQ(1, EVP_DigestSignInit_ex(sign_ctx, nullptr, "SHA256", libctx, "provider=mpss", reopened, nullptr));
+        ASSERT_EQ(1, EVP_DigestSignInit_ex(sign_ctx.get(), nullptr, "SHA256", libctx, "provider=mpss", reopened.get(),
+                                           nullptr));
         std::size_t sig_len = 0;
-        ASSERT_EQ(1, EVP_DigestSign(sign_ctx, nullptr, &sig_len, msg, message.size()));
+        ASSERT_EQ(1, EVP_DigestSign(sign_ctx.get(), nullptr, &sig_len, msg, message.size()));
         std::vector<unsigned char> sig(sig_len);
-        ASSERT_EQ(1, EVP_DigestSign(sign_ctx, sig.data(), &sig_len, msg, message.size()));
+        ASSERT_EQ(1, EVP_DigestSign(sign_ctx.get(), sig.data(), &sig_len, msg, message.size()));
         sig.resize(sig_len);
-        EVP_MD_CTX_free(sign_ctx);
+        sign_ctx.reset();
 
-        const unsigned char *spki_ptr = spki_created;
-        EVP_PKEY *verify_key = d2i_PUBKEY_ex(nullptr, &spki_ptr, spki_created_len, libctx, "provider=default");
+        const auto *spki_ptr = reinterpret_cast<const unsigned char *>(spki_created.data());
+        const evp_pkey_ptr verify_key(
+            d2i_PUBKEY_ex(nullptr, &spki_ptr, static_cast<long>(spki_created.size()), libctx, "provider=default"));
         ASSERT_NE(nullptr, verify_key);
-        EVP_MD_CTX *verify_ctx = EVP_MD_CTX_new();
+        const evp_md_ctx_ptr verify_ctx(EVP_MD_CTX_new());
         ASSERT_NE(nullptr, verify_ctx);
-        ASSERT_EQ(
-            1, EVP_DigestVerifyInit_ex(verify_ctx, nullptr, "SHA256", libctx, "provider=default", verify_key, nullptr));
-        ASSERT_EQ(1, EVP_DigestVerify(verify_ctx, sig.data(), sig.size(), msg, message.size()));
-        EVP_MD_CTX_free(verify_ctx);
-
-        EVP_PKEY_free(verify_key);
-        EVP_PKEY_free(reopened);
-        OPENSSL_free(spki_created);
-        OPENSSL_free(spki_reopened);
+        ASSERT_EQ(1, EVP_DigestVerifyInit_ex(verify_ctx.get(), nullptr, "SHA256", libctx, "provider=default",
+                                             verify_key.get(), nullptr));
+        ASSERT_EQ(1, EVP_DigestVerify(verify_ctx.get(), sig.data(), sig.size(), msg, message.size()));
+        reopened.reset();
 
         // The mpss_backend parameter must actually be consulted, not silently ignored: opening the
         // (still-present) key with a nonexistent backend must fail closed rather than fall back to
@@ -1385,19 +1373,19 @@ TEST_F(MPSSStore, DeleteByName)
     const std::string key_name_str = test_key_name("test_key_delete_by_name");
     const char *key_name = key_name_str.c_str();
     mpss_delete_key(key_name);
+    SCOPE_GUARD(mpss_delete_key(key_name));
 
     // Create a key on the default backend.
-    EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_from_name(libctx, "EC", "provider=mpss");
+    const evp_pkey_ctx_ptr ctx(EVP_PKEY_CTX_new_from_name(libctx, "EC", "provider=mpss"));
     ASSERT_NE(nullptr, ctx);
-    ASSERT_EQ(1, EVP_PKEY_keygen_init(ctx));
+    ASSERT_EQ(1, EVP_PKEY_keygen_init(ctx.get()));
     OSSL_PARAM gen_params[] = {
         OSSL_PARAM_construct_utf8_string("mpss_key_name", const_cast<char *>(key_name), 0),
         OSSL_PARAM_construct_utf8_string("mpss_algorithm", const_cast<char *>("ecdsa_secp256r1_sha256"), 0),
         OSSL_PARAM_construct_end()};
-    ASSERT_EQ(1, EVP_PKEY_CTX_set_params(ctx, gen_params));
+    ASSERT_EQ(1, EVP_PKEY_CTX_set_params(ctx.get(), gen_params));
     EVP_PKEY *pkey = nullptr;
-    ASSERT_EQ(1, EVP_PKEY_generate(ctx, &pkey));
-    EVP_PKEY_CTX_free(ctx);
+    ASSERT_EQ(1, EVP_PKEY_generate(ctx.get(), &pkey));
     EVP_PKEY_free(pkey);
 
     // Delete it through OSSL_STORE_delete, then confirm it is gone. A second delete also succeeds:
@@ -2125,10 +2113,10 @@ TEST_F(MPSSStore, DeviceParameterRejectsInvalidLocations)
 {
     const std::string name = test_key_name("mpss_invalid_device");
     EXPECT_EQ(nullptr, GenerateKey(libctx, name, "os", MPSS_KEY_POLICY_NONE, "1"));
-    EXPECT_EQ(nullptr, evp_pkey_ptr(store_open_key(name, "os", "1")));
+    EXPECT_EQ(nullptr, store_open_key(name, "os", "1"));
     EXPECT_EQ(0, store_delete_key(name, "os", "1"));
     EXPECT_EQ(nullptr, GenerateKey(libctx, name, "unknown-backend", MPSS_KEY_POLICY_NONE, ""));
-    EXPECT_EQ(nullptr, evp_pkey_ptr(store_open_key(name, "unknown-backend", "")));
+    EXPECT_EQ(nullptr, store_open_key(name, "unknown-backend", ""));
     EXPECT_EQ(0, store_delete_key(name, "unknown-backend", ""));
 
     // Invalid C API input must report its own error, even when a different failure preceded it.
@@ -2281,11 +2269,11 @@ TEST_F(MPSSStore, DeviceParameterReportsAndPersistsActualDevice)
     }
     serial.set(std::to_string(absent_serial));
 
-    EXPECT_EQ(nullptr, evp_pkey_ptr(store_open_key(name, "yubikey")));
-    EXPECT_NE(nullptr, evp_pkey_ptr(store_open_key(name, "yubikey", device_id.c_str())));
+    EXPECT_EQ(nullptr, store_open_key(name, "yubikey"));
+    EXPECT_NE(nullptr, store_open_key(name, "yubikey", device_id.c_str()));
     if (1 == devices->size())
     {
-        EXPECT_NE(nullptr, evp_pkey_ptr(store_open_key(name, "yubikey", "")));
+        EXPECT_NE(nullptr, store_open_key(name, "yubikey", ""));
     }
     EXPECT_NE(nullptr, DecodeReferencePem(libctx, pem));
     ERR_clear_error();
@@ -2739,29 +2727,29 @@ TEST_P(CreateAndDeleteKeyTest, CreateAndDeleteKey)
 
     // Delete existing key.
     const bool _ = mpss_delete_key(key_name.c_str());
+    SCOPE_GUARD(mpss_delete_key(key_name.c_str()));
 
-    OSSL_LIB_CTX *mpss_libctx = OSSL_LIB_CTX_new();
+    const ossl_lib_ctx_ptr mpss_libctx(OSSL_LIB_CTX_new());
     ASSERT_NE(nullptr, mpss_libctx);
-    ASSERT_NE(0, OSSL_PROVIDER_add_builtin(mpss_libctx, "mpss", OSSL_provider_init));
-    OSSL_PROVIDER *mpss_prov = OSSL_PROVIDER_load(mpss_libctx, "mpss");
+    ASSERT_NE(0, OSSL_PROVIDER_add_builtin(mpss_libctx.get(), "mpss", OSSL_provider_init));
+    ossl_provider_ptr mpss_prov(OSSL_PROVIDER_load(mpss_libctx.get(), "mpss"));
     ASSERT_NE(nullptr, mpss_prov);
 
-    EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_from_name(mpss_libctx, "EC", "provider=mpss");
+    evp_pkey_ctx_ptr ctx(EVP_PKEY_CTX_new_from_name(mpss_libctx.get(), "EC", "provider=mpss"));
     ASSERT_NE(nullptr, ctx);
-    ASSERT_EQ(1, EVP_PKEY_keygen_init(ctx));
+    ASSERT_EQ(1, EVP_PKEY_keygen_init(ctx.get()));
     OSSL_PARAM params[] = {OSSL_PARAM_construct_utf8_string("mpss_key_name", const_cast<char *>(key_name.c_str()), 0),
                            OSSL_PARAM_construct_utf8_string("mpss_algorithm", const_cast<char *>(mpss_algorithm), 0),
                            OSSL_PARAM_END};
-    ASSERT_EQ(1, EVP_PKEY_CTX_set_params(ctx, params));
+    ASSERT_EQ(1, EVP_PKEY_CTX_set_params(ctx.get(), params));
     EVP_PKEY *pkey = nullptr;
-    ASSERT_EQ(1, EVP_PKEY_generate(ctx, &pkey));
-    EVP_PKEY_CTX_free(ctx);
+    ASSERT_EQ(1, EVP_PKEY_generate(ctx.get(), &pkey));
+    ctx.reset();
     EVP_PKEY_free(pkey);
 
     // Now delete the key using the API.
     ASSERT_EQ(1, mpss_delete_key(key_name.c_str()));
-    ASSERT_NE(0, OSSL_PROVIDER_unload(mpss_prov));
-    OSSL_LIB_CTX_free(mpss_libctx);
+    ASSERT_NE(0, OSSL_PROVIDER_unload(mpss_prov.release()));
 }
 
 INSTANTIATE_TEST_SUITE_P(MPSSCreateDelete, CreateAndDeleteKeyTest,
