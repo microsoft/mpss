@@ -556,8 +556,8 @@ public class KeyManagement {
                 SetError(msg);
                 return false;
             }
+            return DeleteKey(keyName);
         }
-        return DeleteKey(keyName);
     }
 
     public static Boolean DeleteKey(String keyName) {
