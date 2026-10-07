@@ -12,6 +12,7 @@
 #include "tests/openssl_raii.h"
 #include "tests/reference_der.h"
 #include "tests/scoped_env.h"
+#include "tests/test_entry.h"
 #include "tests/test_key_names.h"
 #include <algorithm>
 #include <array>
@@ -2228,12 +2229,13 @@ TEST_F(MPSSStore, DeviceParameterReportsAndPersistsActualDevice)
 {
     const auto devices = mpss::get_available_devices("yubikey");
     ASSERT_TRUE(devices.has_value()) << mpss::get_error();
-    if (devices->empty())
+    const std::optional<std::uint32_t> serial_number = mpss::tests::test_yubikey_serial();
+    if (!serial_number)
     {
         GTEST_SKIP() << "YubiKey device not available";
     }
 
-    const std::string device_id = devices->front();
+    const std::string device_id = std::to_string(*serial_number);
     const std::string name = test_key_name("mpss_reference_device");
     const mpss_key_location_t location{"yubikey", name.c_str(), device_id.c_str()};
     ASSERT_TRUE(mpss_delete_key_at(&location));

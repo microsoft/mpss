@@ -10,6 +10,7 @@
 #include "mpss/utils/utilities.h"
 #include "tests/compat_env.h"
 #include "tests/scoped_env.h"
+#include "tests/test_entry.h"
 #include "tests/test_key_names.h"
 #if defined(__APPLE__) && !defined(MPSS_CORE_IS_SHARED)
 #include "mpss/impl/apple/apple_api_wrapper.h"
@@ -2399,21 +2400,22 @@ class YubiKeyMgmKeyEnv : public ::testing::Test
     {
         allow_default_.unset();
 
-        serials_ = mpss::impl::yubikey::YubiKeyPIV::available_serials().value_or(std::vector<std::uint32_t>{});
-        if (serials_.empty())
+        const std::optional<std::uint32_t> serial = test_yubikey_serial();
+        if (!serial)
         {
             GTEST_SKIP() << "Requires a connected YubiKey.";
         }
+        serial_ = *serial;
     }
 
-    std::vector<std::uint32_t> serials_;
+    std::uint32_t serial_ = 0;
     ScopedEnvironmentVariable mgm_key_{"MPSS_YUBIKEY_MGM_KEY"};
     ScopedEnvironmentVariable allow_default_{"MPSS_YUBIKEY_ALLOW_DEFAULT_MGM_KEY"};
 };
 
 TEST_F(YubiKeyMgmKeyEnv, SuppliedKeyMustAuthenticateNoDefaultFallback)
 {
-    mpss::impl::yubikey::YubiKeyPIV piv{serials_[0]};
+    mpss::impl::yubikey::YubiKeyPIV piv{serial_};
     ASSERT_TRUE(piv.is_connected());
 
     // A valid-length management key that does not match the device must fail; MPSS must not fall
@@ -2429,7 +2431,7 @@ TEST_F(YubiKeyMgmKeyEnv, SuppliedKeyMustAuthenticateNoDefaultFallback)
 
 TEST_F(YubiKeyMgmKeyEnv, FactoryDefaultRequiresExplicitOptIn)
 {
-    mpss::impl::yubikey::YubiKeyPIV piv{serials_[0]};
+    mpss::impl::yubikey::YubiKeyPIV piv{serial_};
     ASSERT_TRUE(piv.is_connected());
 
     mgm_key_.unset();
@@ -2441,7 +2443,7 @@ TEST_F(YubiKeyMgmKeyEnv, FactoryDefaultRequiresExplicitOptIn)
 
 TEST_F(YubiKeyMgmKeyEnv, FactoryDefaultWorksWithExplicitOptIn)
 {
-    mpss::impl::yubikey::YubiKeyPIV piv{serials_[0]};
+    mpss::impl::yubikey::YubiKeyPIV piv{serial_};
     ASSERT_TRUE(piv.is_connected());
 
     mgm_key_.unset();
@@ -2453,23 +2455,22 @@ TEST_F(YubiKeyMgmKeyEnv, FactoryDefaultWorksWithExplicitOptIn)
 }
 
 // Slot-binding tests create a key through the public API, which selects a device on its own, but
-// then inspect and repair that device directly through YubiKeyPIV. Pinning MPSS_YUBIKEY_SERIAL
-// keeps both halves on the same device when more than one YubiKey is attached.
+// then inspect and repair that device directly through YubiKeyPIV. Both use the YubiKey that
+// MPSS_YUBIKEY_SERIAL selects, so they stay on the same device when more than one is attached.
 class YubiKeySlotBinding : public ::testing::Test
 {
   protected:
     void SetUp() override
     {
-        serials_ = mpss::impl::yubikey::YubiKeyPIV::available_serials().value_or(std::vector<std::uint32_t>{});
-        if (serials_.empty())
+        const std::optional<std::uint32_t> serial = test_yubikey_serial();
+        if (!serial)
         {
             GTEST_SKIP() << "Requires a connected YubiKey.";
         }
-
-        serial_env_.set(std::to_string(serials_[0]));
+        serial_ = *serial;
     }
 
-    std::vector<std::uint32_t> serials_;
+    std::uint32_t serial_ = 0;
     ScopedEnvironmentVariable serial_env_{"MPSS_YUBIKEY_SERIAL"};
 };
 
@@ -2492,7 +2493,7 @@ TEST_F(YubiKeySlotBinding, LabelDoesNotResolveAfterSlotKeyIsReplaced)
 
     std::uint8_t slot = 0;
     {
-        YubiKeyPIV piv{serials_[0]};
+        YubiKeyPIV piv{serial_};
         ASSERT_TRUE(piv.is_connected());
 
         const auto located = piv.find_slot_by_name(key_name);
@@ -2509,7 +2510,7 @@ TEST_F(YubiKeySlotBinding, LabelDoesNotResolveAfterSlotKeyIsReplaced)
     // The slot now holds a key its label does not describe, so MPSS can neither open it by name nor
     // offer it for reuse. Reclaim it before asserting, so a failed expectation cannot strand it.
     {
-        YubiKeyPIV piv{serials_[0]};
+        YubiKeyPIV piv{serial_};
         EXPECT_TRUE(piv.is_connected());
         EXPECT_EQ(mpss::impl::yubikey::YubiKeyPIV::DeleteResult::deleted, piv.delete_key(slot));
     }
@@ -2522,7 +2523,7 @@ TEST_F(YubiKeySlotBinding, LabelDoesNotResolveAfterSlotKeyIsReplaced)
 TEST_F(YubiKeySlotBinding, LabelsResolveWhenTheDefaultContextCannotDecodeKeys)
 {
     const KeyLocation location{
-        .backend_name = "yubikey", .name = test_key_name("default_context"), .device_id = std::to_string(serials_[0])};
+        .backend_name = "yubikey", .name = test_key_name("default_context"), .device_id = std::to_string(serial_)};
     static_cast<void>(KeyPair::Delete(location));
     SCOPE_GUARD(static_cast<void>(KeyPair::Delete(location)));
 
@@ -2557,7 +2558,7 @@ TEST_F(YubiKeySlotBinding, ReferenceDisambiguatesOnlySlotsWithTheRequestedName)
     using mpss::impl::KeyProbeStatus;
     using mpss::impl::yubikey::YubiKeyPIV;
 
-    const KeyLocation first{"yubikey", test_key_name("duplicate_label_a"), std::to_string(serials_[0])};
+    const KeyLocation first{"yubikey", test_key_name("duplicate_label_a"), std::to_string(serial_)};
     const KeyLocation second{"yubikey", test_key_name("duplicate_label_b"), first.device_id};
 
     // Clear what an interrupted run left behind; the test relabels a second slot to first.name.
@@ -2588,7 +2589,7 @@ TEST_F(YubiKeySlotBinding, ReferenceDisambiguatesOnlySlotsWithTheRequestedName)
     EXPECT_TRUE(mpss::has_error());
 
     {
-        YubiKeyPIV piv{serials_[0]};
+        YubiKeyPIV piv{serial_};
         ASSERT_TRUE(piv.is_connected());
         const auto slot_a = piv.find_slot_by_name(first.name);
         const auto slot_b = piv.find_slot_by_name(second.name);
@@ -2642,11 +2643,11 @@ TEST_F(YubiKeySlotBinding, AScanThatCannotRunIsNotAnEmptyDeviceList)
     ASSERT_FALSE(reachable->empty());
 
     {
-        YubiKeyPIV piv{serials_[0]};
+        YubiKeyPIV piv{serial_};
         ASSERT_TRUE(piv.is_connected());
 
         {
-            YubiKeyPIV nested{serials_[0]};
+            YubiKeyPIV nested{serial_};
             EXPECT_FALSE(nested.is_connected());
         }
 
@@ -2663,8 +2664,9 @@ TEST_F(YubiKeySlotBinding, AScanThatCannotRunIsNotAnEmptyDeviceList)
 
 TEST_F(YubiKeySlotBinding, ExplicitLocationsOverrideEnvironmentAndReportActualSerial)
 {
+    const auto connected = mpss::impl::yubikey::YubiKeyPIV::available_serials().value_or(std::vector<std::uint32_t>{});
     std::uint32_t absent_serial = 0xFFFFFFFF;
-    while (std::ranges::find(serials_, absent_serial) != serials_.end())
+    while (std::ranges::find(connected, absent_serial) != connected.end())
     {
         --absent_serial;
     }
@@ -2673,7 +2675,7 @@ TEST_F(YubiKeySlotBinding, ExplicitLocationsOverrideEnvironmentAndReportActualSe
     serial_env_.set(absent_id);
 
     // Explicit selection ignores the wrong default and reports the canonical device identifier.
-    const auto actual_id = std::to_string(serials_[0]);
+    const auto actual_id = std::to_string(serial_);
     const KeyLocation requested{"yubikey", test_key_name("explicit_location"), "000" + actual_id};
     static_cast<void>(KeyPair::Delete(requested));
     SCOPE_GUARD(static_cast<void>(KeyPair::Delete(requested)));
@@ -2696,7 +2698,7 @@ TEST_F(YubiKeySlotBinding, ExplicitLocationsOverrideEnvironmentAndReportActualSe
     EXPECT_NE(std::string::npos, mpss::get_error().find(absent_id));
 
     const KeyLocation automatic{"yubikey", actual.name, std::nullopt};
-    if (1 == serials_.size())
+    if (1 == connected.size())
     {
         auto opened = KeyPair::Open(automatic);
         ASSERT_NE(nullptr, opened) << mpss::get_error();
@@ -2758,13 +2760,19 @@ TEST(KeyLocationTest, YubiKeyRejectsInvalidSerialBeforeDeviceAccess)
 }
 
 // Multi-device YubiKey tests. These tests require at least two YubiKeys to be physically connected.
-// They are automatically skipped when fewer than two devices are available.
+// They are automatically skipped when fewer than two devices are available, or when MPSS_YUBIKEY_SERIAL
+// limits the run to one of them.
 
 class MultiYubiKeyTest : public ::testing::Test
 {
   protected:
     void SetUp() override
     {
+        if (yubikey_serial_set_by_caller())
+        {
+            GTEST_SKIP() << "MPSS_YUBIKEY_SERIAL limits the tests to one YubiKey.";
+        }
+
         serials_ = mpss::impl::yubikey::YubiKeyPIV::available_serials().value_or(std::vector<std::uint32_t>{});
         if (2 > serials_.size())
         {
@@ -3176,11 +3184,12 @@ class YubiKeyPinGuard : public ::testing::Test
   protected:
     void SetUp() override
     {
-        serials_ = mpss::impl::yubikey::YubiKeyPIV::available_serials().value_or(std::vector<std::uint32_t>{});
-        if (serials_.empty())
+        const std::optional<std::uint32_t> serial = test_yubikey_serial();
+        if (!serial)
         {
             GTEST_SKIP() << "Requires a connected YubiKey.";
         }
+        serial_ = *serial;
     }
 
     // Puts the configured PIN back mid-test, so that clean-up can authenticate.
@@ -3196,7 +3205,7 @@ class YubiKeyPinGuard : public ::testing::Test
         }
     }
 
-    std::vector<std::uint32_t> serials_;
+    std::uint32_t serial_ = 0;
     ScopedEnvironmentVariable pin_env_{"MPSS_YUBIKEY_PIN"};
 };
 
@@ -3215,7 +3224,7 @@ TEST_F(YubiKeyPinGuard, AnAlreadyRejectedPinIsNotPresentedToTheDevice)
 
     // A value the device has never been given, recorded as though it had refused it.
     const std::string fabricated = "not-a-real-pin-d";
-    mpss::impl::yubikey::remember_rejected_pin(serials_[0], fabricated);
+    mpss::impl::yubikey::remember_rejected_pin(serial_, fabricated);
     pin_env_.set(fabricated);
 
     const std::vector<std::byte> hash(32, static_cast<std::byte>('h'));
@@ -3306,7 +3315,7 @@ TEST_F(YubiKeyPinGuard, EveryPinRequestIsAnsweredByExactlyOneResult)
 
     // A value recorded as refused, so MPSS withholds it and never reaches the device.
     const std::string withheld = "not-a-real-pin-e";
-    mpss::impl::yubikey::remember_rejected_pin(serials_[0], withheld);
+    mpss::impl::yubikey::remember_rejected_pin(serial_, withheld);
 
     const std::string key_name = test_key_name("mpss_yk_one_result");
     MPSS::DeleteKey(key_name);
@@ -3327,7 +3336,7 @@ TEST_F(YubiKeyPinGuard, EveryPinRequestIsAnsweredByExactlyOneResult)
     EXPECT_EQ(withholding->requests, withholding->results);
     EXPECT_EQ(mpss::PinResult::not_attempted, withholding->last_result);
     EXPECT_EQ("yubikey", withholding->backend);
-    EXPECT_EQ(std::to_string(serials_[0]), withholding->device);
+    EXPECT_EQ(std::to_string(serial_), withholding->device);
     EXPECT_EQ(key_name, withholding->key_name);
     EXPECT_FALSE(withholding->reader.empty());
 

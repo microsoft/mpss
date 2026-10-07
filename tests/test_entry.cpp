@@ -4,14 +4,19 @@
 #include "tests/test_entry.h"
 #include "mpss/log.h"
 #include "tests/scoped_env.h"
+#include <algorithm>
 #include <array>
+#include <charconv>
 #include <cstdint>
 #include <cstdlib>
 #ifdef __ANDROID__
 #include <format>
 #endif
 #include <memory>
+#include <optional>
 #include <string>
+#include <string_view>
+#include <system_error>
 #include <utility>
 #include <vector>
 #ifdef __ANDROID__
@@ -112,6 +117,12 @@ class LogcatEventListener : public ::testing::EmptyTestEventListener
 };
 #endif
 
+std::string_view yubikey_serial_variable()
+{
+    const char *value = std::getenv("MPSS_YUBIKEY_SERIAL"); // NOLINT(concurrency-mt-unsafe) - single-threaded tests.
+    return nullptr == value ? std::string_view{} : std::string_view{value};
+}
+
 /**
  * @brief Global test environment that pins a YubiKey for the duration of the run.
  *
@@ -125,7 +136,7 @@ class YubiKeyEnvironment : public ::testing::Environment
     void SetUp() override
     {
 #ifdef MPSS_BACKEND_YUBIKEY
-        if (serial_env_.saved().has_value())
+        if (mpss::tests::yubikey_serial_set_by_caller())
         {
             return;
         }
@@ -150,6 +161,32 @@ class YubiKeyEnvironment : public ::testing::Environment
 };
 
 } // namespace
+
+bool mpss::tests::yubikey_serial_set_by_caller()
+{
+    // Latched on the first call, which the test environment makes before it sets the variable itself.
+    static const bool set_by_caller = !yubikey_serial_variable().empty();
+    return set_by_caller;
+}
+
+std::optional<std::uint32_t> mpss::tests::test_yubikey_serial()
+{
+#ifdef MPSS_BACKEND_YUBIKEY
+    const std::string_view selected = yubikey_serial_variable();
+    std::uint32_t serial = 0;
+    const auto [end, error] = std::from_chars(selected.data(), selected.data() + selected.size(), serial);
+    if (std::errc{} == error && selected.data() + selected.size() == end)
+    {
+        const auto serials =
+            mpss::impl::yubikey::YubiKeyPIV::available_serials().value_or(std::vector<std::uint32_t>{});
+        if (serials.end() != std::ranges::find(serials, serial))
+        {
+            return serial;
+        }
+    }
+#endif
+    return std::nullopt;
+}
 
 int mpss::tests::run_all_tests(int argc, char *argv[])
 {
