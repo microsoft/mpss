@@ -5,18 +5,19 @@
 
 #include <cstdint>
 #include <optional>
+#include <vector>
 
 namespace mpss::tests
 {
 
 int run_all_tests(int argc, char *argv[]);
 
-/** @brief The connected YubiKey that MPSS_YUBIKEY_SERIAL selects, which is the only one tests may modify. */
+/** @brief The connected YubiKeys listed in MPSS_TEST_YUBIKEYS, in listed order: the only ones tests may modify. */
+[[nodiscard]]
+std::vector<std::uint32_t> test_yubikeys();
+
+/** @brief The one of test_yubikeys() that MPSS_YUBIKEY_SERIAL selects, so name-based calls reach it too. */
 [[nodiscard]]
 std::optional<std::uint32_t> test_yubikey_serial();
-
-/** @brief Whether the caller set MPSS_YUBIKEY_SERIAL, which keeps tests off every other YubiKey. */
-[[nodiscard]]
-bool yubikey_serial_set_by_caller();
 
 } // namespace mpss::tests

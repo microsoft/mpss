@@ -1330,15 +1330,18 @@ manual slot cleanup.
 
 ### Running Tests with a YubiKey
 
-> **Use a dedicated test YubiKey and disconnect non-test devices.** Tests create and delete
-> keys, even when `"os"` is the default backend. Confirm the device and retry counters with
-> `ykman piv info`. Stop after a wrong PIN: exhausting retries locks it, requiring the PUK.
-> A PIV reset destroys all PIV keys and certificates.
+> **Use a dedicated test YubiKey.** Tests create and delete keys, even when `"os"` is the
+> default backend. Confirm the device and retry counters with `ykman piv info`. Stop after a
+> wrong PIN: exhausting retries locks it, requiring the PUK. A PIV reset destroys all PIV keys
+> and certificates.
 
-To run the tests with the YubiKey backend and interactive PIN input:
+Tests modify only the YubiKeys whose serial numbers `MPSS_TEST_YUBIKEYS` lists, separated by
+commas; without it, YubiKey tests skip. The test runner sets `MPSS_YUBIKEY_SERIAL` to the first
+listed device that is connected, replacing any value it had. To run the tests with the YubiKey
+backend and interactive PIN input:
 
 ```bash
-MPSS_DEFAULT_BACKEND=yubikey out/build/macos-arm64-with-yubikey-debug/bin/mpss_tests
+MPSS_TEST_YUBIKEYS=<serial> MPSS_DEFAULT_BACKEND=yubikey out/build/macos-arm64-with-yubikey-debug/bin/mpss_tests
 ```
 
 For unattended runs, supply the known PIN through the handler or `MPSS_YUBIKEY_PIN`.
@@ -1346,7 +1349,8 @@ Disabling touch on test keys requires both `MPSS_YUBIKEY_TOUCHPOLICY=never` and
 `MPSS_YUBIKEY_ALLOW_POLICY_DOWNGRADE=1`.
 
 P-521, multi-device, and factory-default-management-key cases skip when their requirements
-are unmet. Selecting `"yubikey"` without a device causes ordinary key-operation tests to fail.
+are unmet; multi-device cases need two listed devices. Selecting `"yubikey"` without a listed,
+connected device causes ordinary key-operation tests to fail.
 The slot-binding test requires directly available management credentials; its raw PIV calls
 do not perform the public API's PIN-protected-management-key retry.
 

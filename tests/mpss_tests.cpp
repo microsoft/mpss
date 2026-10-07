@@ -2265,6 +2265,11 @@ TEST_F(CrossBackendTest, SignOnOneBackendVerifyOnAnother)
 
 TEST_F(CrossBackendTest, CreateKeyOnEachBackend)
 {
+    if (!test_yubikey_serial())
+    {
+        GTEST_SKIP() << "Requires a connected YubiKey listed in MPSS_TEST_YUBIKEYS.";
+    }
+
     const std::string os_key_name = test_key_name("test_cross_os_key");
     const std::string yk_key_name = test_key_name("test_cross_yk_key");
 
@@ -2403,7 +2408,7 @@ class YubiKeyMgmKeyEnv : public ::testing::Test
         const std::optional<std::uint32_t> serial = test_yubikey_serial();
         if (!serial)
         {
-            GTEST_SKIP() << "Requires a connected YubiKey.";
+            GTEST_SKIP() << "Requires a connected YubiKey listed in MPSS_TEST_YUBIKEYS.";
         }
         serial_ = *serial;
     }
@@ -2465,7 +2470,7 @@ class YubiKeySlotBinding : public ::testing::Test
         const std::optional<std::uint32_t> serial = test_yubikey_serial();
         if (!serial)
         {
-            GTEST_SKIP() << "Requires a connected YubiKey.";
+            GTEST_SKIP() << "Requires a connected YubiKey listed in MPSS_TEST_YUBIKEYS.";
         }
         serial_ = *serial;
     }
@@ -2759,24 +2764,18 @@ TEST(KeyLocationTest, YubiKeyRejectsInvalidSerialBeforeDeviceAccess)
     }
 }
 
-// Multi-device YubiKey tests. These tests require at least two YubiKeys to be physically connected.
-// They are automatically skipped when fewer than two devices are available, or when MPSS_YUBIKEY_SERIAL
-// limits the run to one of them.
+// Multi-device YubiKey tests. They need at least two connected YubiKeys listed in MPSS_TEST_YUBIKEYS and
+// skip otherwise.
 
 class MultiYubiKeyTest : public ::testing::Test
 {
   protected:
     void SetUp() override
     {
-        if (yubikey_serial_set_by_caller())
-        {
-            GTEST_SKIP() << "MPSS_YUBIKEY_SERIAL limits the tests to one YubiKey.";
-        }
-
-        serials_ = mpss::impl::yubikey::YubiKeyPIV::available_serials().value_or(std::vector<std::uint32_t>{});
+        serials_ = test_yubikeys();
         if (2 > serials_.size())
         {
-            GTEST_SKIP() << "Multi-device tests require at least two YubiKeys.";
+            GTEST_SKIP() << "Requires two connected YubiKeys listed in MPSS_TEST_YUBIKEYS.";
         }
     }
 
@@ -3187,7 +3186,7 @@ class YubiKeyPinGuard : public ::testing::Test
         const std::optional<std::uint32_t> serial = test_yubikey_serial();
         if (!serial)
         {
-            GTEST_SKIP() << "Requires a connected YubiKey.";
+            GTEST_SKIP() << "Requires a connected YubiKey listed in MPSS_TEST_YUBIKEYS.";
         }
         serial_ = *serial;
     }

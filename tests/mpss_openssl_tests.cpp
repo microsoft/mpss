@@ -1600,11 +1600,9 @@ TEST_F(MPSSStore, HostVerificationDoesNotSelectTheMpssProvider)
 
 TEST_F(MPSSStore, ReopenByNameYubiKey)
 {
-    const auto devices = mpss::get_available_devices("yubikey");
-    ASSERT_TRUE(devices.has_value()) << mpss::get_error();
-    if (devices->empty())
+    if (!mpss::tests::test_yubikey_serial())
     {
-        GTEST_SKIP() << "YubiKey device not available";
+        GTEST_SKIP() << "Requires a connected YubiKey listed in MPSS_TEST_YUBIKEYS.";
     }
     if (!mpss_is_algorithm_available_in_backend("ecdsa_secp256r1_sha256", "yubikey"))
     {
@@ -2257,7 +2255,7 @@ TEST_F(MPSSStore, DeviceParameterReportsAndPersistsActualDevice)
     const std::optional<std::uint32_t> serial_number = mpss::tests::test_yubikey_serial();
     if (!serial_number)
     {
-        GTEST_SKIP() << "YubiKey device not available";
+        GTEST_SKIP() << "Requires a connected YubiKey listed in MPSS_TEST_YUBIKEYS.";
     }
 
     const std::string device_id = std::to_string(*serial_number);
