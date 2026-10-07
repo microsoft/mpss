@@ -5,8 +5,10 @@
 
 #ifdef MPSS_BACKEND_YUBIKEY
 
+#include "mpss-openssl/provider/error.h"
 #include "mpss/interaction_handler.h"
 #include "mpss/utils/scope_guard.h"
+#include "mpss/utils/utilities.h"
 #include <array>
 #include <cstring>
 #include <openssl/crypto.h>
@@ -137,7 +139,8 @@ try
 catch (...)
 {
     // The previously installed handler is left in place.
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    mpss::utils::set_internal_error();
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
 }
 
 void mpss_reset_default_interaction_handler(void)
@@ -148,7 +151,8 @@ try
 catch (...)
 {
     // The installed handler is left in place.
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    mpss::utils::set_internal_error();
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
 }
 
 #endif // MPSS_BACKEND_YUBIKEY

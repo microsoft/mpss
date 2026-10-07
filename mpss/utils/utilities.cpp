@@ -64,6 +64,15 @@ void set_error(std::string error) noexcept
     *slot = std::move(error);
 }
 
+void set_internal_error() noexcept
+try
+{
+    set_error("Internal error.");
+}
+catch (...) // NOLINT(bugprone-empty-catch) - out of memory while reporting an error; dropped, as in set_error.
+{
+}
+
 std::size_t get_max_signature_size(Algorithm algorithm)
 {
     const AlgorithmInfo info = get_algorithm_info(algorithm);

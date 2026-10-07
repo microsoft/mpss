@@ -4,6 +4,7 @@
 #pragma once
 
 #include "mpss/algorithm.h"
+#include "mpss/defines.h"
 #include "mpss/log.h"
 #include <charconv>
 #include <concepts>
@@ -86,6 +87,14 @@ bool has_error() noexcept;
  * @param error The error string to set.
  */
 void set_error(std::string error) noexcept;
+
+/**
+ * @brief Set the last error to report an internal failure, such as an exception caught at an API boundary.
+ *
+ * Takes no message, so nothing at the call site can throw. Exported because the provider's C API, a
+ * separate binary, reports through it.
+ */
+MPSS_DECOR void set_internal_error() noexcept;
 
 /**
  * @brief Clear the last error for this thread.

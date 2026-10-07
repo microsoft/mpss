@@ -2,9 +2,11 @@
 // Licensed under the MIT license.
 
 #include "mpss-openssl/api.h"
+#include "mpss-openssl/provider/error.h"
 #include "mpss-openssl/utils/names.h"
 #include "mpss-openssl/utils/utils.h"
 #include "mpss/mpss.h"
+#include "mpss/utils/utilities.h"
 #include <mutex>
 #include <openssl/err.h>
 #include <optional>
@@ -37,7 +39,8 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    mpss::utils::set_internal_error();
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return false;
 }
 
@@ -48,7 +51,8 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    mpss::utils::set_internal_error();
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return false;
 }
 
@@ -58,7 +62,7 @@ try
     if (nullptr == location)
     {
         // Forward an invalid location so core validation refreshes the MPSS error as well as the OpenSSL queue.
-        ERR_raise(ERR_LIB_PROV, ERR_R_PASSED_NULL_PARAMETER);
+        MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_PASSED_NULL_PARAMETER);
         return mpss::KeyPair::Delete(mpss::KeyLocation{});
     }
 
@@ -70,7 +74,8 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    mpss::utils::set_internal_error();
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return false;
 }
 
@@ -81,7 +86,8 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    mpss::utils::set_internal_error();
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return false;
 }
 
@@ -93,7 +99,8 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    mpss::utils::set_internal_error();
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return false;
 }
 
@@ -114,7 +121,8 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    mpss::utils::set_internal_error();
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return empty_name_list;
 }
 
@@ -158,7 +166,8 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    mpss::utils::set_internal_error();
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return empty_name_list;
 }
 
@@ -169,6 +178,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    mpss::utils::set_internal_error();
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return "";
 }
