@@ -11,7 +11,6 @@ set(mpss_LINK_LIBRARIES "")
 
 list(APPEND mpss_SOURCE_FILES
     ${CMAKE_CURRENT_LIST_DIR}/backend_registry.cpp
-    ${CMAKE_CURRENT_LIST_DIR}/os_backend.cpp
 )
 
 # Add OS-native backend (if applicable).
@@ -37,6 +36,10 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Android")
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     message(STATUS "Linux detected. OS backend is not supported.")
     # Linux has no OS-native backend. We will use YubiKey if enabled.
+endif()
+
+if(MPSS_HAS_OS_BACKEND)
+    list(APPEND mpss_SOURCE_FILES ${CMAKE_CURRENT_LIST_DIR}/os_backend.cpp)
 endif()
 
 # Add YubiKey backend (if enabled).
