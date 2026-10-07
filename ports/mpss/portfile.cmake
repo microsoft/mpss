@@ -1,7 +1,6 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT license.
 
-# Android only supports shared libraries.
 if(VCPKG_TARGET_IS_ANDROID)
     vcpkg_check_linkage(ONLY_DYNAMIC_LIBRARY)
 endif()

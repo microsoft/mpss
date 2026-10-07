@@ -401,8 +401,8 @@ endif()
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Android")
     if(MPSS_BUILD_MPSS_CORE_STATIC OR MPSS_BUILD_MPSS_OPENSSL_STATIC)
-        # Android does not support static libraries.
-        message(FATAL_ERROR "Static libraries are not supported on Android.")
+        # The Android backend initializes in JNI_OnLoad, called when Java loads the core library.
+        message(FATAL_ERROR "MPSS supports only shared libraries on Android.")
     endif()
 
     # CMAKE_SYSTEM_VERSION contains the minimum Android API level for native code.

@@ -580,7 +580,7 @@ To use prebuilt MPSS binaries through an Android Studio project's `jniLibs`:
 Without `externalNativeBuild`, also copy `libc++_shared.so` from the same installation into
 `jniLibs/<abi>/`. Otherwise, let Gradle package it.
 
-**Note**: Only shared libraries are supported on Android. Static builds will produce a configuration error.
+**Note**: MPSS supports only shared libraries on Android. Static builds will produce a configuration error.
 
 ### YubiKey Backend
 
