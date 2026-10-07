@@ -256,26 +256,29 @@
             }
         },
         {
-            "name": "linux-with-yubikey-debug",
-            "displayName": "Linux Debug (Ninja) [YubiKey]",
+            "name": "linux-x64-with-yubikey-debug",
+            "displayName": "Linux Debug (x64, Ninja) [YubiKey]",
             "inherits": "linux-debug",
             "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "x64-linux",
                 "MPSS_BACKEND_YUBIKEY": "YES"
             }
         },
         {
-            "name": "linux-with-yubikey-release",
-            "displayName": "Linux Release (Ninja) [YubiKey]",
+            "name": "linux-x64-with-yubikey-release",
+            "displayName": "Linux Release (x64, Ninja) [YubiKey]",
             "inherits": "linux-release",
             "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "x64-linux",
                 "MPSS_BACKEND_YUBIKEY": "YES"
             }
         },
         {
-            "name": "linux-with-yubikey-shared-debug",
-            "displayName": "Linux Debug (Ninja) [Shared, YubiKey]",
-            "inherits": "linux-with-yubikey-debug",
+            "name": "linux-x64-with-yubikey-shared-debug",
+            "displayName": "Linux Debug (x64, Ninja) [Shared, YubiKey]",
+            "inherits": "linux-x64-with-yubikey-debug",
             "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "x64-linux-dynamic",
                 "MPSS_BUILD_MPSS_CORE_STATIC": "NO",
                 "MPSS_BUILD_MPSS_CORE_SHARED": "YES",
                 "MPSS_BUILD_MPSS_OPENSSL_STATIC": "NO",
@@ -283,10 +286,53 @@
             }
         },
         {
-            "name": "linux-with-yubikey-shared-release",
-            "displayName": "Linux Release (Ninja) [Shared, YubiKey]",
-            "inherits": "linux-with-yubikey-release",
+            "name": "linux-x64-with-yubikey-shared-release",
+            "displayName": "Linux Release (x64, Ninja) [Shared, YubiKey]",
+            "inherits": "linux-x64-with-yubikey-release",
             "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "x64-linux-dynamic",
+                "MPSS_BUILD_MPSS_CORE_STATIC": "NO",
+                "MPSS_BUILD_MPSS_CORE_SHARED": "YES",
+                "MPSS_BUILD_MPSS_OPENSSL_STATIC": "NO",
+                "MPSS_BUILD_MPSS_OPENSSL_SHARED": "YES"
+            }
+        },
+        {
+            "name": "linux-arm64-with-yubikey-debug",
+            "displayName": "Linux Debug (arm64, Ninja) [YubiKey]",
+            "inherits": "linux-debug",
+            "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "arm64-linux",
+                "MPSS_BACKEND_YUBIKEY": "YES"
+            }
+        },
+        {
+            "name": "linux-arm64-with-yubikey-release",
+            "displayName": "Linux Release (arm64, Ninja) [YubiKey]",
+            "inherits": "linux-release",
+            "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "arm64-linux",
+                "MPSS_BACKEND_YUBIKEY": "YES"
+            }
+        },
+        {
+            "name": "linux-arm64-with-yubikey-shared-debug",
+            "displayName": "Linux Debug (arm64, Ninja) [Shared, YubiKey]",
+            "inherits": "linux-arm64-with-yubikey-debug",
+            "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "arm64-linux-dynamic",
+                "MPSS_BUILD_MPSS_CORE_STATIC": "NO",
+                "MPSS_BUILD_MPSS_CORE_SHARED": "YES",
+                "MPSS_BUILD_MPSS_OPENSSL_STATIC": "NO",
+                "MPSS_BUILD_MPSS_OPENSSL_SHARED": "YES"
+            }
+        },
+        {
+            "name": "linux-arm64-with-yubikey-shared-release",
+            "displayName": "Linux Release (arm64, Ninja) [Shared, YubiKey]",
+            "inherits": "linux-arm64-with-yubikey-release",
+            "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "arm64-linux-dynamic",
                 "MPSS_BUILD_MPSS_CORE_STATIC": "NO",
                 "MPSS_BUILD_MPSS_CORE_SHARED": "YES",
                 "MPSS_BUILD_MPSS_OPENSSL_STATIC": "NO",
@@ -460,6 +506,7 @@
             "displayName": "macOS Debug (arm64, Ninja) [Shared]",
             "inherits": "macos-arm64-debug",
             "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "arm64-osx-dynamic",
                 "MPSS_BUILD_MPSS_CORE_STATIC": "NO",
                 "MPSS_BUILD_MPSS_CORE_SHARED": "YES",
                 "MPSS_BUILD_MPSS_OPENSSL_STATIC": "NO",
@@ -471,6 +518,7 @@
             "displayName": "macOS Release (arm64, Ninja) [Shared]",
             "inherits": "macos-arm64-release",
             "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "arm64-osx-dynamic",
                 "MPSS_BUILD_MPSS_CORE_STATIC": "NO",
                 "MPSS_BUILD_MPSS_CORE_SHARED": "YES",
                 "MPSS_BUILD_MPSS_OPENSSL_STATIC": "NO",
@@ -482,6 +530,7 @@
             "displayName": "macOS Debug (arm64, Ninja) [Shared, YubiKey]",
             "inherits": "macos-arm64-with-yubikey-debug",
             "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "arm64-osx-dynamic",
                 "MPSS_BUILD_MPSS_CORE_STATIC": "NO",
                 "MPSS_BUILD_MPSS_CORE_SHARED": "YES",
                 "MPSS_BUILD_MPSS_OPENSSL_STATIC": "NO",
@@ -493,6 +542,7 @@
             "displayName": "macOS Release (arm64, Ninja) [Shared, YubiKey]",
             "inherits": "macos-arm64-with-yubikey-release",
             "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "arm64-osx-dynamic",
                 "MPSS_BUILD_MPSS_CORE_STATIC": "NO",
                 "MPSS_BUILD_MPSS_CORE_SHARED": "YES",
                 "MPSS_BUILD_MPSS_OPENSSL_STATIC": "NO",
@@ -504,6 +554,7 @@
             "displayName": "macOS Debug (x64, Ninja) [Shared]",
             "inherits": "macos-x64-debug",
             "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "x64-osx-dynamic",
                 "MPSS_BUILD_MPSS_CORE_STATIC": "NO",
                 "MPSS_BUILD_MPSS_CORE_SHARED": "YES",
                 "MPSS_BUILD_MPSS_OPENSSL_STATIC": "NO",
@@ -515,6 +566,7 @@
             "displayName": "macOS Release (x64, Ninja) [Shared]",
             "inherits": "macos-x64-release",
             "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "x64-osx-dynamic",
                 "MPSS_BUILD_MPSS_CORE_STATIC": "NO",
                 "MPSS_BUILD_MPSS_CORE_SHARED": "YES",
                 "MPSS_BUILD_MPSS_OPENSSL_STATIC": "NO",
@@ -526,6 +578,7 @@
             "displayName": "macOS Debug (x64, Ninja) [Shared, YubiKey]",
             "inherits": "macos-x64-with-yubikey-debug",
             "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "x64-osx-dynamic",
                 "MPSS_BUILD_MPSS_CORE_STATIC": "NO",
                 "MPSS_BUILD_MPSS_CORE_SHARED": "YES",
                 "MPSS_BUILD_MPSS_OPENSSL_STATIC": "NO",
@@ -537,6 +590,7 @@
             "displayName": "macOS Release (x64, Ninja) [Shared, YubiKey]",
             "inherits": "macos-x64-with-yubikey-release",
             "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "x64-osx-dynamic",
                 "MPSS_BUILD_MPSS_CORE_STATIC": "NO",
                 "MPSS_BUILD_MPSS_CORE_SHARED": "YES",
                 "MPSS_BUILD_MPSS_OPENSSL_STATIC": "NO",
@@ -986,9 +1040,9 @@
             }
         },
         {
-            "name": "linux-with-yubikey-debug",
-            "displayName": "Linux Debug (Ninja) [YubiKey]",
-            "configurePreset": "linux-with-yubikey-debug",
+            "name": "linux-x64-with-yubikey-debug",
+            "displayName": "Linux Debug (x64, Ninja) [YubiKey]",
+            "configurePreset": "linux-x64-with-yubikey-debug",
             "jobs": 0,
             "condition": {
                 "type": "equals",
@@ -997,9 +1051,9 @@
             }
         },
         {
-            "name": "linux-with-yubikey-release",
-            "displayName": "Linux Release (Ninja) [YubiKey]",
-            "configurePreset": "linux-with-yubikey-release",
+            "name": "linux-x64-with-yubikey-release",
+            "displayName": "Linux Release (x64, Ninja) [YubiKey]",
+            "configurePreset": "linux-x64-with-yubikey-release",
             "jobs": 0,
             "condition": {
                 "type": "equals",
@@ -1008,9 +1062,9 @@
             }
         },
         {
-            "name": "linux-with-yubikey-shared-debug",
-            "displayName": "Linux Debug (Ninja) [Shared, YubiKey]",
-            "configurePreset": "linux-with-yubikey-shared-debug",
+            "name": "linux-x64-with-yubikey-shared-debug",
+            "displayName": "Linux Debug (x64, Ninja) [Shared, YubiKey]",
+            "configurePreset": "linux-x64-with-yubikey-shared-debug",
             "jobs": 0,
             "condition": {
                 "type": "equals",
@@ -1019,9 +1073,53 @@
             }
         },
         {
-            "name": "linux-with-yubikey-shared-release",
-            "displayName": "Linux Release (Ninja) [Shared, YubiKey]",
-            "configurePreset": "linux-with-yubikey-shared-release",
+            "name": "linux-x64-with-yubikey-shared-release",
+            "displayName": "Linux Release (x64, Ninja) [Shared, YubiKey]",
+            "configurePreset": "linux-x64-with-yubikey-shared-release",
+            "jobs": 0,
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Linux"
+            }
+        },
+        {
+            "name": "linux-arm64-with-yubikey-debug",
+            "displayName": "Linux Debug (arm64, Ninja) [YubiKey]",
+            "configurePreset": "linux-arm64-with-yubikey-debug",
+            "jobs": 0,
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Linux"
+            }
+        },
+        {
+            "name": "linux-arm64-with-yubikey-release",
+            "displayName": "Linux Release (arm64, Ninja) [YubiKey]",
+            "configurePreset": "linux-arm64-with-yubikey-release",
+            "jobs": 0,
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Linux"
+            }
+        },
+        {
+            "name": "linux-arm64-with-yubikey-shared-debug",
+            "displayName": "Linux Debug (arm64, Ninja) [Shared, YubiKey]",
+            "configurePreset": "linux-arm64-with-yubikey-shared-debug",
+            "jobs": 0,
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Linux"
+            }
+        },
+        {
+            "name": "linux-arm64-with-yubikey-shared-release",
+            "displayName": "Linux Release (arm64, Ninja) [Shared, YubiKey]",
+            "configurePreset": "linux-arm64-with-yubikey-shared-release",
             "jobs": 0,
             "condition": {
                 "type": "equals",

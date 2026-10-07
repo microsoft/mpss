@@ -78,10 +78,10 @@ jobs:
       parameters:
         yubikey: 'true'
         ${{ if eq(parameters.debug, 'true') }}:
-          preset: 'linux-with-yubikey-debug'
+          preset: 'linux-x64-with-yubikey-debug'
           configuration: 'Debug'
         ${{ if eq(parameters.debug, 'false') }}:
-          preset: 'linux-with-yubikey-release'
+          preset: 'linux-x64-with-yubikey-release'
           configuration: 'Release'
 
 - ${{ if eq(parameters.name, 'macOS') }}:

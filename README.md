@@ -223,15 +223,16 @@ cmake --install out/build/<configure-preset-name> --prefix <destination> # optio
 ```
 
 Run `cmake --list-presets=all` to list presets. Desktop names containing `-with-yubikey` enable
-YubiKey support; `-shared` selects shared libraries, otherwise static. Android uses shared
+YubiKey support; `-shared` selects shared libraries, otherwise static. Desktop `-shared` presets
+also link OpenSSL and the other vcpkg dependencies as shared libraries. Android uses shared
 libraries and the iOS Simulator preset uses static libraries. Linux offers only `-with-yubikey`
 presets, because it has no OS-native backend and MPSS requires at least one backend. Windows names
 containing `-mock` also build the NCrypt failure-injection tests (`MPSS_BUILD_WIN32_MOCK_TESTS=ON`).
 
 Each configure preset has a separate `out/build/<name>` directory and vcpkg installation.
 With Visual Studio or Xcode, add `--config Debug` or `--config Release` when installing.
-Linux presets target the host architecture; Windows, macOS, Android, and iOS presets name
-their target architecture.
+Preset names include the target architecture. Linux presets do not cross-compile, so choose the
+one matching the host.
 
 ### Configuring Without Presets
 
@@ -608,9 +609,11 @@ reader are required as well.
 
 - **Linux:**
   ```bash
-  cmake --preset linux-with-yubikey-release
-  cmake --build --preset linux-with-yubikey-release
+  cmake --preset linux-x64-with-yubikey-release
+  cmake --build --preset linux-x64-with-yubikey-release
   ```
+
+  Use `linux-arm64-...` on arm64 hosts.
 
 - **macOS:**
   ```bash
@@ -642,6 +645,10 @@ For device setup and backend selection, see [Using MPSS with YubiKey PIV](#using
 | `MPSS_WITH_SERIALIZATION=ON` | Enable C++ key-reference DER/PEM serialization using OpenSSL's crypto library, without requiring the provider. Off by default; either provider build enables it automatically. |
 | `MPSS_ENABLE_HARDENING=OFF` | Disable security hardening compile and link flags (default is `ON`). |
 | `BUILD_SHARED_LIBS=ON` | Select shared core and provider libraries when no explicit MPSS library-type option is enabled. Explicit options take precedence. |
+
+Build shared MPSS libraries against a shared OpenSSL, so that a process has one copy of it. With
+vcpkg on macOS or Linux, this means a `-dynamic` triplet such as `x64-linux-dynamic`, as the
+`-shared` presets use.
 
 Static targets are named `mpss::mpss_static` and `mpss::mpss_openssl_static`, whereas shared targets are `mpss::mpss` and `mpss::mpss_openssl`.
 Single-configuration generators use `CMAKE_BUILD_TYPE` to select `Debug` or `Release`.
