@@ -5,6 +5,7 @@
 #include "mpss-openssl/provider/decoder.h"
 #include "mpss-openssl/provider/digest.h"
 #include "mpss-openssl/provider/encoder.h"
+#include "mpss-openssl/provider/error.h"
 #include "mpss-openssl/provider/keymgmt.h"
 #include "mpss-openssl/provider/signature.h"
 #include "mpss-openssl/provider/store.h"
@@ -56,7 +57,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return nullptr;
 }
 
@@ -73,6 +74,8 @@ try
 {
     using namespace ::mpss_openssl::provider;
     using namespace ::mpss_openssl::utils;
+
+    use_core_error_functions(in);
 
     mpss_ptr<mpss_provider_ctx> ctx{mpss_new<mpss_provider_ctx>()};
     ctx->handle = handle;
@@ -92,6 +95,6 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return 0;
 }

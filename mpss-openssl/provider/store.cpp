@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 #include "mpss-openssl/provider/store.h"
+#include "mpss-openssl/provider/error.h"
 #include "mpss-openssl/provider/reference.h"
 #include "mpss-openssl/utils/names.h"
 #include "mpss-openssl/utils/utils.h"
@@ -72,7 +73,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return nullptr;
 }
 
@@ -136,7 +137,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return 0;
 }
 
@@ -150,7 +151,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return nullptr;
 }
 
@@ -206,7 +207,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return 0;
 }
 
@@ -225,7 +226,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return 1;
 }
 
@@ -237,7 +238,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return 0;
 }
 
@@ -297,7 +298,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return 0;
 }
 

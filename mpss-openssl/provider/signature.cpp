@@ -3,6 +3,7 @@
 
 #include "mpss-openssl/provider/signature.h"
 #include "mpss-openssl/provider/digest.h"
+#include "mpss-openssl/provider/error.h"
 #include "mpss-openssl/provider/keymgmt.h"
 #include "mpss-openssl/provider/provider.h"
 #include "mpss-openssl/utils/names.h"
@@ -67,7 +68,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return nullptr;
 }
 
@@ -105,7 +106,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return nullptr;
 }
 
@@ -128,7 +129,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return nullptr;
 }
 
@@ -196,7 +197,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return 0;
 }
 
@@ -220,7 +221,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return 0;
 }
 
@@ -283,7 +284,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return 0;
 }
 
@@ -307,7 +308,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return 0;
 }
 
@@ -331,7 +332,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return 0;
 }
 
@@ -397,7 +398,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return 0;
 }
 
@@ -419,7 +420,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return 0;
 }
 
@@ -445,7 +446,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return 0;
 }
 
@@ -476,7 +477,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return 0;
 }
 
@@ -488,7 +489,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return 0;
 }
 
@@ -499,7 +500,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return 0;
 }
 
@@ -564,7 +565,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return 0;
 }
 
@@ -585,7 +586,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return 0;
 }
 

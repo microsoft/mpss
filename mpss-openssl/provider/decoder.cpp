@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 #include "mpss-openssl/provider/decoder.h"
+#include "mpss-openssl/provider/error.h"
 #include "mpss-openssl/provider/keymgmt.h"
 #include "mpss-openssl/provider/provider.h"
 #include "mpss-openssl/provider/reference.h"
@@ -69,7 +70,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return nullptr;
 }
 
@@ -93,7 +94,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return 0;
 }
 
@@ -107,7 +108,7 @@ reference_parse_status read_reference_pem(BIO *in, pem_buffer &buffer, std::stri
     std::size_t line_start = 0;
 
     // Ignore probe errors for foreign input; recognizing our label commits us to reporting failures.
-    ERR_set_mark();
+    set_error_mark();
 
     // Read bytes, not BIO_gets fragments: file BIOs can underreport lengths containing NUL.
     // The small fixed budget bounds the work; byte reads avoid consuming the following PEM record.
@@ -147,12 +148,12 @@ reference_parse_status read_reference_pem(BIO *in, pem_buffer &buffer, std::stri
         {
             if (line != begin)
             {
-                ERR_pop_to_mark();
+                pop_error_to_mark();
                 return reference_parse_status::not_our_pem;
             }
 
             begin_offset = line_start;
-            ERR_clear_last_mark();
+            clear_last_error_mark();
         }
         else if (begin_offset && line.starts_with("-----END "))
         {
@@ -170,12 +171,12 @@ reference_parse_status read_reference_pem(BIO *in, pem_buffer &buffer, std::stri
 
     if (!begin_offset)
     {
-        ERR_pop_to_mark();
+        pop_error_to_mark();
         return reference_parse_status::not_our_pem;
     }
 
     // A footer reaching the byte limit without LF is incomplete: confirming EOF would require another read.
-    ERR_raise_data(ERR_LIB_PROV, PROV_R_BAD_ENCODING, "Invalid, incomplete, or oversized MPSS reference PEM");
+    MPSS_ERR_RAISE_DATA(ERR_LIB_PROV, PROV_R_BAD_ENCODING, "Invalid, incomplete, or oversized MPSS reference PEM");
     return reference_parse_status::invalid_mpss_reference;
 }
 
@@ -184,7 +185,7 @@ reference_parse_status parse_reference_input(OSSL_LIB_CTX *libctx, OSSL_CORE_BIO
     bio_ptr in(BIO_new_from_core_bio(libctx, cin));
     if (!in)
     {
-        ERR_raise(ERR_LIB_PROV, ERR_R_MALLOC_FAILURE);
+        MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_MALLOC_FAILURE);
         return reference_parse_status::invalid_mpss_reference;
     }
 
@@ -202,10 +203,10 @@ reference_parse_status parse_reference_input(OSSL_LIB_CTX *libctx, OSSL_CORE_BIO
     const std::optional<mpss::KeyReference> reference = mpss::impl::decode_key_reference_pem(pem, error);
     if (!reference)
     {
-        ERR_raise_data(ERR_LIB_PROV,
-                       mpss_reference_error::unsupported == error ? PROV_R_NOT_SUPPORTED : PROV_R_BAD_ENCODING,
-                       "PEM label \"%s\" does not carry a usable key load reference: %s", mpss_key_reference_pem_label,
-                       mpss::get_error().c_str());
+        MPSS_ERR_RAISE_DATA(ERR_LIB_PROV,
+                            mpss_reference_error::unsupported == error ? PROV_R_NOT_SUPPORTED : PROV_R_BAD_ENCODING,
+                            "PEM label \"%s\" does not carry a usable key load reference: %s",
+                            mpss_key_reference_pem_label, mpss::get_error().c_str());
         return reference_parse_status::invalid_mpss_reference;
     }
 
@@ -214,7 +215,7 @@ reference_parse_status parse_reference_input(OSSL_LIB_CTX *libctx, OSSL_CORE_BIO
     std::optional<byte_vector> der = mpss::encode_key_reference_der(*reference);
     if (!der)
     {
-        ERR_raise_data(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR, "%s", mpss::get_error().c_str());
+        MPSS_ERR_RAISE_DATA(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR, "%s", mpss::get_error().c_str());
         return reference_parse_status::invalid_mpss_reference;
     }
 
@@ -230,7 +231,7 @@ try
     mpss_decoder_ctx *dctx = static_cast<mpss_decoder_ctx *>(ctx);
     if (nullptr == dctx || nullptr == object_cb)
     {
-        ERR_raise(ERR_LIB_PROV, ERR_R_PASSED_NULL_PARAMETER);
+        MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_PASSED_NULL_PARAMETER);
         return decoder_hard_error;
     }
     if (0 != selection && 0 == (selection & OSSL_KEYMGMT_SELECT_PRIVATE_KEY))
@@ -259,7 +260,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return decoder_hard_error;
 }
 

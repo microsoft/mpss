@@ -3,6 +3,7 @@
 
 #include "mpss-openssl/provider/keymgmt.h"
 #include "mpss-openssl/api.h"
+#include "mpss-openssl/provider/error.h"
 #include "mpss-openssl/provider/reference.h"
 #include "mpss-openssl/utils/names.h"
 #include "mpss-openssl/utils/utils.h"
@@ -261,7 +262,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return 0;
 }
 
@@ -302,7 +303,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return nullptr;
 }
 
@@ -319,7 +320,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return nullptr;
 }
 
@@ -389,7 +390,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return 0;
 }
 
@@ -415,7 +416,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return nullptr;
 }
 
@@ -533,7 +534,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return 0;
 }
 
@@ -558,7 +559,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return nullptr;
 }
 
@@ -609,7 +610,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return nullptr;
 }
 
@@ -635,7 +636,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return 0;
 }
 
@@ -675,7 +676,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return 0;
 }
 
@@ -692,7 +693,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return nullptr;
 }
 
@@ -709,8 +710,8 @@ try
     if (!mpss_parse_key_load_reference(
             std::span<const unsigned char>(static_cast<const unsigned char *>(reference), reference_sz), parsed, error))
     {
-        ERR_raise(ERR_LIB_PROV,
-                  mpss_reference_error::unsupported == error ? PROV_R_NOT_SUPPORTED : PROV_R_BAD_ENCODING);
+        MPSS_ERR_RAISE(ERR_LIB_PROV,
+                       mpss_reference_error::unsupported == error ? PROV_R_NOT_SUPPORTED : PROV_R_BAD_ENCODING);
         return nullptr;
     }
 
@@ -734,7 +735,7 @@ try
     mpss_ptr<mpss_key> pkey{mpss_new<mpss_key>(std::move(opened))};
     if (!pkey->has_valid_key())
     {
-        ERR_raise_data(ERR_LIB_PROV, ERR_R_OPERATION_FAIL, "%s", mpss::get_error().c_str());
+        MPSS_ERR_RAISE_DATA(ERR_LIB_PROV, ERR_R_OPERATION_FAIL, "%s", mpss::get_error().c_str());
         return nullptr;
     }
 
@@ -742,7 +743,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return nullptr;
 }
 

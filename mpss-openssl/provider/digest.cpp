@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 #include "mpss-openssl/provider/digest.h"
+#include "mpss-openssl/provider/error.h"
 #include "mpss-openssl/provider/provider.h"
 #include "mpss-openssl/utils/names.h"
 #include "mpss-openssl/utils/utils.h"
@@ -79,7 +80,7 @@ using enum digest_state;
     }                                                                                                                  \
     catch (...)                                                                                                        \
     {                                                                                                                  \
-        ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);                                                                 \
+        MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);                                                            \
         return nullptr;                                                                                                \
     }
 
@@ -108,7 +109,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return nullptr;
 }
 
@@ -178,7 +179,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return 0;
 }
 
@@ -210,7 +211,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return 0;
 }
 
@@ -260,7 +261,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return 0;
 }
 
@@ -290,7 +291,7 @@ int mpss_digest_digest_internal(void *ctx, const unsigned char *in, ::size_t inl
     }                                                                                                                  \
     catch (...)                                                                                                        \
     {                                                                                                                  \
-        ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);                                                                 \
+        MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);                                                            \
         return 0;                                                                                                      \
     }
 
@@ -308,7 +309,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return nullptr;
 }
 
@@ -329,7 +330,7 @@ catch (...)
     }                                                                                                                  \
     catch (...)                                                                                                        \
     {                                                                                                                  \
-        ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);                                                                 \
+        MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);                                                            \
         return 0;                                                                                                      \
     }
 

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 #include "mpss-openssl/provider/encoder.h"
+#include "mpss-openssl/provider/error.h"
 #include "mpss-openssl/provider/keymgmt.h"
 #include "mpss-openssl/provider/provider.h"
 #include "mpss-openssl/provider/reference.h"
@@ -54,7 +55,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return nullptr;
 }
 
@@ -74,7 +75,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return nullptr;
 }
 
@@ -100,7 +101,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return 0;
 }
 
@@ -111,7 +112,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return 0;
 }
 
@@ -176,7 +177,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return 0;
 }
 
@@ -187,7 +188,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return 0;
 }
 
@@ -211,14 +212,14 @@ try
     const auto reference = pkey->key_pair->reference();
     if (!reference)
     {
-        ERR_raise_data(ERR_LIB_PROV, ERR_R_OPERATION_FAIL, "%s", mpss::get_error().c_str());
+        MPSS_ERR_RAISE_DATA(ERR_LIB_PROV, ERR_R_OPERATION_FAIL, "%s", mpss::get_error().c_str());
         return 0;
     }
 
     const auto pem = mpss::encode_key_reference_pem(*reference);
     if (!pem)
     {
-        ERR_raise_data(ERR_LIB_PROV, ERR_R_OPERATION_FAIL, "%s", mpss::get_error().c_str());
+        MPSS_ERR_RAISE_DATA(ERR_LIB_PROV, ERR_R_OPERATION_FAIL, "%s", mpss::get_error().c_str());
         return 0;
     }
 
@@ -233,7 +234,7 @@ try
 }
 catch (...)
 {
-    ERR_raise(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
     return 0;
 }
 
