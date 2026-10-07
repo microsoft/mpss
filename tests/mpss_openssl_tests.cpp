@@ -1663,9 +1663,9 @@ TEST_F(MPSSStore, ReferencePemDecoderRejectsNonBase64Body)
 
 // Scenario: a PEM carries our label but a body the decoder cannot use, which aborts the decoder
 // chain rather than deferring to another decoder.
-// Expected behavior: the reason reaches the OpenSSL error queue. OpenSSL reports a generic decode
-// failure on its own, which does not distinguish a file that is not ours from one that is ours and
-// malformed; the specific reason is what makes that diagnosable.
+// Expected behavior: the reason, and the function that raised it, reach the OpenSSL error queue.
+// OpenSSL reports a generic decode failure on its own, which does not distinguish a file that is not
+// ours from one that is ours and malformed; the specific reason is what makes that diagnosable.
 TEST_F(MPSSStore, ReferencePemDecoderReportsWhyItRejectedOurOwnLabel)
 {
     ERR_clear_error();
@@ -1674,11 +1674,14 @@ TEST_F(MPSSStore, ReferencePemDecoderReportsWhyItRejectedOurOwnLabel)
     // The queue also carries OpenSSL's own decode errors, and their order is not ours to rely on,
     // so search it rather than inspecting only the last entry.
     bool found = false;
-    for (unsigned long e = ERR_get_error(); 0 != e; e = ERR_get_error())
+    const char *func = nullptr;
+    for (unsigned long e = ERR_get_error_all(nullptr, nullptr, &func, nullptr, nullptr); 0 != e;
+         e = ERR_get_error_all(nullptr, nullptr, &func, nullptr, nullptr))
     {
         if (ERR_LIB_PROV == ERR_GET_LIB(e) && PROV_R_BAD_ENCODING == ERR_GET_REASON(e))
         {
             found = true;
+            EXPECT_STREQ("parse_reference_input", func);
         }
     }
     EXPECT_TRUE(found) << "the decoder aborted the chain without reporting why";

@@ -23,9 +23,10 @@ void pop_error_to_mark();
 
 } // namespace mpss_openssl::provider
 
-// Provider code raises errors with these instead of ERR_raise and ERR_raise_data.
+// Provider code raises errors with these instead of ERR_raise and ERR_raise_data. They use __func__ because
+// OPENSSL_FUNC is "(unknown function)" in C++ except with MSVC.
 // NOLINTBEGIN(cppcoreguidelines-pro-type-vararg) - the core receives error data as a va_list.
 #define MPSS_ERR_RAISE_DATA(lib, reason, ...)                                                                          \
-    ::mpss_openssl::provider::raise_error(OPENSSL_FILE, OPENSSL_LINE, OPENSSL_FUNC, (lib), (reason), __VA_ARGS__)
+    ::mpss_openssl::provider::raise_error(OPENSSL_FILE, OPENSSL_LINE, __func__, (lib), (reason), __VA_ARGS__)
 #define MPSS_ERR_RAISE(lib, reason) MPSS_ERR_RAISE_DATA((lib), (reason), nullptr)
 // NOLINTEND(cppcoreguidelines-pro-type-vararg)
