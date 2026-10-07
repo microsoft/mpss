@@ -75,7 +75,10 @@ try
     using namespace ::mpss_openssl::provider;
     using namespace ::mpss_openssl::utils;
 
-    use_core_error_functions(in);
+    if (!use_core_error_functions(in))
+    {
+        return 0;
+    }
 
     mpss_ptr<mpss_provider_ctx> ctx{mpss_new<mpss_provider_ctx>()};
     ctx->handle = handle;

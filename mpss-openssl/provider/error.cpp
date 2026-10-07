@@ -19,39 +19,53 @@ std::atomic<OSSL_FUNC_core_set_error_mark_fn *> core_set_error_mark{nullptr};
 std::atomic<OSSL_FUNC_core_clear_last_error_mark_fn *> core_clear_last_error_mark{nullptr};
 std::atomic<OSSL_FUNC_core_pop_error_to_mark_fn *> core_pop_error_to_mark{nullptr};
 
+template <typename T>
+[[nodiscard]]
+bool use_core_function(std::atomic<T *> &stored, T *function)
+{
+    T *expected = nullptr;
+    return stored.compare_exchange_strong(expected, function) || function == expected;
+}
+
 } // namespace
 
 namespace mpss_openssl::provider
 {
 
-void use_core_error_functions(const OSSL_DISPATCH *in)
+bool use_core_error_functions(const OSSL_DISPATCH *in)
 {
     for (; nullptr != in && 0 != in->function_id; ++in)
     {
+        bool same_core = true;
         switch (in->function_id)
         {
         case OSSL_FUNC_CORE_NEW_ERROR:
-            core_new_error = OSSL_FUNC_core_new_error(in);
+            same_core = use_core_function(core_new_error, OSSL_FUNC_core_new_error(in));
             break;
         case OSSL_FUNC_CORE_SET_ERROR_DEBUG:
-            core_set_error_debug = OSSL_FUNC_core_set_error_debug(in);
+            same_core = use_core_function(core_set_error_debug, OSSL_FUNC_core_set_error_debug(in));
             break;
         case OSSL_FUNC_CORE_VSET_ERROR:
-            core_vset_error = OSSL_FUNC_core_vset_error(in);
+            same_core = use_core_function(core_vset_error, OSSL_FUNC_core_vset_error(in));
             break;
         case OSSL_FUNC_CORE_SET_ERROR_MARK:
-            core_set_error_mark = OSSL_FUNC_core_set_error_mark(in);
+            same_core = use_core_function(core_set_error_mark, OSSL_FUNC_core_set_error_mark(in));
             break;
         case OSSL_FUNC_CORE_CLEAR_LAST_ERROR_MARK:
-            core_clear_last_error_mark = OSSL_FUNC_core_clear_last_error_mark(in);
+            same_core = use_core_function(core_clear_last_error_mark, OSSL_FUNC_core_clear_last_error_mark(in));
             break;
         case OSSL_FUNC_CORE_POP_ERROR_TO_MARK:
-            core_pop_error_to_mark = OSSL_FUNC_core_pop_error_to_mark(in);
+            same_core = use_core_function(core_pop_error_to_mark, OSSL_FUNC_core_pop_error_to_mark(in));
             break;
         default:
             break;
         }
+        if (!same_core)
+        {
+            return false;
+        }
     }
+    return true;
 }
 
 // NOLINTNEXTLINE(modernize-avoid-variadic-functions) - the core receives error data as a va_list.

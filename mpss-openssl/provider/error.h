@@ -10,8 +10,10 @@ namespace mpss_openssl::provider
 {
 
 // Errors and error marks go through the core that loaded the provider, so they reach the application's
-// error queue even when the provider links its own copy of libcrypto.
-void use_core_error_functions(const OSSL_DISPATCH *in);
+// error queue even when the provider links its own copy of libcrypto. Fails if a different core has already
+// loaded the provider.
+[[nodiscard]]
+bool use_core_error_functions(const OSSL_DISPATCH *in);
 
 void raise_error(const char *file, int line, const char *func, int lib, int reason, const char *fmt, ...);
 

@@ -95,6 +95,10 @@ bool has_algorithm_name(const char *algorithm_names, std::string_view expected)
     return false;
 }
 
+void other_core_new_error(const OSSL_CORE_HANDLE * /*handle*/)
+{
+}
+
 class MPSSDigest : public ::testing::Test
 {
   protected:
@@ -847,6 +851,27 @@ TEST(MPSS_OpenSSL, GenSetParamsRejectsNullString)
     ASSERT_EQ(0, EVP_PKEY_CTX_set_params(ctx.get(), params));
 
     ctx.reset();
+    ASSERT_NE(0, OSSL_PROVIDER_unload(mpss_prov.release()));
+}
+
+// Scenario: a core other than the one that loaded the provider initializes it, as a second copy of
+// libcrypto in the process would.
+// Expected behavior: initialization fails rather than sending the provider's errors to that core.
+TEST(MPSS_OpenSSL, ProviderInitRefusesADifferentCore)
+{
+    const ossl_lib_ctx_ptr mpss_libctx(OSSL_LIB_CTX_new());
+    ASSERT_NE(nullptr, mpss_libctx);
+    ASSERT_NE(0, OSSL_PROVIDER_add_builtin(mpss_libctx.get(), "mpss", OSSL_provider_init));
+    ossl_provider_ptr mpss_prov(OSSL_PROVIDER_load(mpss_libctx.get(), "mpss"));
+    ASSERT_NE(nullptr, mpss_prov);
+
+    const OSSL_DISPATCH other_core[] = {{OSSL_FUNC_CORE_NEW_ERROR, reinterpret_cast<void (*)()>(other_core_new_error)},
+                                        OSSL_DISPATCH_END};
+    const OSSL_DISPATCH *out = nullptr;
+    void *provctx = nullptr;
+    EXPECT_EQ(0, OSSL_provider_init(nullptr, other_core, &out, &provctx));
+    EXPECT_EQ(nullptr, provctx);
+
     ASSERT_NE(0, OSSL_PROVIDER_unload(mpss_prov.release()));
 }
 
