@@ -7,7 +7,6 @@
 #include <cstddef>
 #include <memory>
 #include <optional>
-#include <regex>
 #include <string>
 #include <string_view>
 
@@ -16,7 +15,20 @@ namespace mpss_openssl::utils
 
 using namespace mpss;
 
-#define MPSS_NAME_CHARS R"(-_.0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ)"
+namespace
+{
+
+// Removes the first alias from a colon-separated list of aliases and returns it.
+[[nodiscard]]
+std::string_view pop_alias(std::string_view &aliases)
+{
+    const std::size_t separator = aliases.find(':');
+    const std::string_view alias = aliases.substr(0, separator);
+    aliases.remove_prefix(std::string_view::npos == separator ? aliases.size() : separator + 1);
+    return alias;
+}
+
+} // namespace
 
 namespace unsafe
 {
@@ -36,26 +48,18 @@ std::string_view get_canonical_name(std::string_view name, const std::array<cons
         return {};
     }
 
-    // Check that the name only contains valid characters. Notably,
-    // the colon is not included in this list since it separates the aliases.
-    if (std::string_view::npos != name.find_first_not_of(MPSS_NAME_CHARS))
-    {
-        return {};
-    }
-
-    // Create a regex that matches the name in an alias string.
-    const std::regex name_regex{R"((?:^|:))" + std::string{name} + R"((?:$|:))"};
-
     for (const auto &aliases : alias_arr)
     {
-        std::string_view alias_str{aliases};
+        const std::string_view alias_str{aliases};
 
-        // Now check if the hash name is a match in alias_str.
-        std::match_results<std::string_view::const_iterator> match;
-        if (std::regex_search(alias_str.begin(), alias_str.end(), match, name_regex))
+        // Now check if the name is one of the aliases in alias_str.
+        for (std::string_view remaining = alias_str; !remaining.empty();)
         {
-            // Return the first name from the list of aliases.
-            return alias_str.substr(0, alias_str.find(':'));
+            if (name == pop_alias(remaining))
+            {
+                // Return the first name from the list of aliases.
+                return alias_str.substr(0, alias_str.find(':'));
+            }
         }
     }
 
@@ -140,20 +144,12 @@ std::string_view try_extract_canonical_name(std::string_view str, const std::arr
     // (that are not aliases), we return {}.
     std::string found_name = {};
 
-    // Create a regex that matches all of the hash name aliases.
-    const std::regex name_regex{R"([)" MPSS_NAME_CHARS R"(]+)"};
-
     for (const auto &aliases : alias_arr)
     {
-        std::string_view alias_str{aliases};
-
         // Iterate over each alias.
-        auto it_begin = std::regex_iterator(alias_str.begin(), alias_str.end(), name_regex);
-        auto it_end = decltype(it_begin)();
-
-        for (auto it = it_begin; it != it_end; ++it)
+        for (std::string_view remaining{aliases}; !remaining.empty();)
         {
-            const std::string alias = it->str();
+            const std::string_view alias = pop_alias(remaining);
 
             // Next, we try to find alias in str. Moreover, check that we find
             // just one instance of it.
