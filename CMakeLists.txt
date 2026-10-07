@@ -472,6 +472,19 @@ if(TARGET ${mpss_TARGET})
     if(MPSS_WITH_SERIALIZATION)
         find_package(OpenSSL 3 REQUIRED COMPONENTS Crypto)
         target_link_libraries(${mpss_TARGET} PRIVATE OpenSSL::Crypto)
+
+        # MPSS is always shared on Android, so a static OpenSSL would be copied into each MPSS
+        # library.
+        if(CMAKE_SYSTEM_NAME STREQUAL "Android")
+            get_target_property(mpss_OPENSSL_CRYPTO_TYPE OpenSSL::Crypto TYPE)
+            get_target_property(mpss_OPENSSL_CRYPTO_LOCATION OpenSSL::Crypto IMPORTED_LOCATION)
+            if(mpss_OPENSSL_CRYPTO_TYPE STREQUAL "STATIC_LIBRARY"
+                OR mpss_OPENSSL_CRYPTO_LOCATION MATCHES "\\.a$")
+                message(FATAL_ERROR
+                    "MPSS requires a shared OpenSSL on Android. With vcpkg, use a triplet from "
+                    "${CMAKE_CURRENT_SOURCE_DIR}/triplets, such as arm64-android-dynamic.")
+            endif()
+        endif()
     endif()
 
     # For debug builds, append "_debug" to the library names.

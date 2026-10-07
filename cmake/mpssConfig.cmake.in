@@ -78,6 +78,20 @@ if(MPSS_CORE_SHARED_FOUND OR MPSS_CORE_STATIC_FOUND)
 
     if(MPSS_BACKEND_YUBIKEY OR MPSS_WITH_SERIALIZATION)
         find_dependency(OpenSSL 3 REQUIRED COMPONENTS Crypto)
+
+        # MPSS is shared on Android, so the application must use the same shared OpenSSL.
+        if(CMAKE_SYSTEM_NAME STREQUAL "Android")
+            get_target_property(mpss_OPENSSL_CRYPTO_TYPE OpenSSL::Crypto TYPE)
+            get_target_property(mpss_OPENSSL_CRYPTO_LOCATION OpenSSL::Crypto IMPORTED_LOCATION)
+            if(mpss_OPENSSL_CRYPTO_TYPE STREQUAL "STATIC_LIBRARY"
+                OR mpss_OPENSSL_CRYPTO_LOCATION MATCHES "\\.a$")
+                message(FATAL_ERROR
+                    "MPSS requires a shared OpenSSL on Android. With vcpkg, build the openssl "
+                    "port with VCPKG_LIBRARY_LINKAGE set to dynamic.")
+            endif()
+            unset(mpss_OPENSSL_CRYPTO_TYPE)
+            unset(mpss_OPENSSL_CRYPTO_LOCATION)
+        endif()
     endif()
     if(MPSS_BACKEND_YUBIKEY)
         find_dependency(unofficial-libykpiv CONFIG REQUIRED)

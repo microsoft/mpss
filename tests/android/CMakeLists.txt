@@ -37,6 +37,9 @@ set(mpss_ANDROID_TEST_NATIVE_FILES
     "$<TARGET_FILE:${mpss_TARGET}>"
     "${mpss_ANDROID_CXX_SHARED_LIBRARY}"
 )
+if(TARGET OpenSSL::Crypto)
+    list(APPEND mpss_ANDROID_TEST_NATIVE_FILES "$<TARGET_FILE:OpenSSL::Crypto>")
+endif()
 set(mpss_ANDROID_TEST_TARGETS
     mpss_tests
     mpss_jar
@@ -63,7 +66,8 @@ set(mpss_ANDROID_TEST_GRADLE_FILES
 
 if(TARGET ${mpss_openssl_TARGET})
     list(APPEND mpss_ANDROID_TEST_NATIVE_FILES
-        "$<TARGET_FILE:${mpss_openssl_TARGET}>")
+        "$<TARGET_FILE:${mpss_openssl_TARGET}>"
+        "$<TARGET_FILE:OpenSSL::SSL>")
     list(APPEND mpss_ANDROID_TEST_TARGETS ${mpss_openssl_TARGET})
 endif()
 

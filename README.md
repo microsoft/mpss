@@ -503,6 +503,12 @@ target_link_libraries(app_native PRIVATE mpss::mpss)
 Package one `libc++_shared.so` per ABI. Gradle supplies it for `externalNativeBuild`; do not also
 copy it into `jniLibs`. Include `mpss.jar` as a Java dependency.
 
+MPSS links OpenSSL as a shared library on Android, so that MPSS and the application share one
+OpenSSL; the presets build it with the `arm64-android-dynamic` and `x64-android-dynamic` vcpkg
+triplets in [triplets](triplets/). Package that `libcrypto.so` with the application, and link the
+application's own OpenSSL use to it rather than to a static copy. Android's system `libcrypto.so`
+is BoringSSL and is not available to applications.
+
 Initialize MPSS's Java bridge before calling native code:
 
 ```java
@@ -529,7 +535,7 @@ cmake --build --preset android-arm64-debug
 This creates `out/build/android-arm64-debug/android-tests/mpss-tests.apk`. Use the
 `android-x64-debug` preset and matching build directory for an x86_64 emulator.
 
-The build packages the Java classes, native libraries, and shared C++ runtime using the
+The build packages the Java classes, native libraries, OpenSSL, and shared C++ runtime using the
 checked-in Gradle wrapper.
 
 For a physical device, enable Developer options and USB debugging, connect the device, and accept
