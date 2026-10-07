@@ -1214,7 +1214,7 @@ TEST(InteractionHandlerReentry, MpssRefusesWhileInsideAHandler)
     EXPECT_EQ(nullptr, mpss::KeyPair::Open("mpss_reentry_test_key", "os"));
     EXPECT_EQ(nullptr, mpss::KeyPair::Create("mpss_reentry_test_key", ecdsa_secp256r1_sha256, "os"));
     EXPECT_FALSE(mpss::KeyPair::Delete("mpss_reentry_test_key", "os"));
-    const KeyLocation location{"os", "mpss_reentry_test_key", std::nullopt};
+    const KeyLocation location{.backend_name = "os", .name = "mpss_reentry_test_key", .device_id = std::nullopt};
     EXPECT_EQ(nullptr, mpss::KeyPair::Open(location));
     EXPECT_EQ(nullptr, mpss::KeyPair::Create(location, ecdsa_secp256r1_sha256));
     EXPECT_FALSE(mpss::KeyPair::Delete(location));
@@ -1563,9 +1563,10 @@ TEST(BackendTest, GetDefaultBackendName)
 
 TEST(KeyLocationTest, RejectsInvalidLocationsBeforeDispatch)
 {
-    const std::array<KeyLocation, 3> invalid = {KeyLocation{"", "key", std::nullopt},
-                                                KeyLocation{"os", "", std::nullopt},
-                                                KeyLocation{"yubikey", "key", std::string{}}};
+    const std::array<KeyLocation, 3> invalid = {
+        KeyLocation{.backend_name = "", .name = "key", .device_id = std::nullopt},
+        KeyLocation{.backend_name = "os", .name = "", .device_id = std::nullopt},
+        KeyLocation{.backend_name = "yubikey", .name = "key", .device_id = std::string{}}};
 
     for (const auto &location : invalid)
     {
@@ -1606,10 +1607,11 @@ TEST(KeyLocationTest, OSStorageRejectsDeviceSelection)
 
     const auto devices = mpss::get_available_devices("os");
     ASSERT_TRUE(devices.has_value());
+    // NOLINTNEXTLINE(bugprone-unchecked-optional-access) - guarded by the assertion above.
     EXPECT_TRUE(devices->empty());
     EXPECT_FALSE(mpss::has_error());
 
-    const KeyLocation location{"os", test_key_name("device_selector"), "123"};
+    const KeyLocation location{.backend_name = "os", .name = test_key_name("device_selector"), .device_id = "123"};
     EXPECT_EQ(nullptr, KeyPair::Create(location, ecdsa_secp256r1_sha256));
     EXPECT_TRUE(mpss::has_error());
     EXPECT_EQ(nullptr, KeyPair::Open(location));
@@ -1620,7 +1622,9 @@ TEST(KeyLocationTest, OSStorageRejectsDeviceSelection)
 
 TEST(KeyReferenceTest, RejectsInvalidReferencesBeforeOpening)
 {
-    KeyReference reference{{"unknown-backend", "key", std::nullopt}, unsupported, {}};
+    KeyReference reference{.location = {.backend_name = "unknown-backend", .name = "key", .device_id = std::nullopt},
+                           .algorithm = unsupported,
+                           .public_key = {}};
     EXPECT_EQ(nullptr, KeyPair::Open(reference));
     EXPECT_NE(std::string::npos, mpss::get_error().find("public key size"));
 
@@ -1668,6 +1672,7 @@ TEST_F(MPSS, ResolvedLocationAndReferenceRoundTrip)
 
     const auto captured = original->reference();
     ASSERT_TRUE(captured.has_value()) << mpss::get_error();
+    // NOLINTNEXTLINE(bugprone-unchecked-optional-access) - guarded by the assertion above.
     KeyReference reference = *captured;
     EXPECT_EQ(location.name, reference.location.name);
     EXPECT_EQ(location.device_id, reference.location.device_id);
@@ -1738,7 +1743,9 @@ TEST_F(MPSS, ReferenceBoundHandleRefusesAReplacementKey)
 
     const auto captured = original->reference();
     ASSERT_TRUE(captured.has_value()) << mpss::get_error();
-    auto bound = KeyPair::Open(*captured);
+    // NOLINTNEXTLINE(bugprone-unchecked-optional-access) - guarded by the assertion above.
+    const KeyReference &reference = *captured;
+    auto bound = KeyPair::Open(reference);
     ASSERT_NE(nullptr, bound) << mpss::get_error();
 
     ASSERT_TRUE(original->delete_key());
@@ -1759,7 +1766,7 @@ TEST_F(MPSS, ReferenceBoundHandleRefusesAReplacementKey)
 
     std::vector<std::byte> fresh_public_key(fresh->extract_key_size());
     ASSERT_EQ(fresh_public_key.size(), fresh->extract_key(fresh_public_key));
-    EXPECT_NE(captured->public_key, fresh_public_key);
+    EXPECT_NE(reference.public_key, fresh_public_key);
 }
 
 TEST(BackendTest, CreateKeyWithExplicitBackend)
@@ -2195,14 +2202,10 @@ namespace
 bool yubikey_cannot_create_keys()
 {
     const std::string error = mpss::get_error();
-    for (const char *reason : {"PIN", "management key", "Management key", "No reachable YubiKey", "smart card readers"})
-    {
-        if (std::string::npos != error.find(reason))
-        {
-            return true;
-        }
-    }
-    return false;
+    constexpr std::array reasons{"PIN", "management key", "Management key", "No reachable YubiKey",
+                                 "smart card readers"};
+    return std::ranges::any_of(reasons,
+                               [&error](const char *reason) { return std::string::npos != error.find(reason); });
 }
 } // namespace
 
@@ -2563,8 +2566,10 @@ TEST_F(YubiKeySlotBinding, ReferenceDisambiguatesOnlySlotsWithTheRequestedName)
     using mpss::impl::KeyProbeStatus;
     using mpss::impl::yubikey::YubiKeyPIV;
 
-    const KeyLocation first{"yubikey", test_key_name("duplicate_label_a"), std::to_string(serial_)};
-    const KeyLocation second{"yubikey", test_key_name("duplicate_label_b"), first.device_id};
+    const KeyLocation first{
+        .backend_name = "yubikey", .name = test_key_name("duplicate_label_a"), .device_id = std::to_string(serial_)};
+    const KeyLocation second{
+        .backend_name = "yubikey", .name = test_key_name("duplicate_label_b"), .device_id = first.device_id};
 
     // Clear what an interrupted run left behind; the test relabels a second slot to first.name.
     ASSERT_TRUE(KeyPair::Delete(first)) << mpss::get_error();
@@ -2582,8 +2587,12 @@ TEST_F(YubiKeySlotBinding, ReferenceDisambiguatesOnlySlotsWithTheRequestedName)
     ASSERT_NE(nullptr, key_b) << mpss::get_error();
     SCOPE_GUARD(static_cast<void>(key_b->delete_key()));
 
-    KeyReference reference_a{key_a->location(), key_a->algorithm(), std::vector<std::byte>(key_a->extract_key_size())};
-    KeyReference reference_b{key_b->location(), key_b->algorithm(), std::vector<std::byte>(key_b->extract_key_size())};
+    KeyReference reference_a{.location = key_a->location(),
+                             .algorithm = key_a->algorithm(),
+                             .public_key = std::vector<std::byte>(key_a->extract_key_size())};
+    KeyReference reference_b{.location = key_b->location(),
+                             .algorithm = key_b->algorithm(),
+                             .public_key = std::vector<std::byte>(key_b->extract_key_size())};
     ASSERT_EQ(reference_a.public_key.size(), key_a->extract_key(reference_a.public_key));
     ASSERT_EQ(reference_b.public_key.size(), key_b->extract_key(reference_b.public_key));
     ASSERT_NE(reference_a.public_key, reference_b.public_key);
@@ -2645,6 +2654,7 @@ TEST_F(YubiKeySlotBinding, AScanThatCannotRunIsNotAnEmptyDeviceList)
     // Established first, so the contrast is against this same device on this same host.
     const auto reachable = YubiKeyPIV::available_serials();
     ASSERT_TRUE(reachable.has_value());
+    // NOLINTNEXTLINE(bugprone-unchecked-optional-access) - guarded by the assertion above.
     ASSERT_FALSE(reachable->empty());
 
     {
@@ -2681,7 +2691,8 @@ TEST_F(YubiKeySlotBinding, ExplicitLocationsOverrideEnvironmentAndReportActualSe
 
     // Explicit selection ignores the wrong default and reports the canonical device identifier.
     const auto actual_id = std::to_string(serial_);
-    const KeyLocation requested{"yubikey", test_key_name("explicit_location"), "000" + actual_id};
+    const KeyLocation requested{
+        .backend_name = "yubikey", .name = test_key_name("explicit_location"), .device_id = "000" + actual_id};
     static_cast<void>(KeyPair::Delete(requested));
     SCOPE_GUARD(static_cast<void>(KeyPair::Delete(requested)));
     auto created = KeyPair::Create(requested, ecdsa_secp256r1_sha256);
@@ -2692,6 +2703,7 @@ TEST_F(YubiKeySlotBinding, ExplicitLocationsOverrideEnvironmentAndReportActualSe
 
     const auto devices = mpss::get_available_devices("yubikey");
     ASSERT_TRUE(devices.has_value());
+    // NOLINTNEXTLINE(bugprone-unchecked-optional-access) - guarded by the assertion above.
     EXPECT_NE(devices->end(), std::ranges::find(*devices, actual_id));
     EXPECT_NE(nullptr, KeyPair::Open(actual));
 
@@ -2702,7 +2714,7 @@ TEST_F(YubiKeySlotBinding, ExplicitLocationsOverrideEnvironmentAndReportActualSe
     EXPECT_FALSE(KeyPair::Delete(actual.name, "yubikey"));
     EXPECT_NE(std::string::npos, mpss::get_error().find(absent_id));
 
-    const KeyLocation automatic{"yubikey", actual.name, std::nullopt};
+    const KeyLocation automatic{.backend_name = "yubikey", .name = actual.name, .device_id = std::nullopt};
     if (1 == connected.size())
     {
         auto opened = KeyPair::Open(automatic);
@@ -2715,7 +2727,7 @@ TEST_F(YubiKeySlotBinding, ExplicitLocationsOverrideEnvironmentAndReportActualSe
         EXPECT_NE(std::string::npos, mpss::get_error().find("Multiple YubiKeys"));
     }
 
-    const KeyLocation missing{"yubikey", actual.name, absent_id};
+    const KeyLocation missing{.backend_name = "yubikey", .name = actual.name, .device_id = absent_id};
     EXPECT_EQ(nullptr, KeyPair::Create(missing, ecdsa_secp256r1_sha256));
     EXPECT_EQ(nullptr, KeyPair::Open(missing));
     EXPECT_FALSE(KeyPair::Delete(missing));
@@ -2754,7 +2766,7 @@ TEST(KeyLocationTest, YubiKeyRejectsInvalidSerialBeforeDeviceAccess)
     // An empty identifier is refused as such before any backend sees it, so it is not in this list.
     for (const auto *id : {"0", "-1", "+1", " 1", "1 ", "1x", "4294967296"})
     {
-        const KeyLocation location{"yubikey", "invalid_device", id};
+        const KeyLocation location{.backend_name = "yubikey", .name = "invalid_device", .device_id = id};
         EXPECT_EQ(nullptr, KeyPair::Create(location, ecdsa_secp256r1_sha256)) << id;
         EXPECT_NE(std::string::npos, mpss::get_error().find("Invalid YubiKey device_id")) << id;
         EXPECT_EQ(nullptr, KeyPair::Open(location)) << id;
@@ -2837,8 +2849,8 @@ TEST_F(MultiYubiKeyTest, OpenKeyFindsKeyOnNonFirstDevice)
 TEST_F(MultiYubiKeyTest, SameNameUsesIndependentLocationsWithoutEnvironmentSwitching)
 {
     const auto name = test_key_name("two_device_locations");
-    const KeyLocation first{"yubikey", name, std::to_string(serials_[0])};
-    const KeyLocation second{"yubikey", name, std::to_string(serials_[1])};
+    const KeyLocation first{.backend_name = "yubikey", .name = name, .device_id = std::to_string(serials_[0])};
+    const KeyLocation second{.backend_name = "yubikey", .name = name, .device_id = std::to_string(serials_[1])};
     static_cast<void>(KeyPair::Delete(first));
     static_cast<void>(KeyPair::Delete(second));
     SCOPE_GUARD(static_cast<void>(KeyPair::Delete(first)));
@@ -2850,8 +2862,12 @@ TEST_F(MultiYubiKeyTest, SameNameUsesIndependentLocationsWithoutEnvironmentSwitc
     auto key_b = KeyPair::Create(second, ecdsa_secp256r1_sha256, unattended_policy);
     ASSERT_NE(nullptr, key_b) << mpss::get_error();
 
-    KeyReference reference_a{key_a->location(), key_a->algorithm(), std::vector<std::byte>(key_a->extract_key_size())};
-    KeyReference reference_b{key_b->location(), key_b->algorithm(), std::vector<std::byte>(key_b->extract_key_size())};
+    KeyReference reference_a{.location = key_a->location(),
+                             .algorithm = key_a->algorithm(),
+                             .public_key = std::vector<std::byte>(key_a->extract_key_size())};
+    KeyReference reference_b{.location = key_b->location(),
+                             .algorithm = key_b->algorithm(),
+                             .public_key = std::vector<std::byte>(key_b->extract_key_size())};
     ASSERT_EQ(reference_a.public_key.size(), key_a->extract_key(reference_a.public_key));
     ASSERT_EQ(reference_b.public_key.size(), key_b->extract_key(reference_b.public_key));
     EXPECT_NE(reference_a.public_key, reference_b.public_key);
@@ -3373,7 +3389,7 @@ TEST(YubiKeyDeviceIdentifier, InvalidEnvironmentSerialRefusesNameBasedCalls)
     EXPECT_NE(std::string::npos, mpss::get_error().find("MPSS_YUBIKEY_SERIAL"));
 
     // An explicit location never reads the default, so it is unaffected by the invalid value.
-    EXPECT_EQ(nullptr, KeyPair::Open(KeyLocation{"yubikey", name, std::nullopt}));
+    EXPECT_EQ(nullptr, KeyPair::Open(KeyLocation{.backend_name = "yubikey", .name = name, .device_id = std::nullopt}));
     EXPECT_EQ(std::string::npos, mpss::get_error().find("MPSS_YUBIKEY_SERIAL"));
 }
 

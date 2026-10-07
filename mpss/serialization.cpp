@@ -119,9 +119,29 @@ std::optional<std::vector<std::byte>> encode_der(const KeyReferenceAsn1 *value)
 [[nodiscard]]
 int group_nid(Algorithm algorithm)
 {
-    const auto parameters =
-        std::ranges::find(algorithm_parameters, algorithm, [](const auto &entry) { return entry.first; });
-    return algorithm_parameters.end() == parameters ? NID_undef : parameters->second;
+    for (const auto &[entry_algorithm, entry_nid] : algorithm_parameters)
+    {
+        if (algorithm == entry_algorithm)
+        {
+            return entry_nid;
+        }
+    }
+
+    return NID_undef;
+}
+
+[[nodiscard]]
+std::optional<Algorithm> group_algorithm(int nid)
+{
+    for (const auto &[entry_algorithm, entry_nid] : algorithm_parameters)
+    {
+        if (nid == entry_nid)
+        {
+            return entry_algorithm;
+        }
+    }
+
+    return std::nullopt;
 }
 
 [[nodiscard]]
@@ -176,10 +196,9 @@ bool read_public_key(OSSL_LIB_CTX *libctx, X509_PUBKEY *spki, KeyReference &refe
         return false;
     }
 
-    const int parameter_id = OBJ_obj2nid(static_cast<const ASN1_OBJECT *>(parameter_value));
-    const auto parameters =
-        std::ranges::find(algorithm_parameters, parameter_id, [](const auto &entry) { return entry.second; });
-    if (algorithm_parameters.end() == parameters)
+    const std::optional<Algorithm> mpss_algorithm =
+        group_algorithm(OBJ_obj2nid(static_cast<const ASN1_OBJECT *>(parameter_value)));
+    if (!mpss_algorithm)
     {
         error = ReferenceError::unsupported;
         return false;
@@ -234,7 +253,7 @@ bool read_public_key(OSSL_LIB_CTX *libctx, X509_PUBKEY *spki, KeyReference &refe
         return false;
     }
 
-    reference.algorithm = parameters->first;
+    reference.algorithm = *mpss_algorithm;
     reference.public_key.resize(utils::get_public_key_size(reference.algorithm));
     std::size_t written = 0;
     return 1 == EVP_PKEY_get_octet_string_param(key.get(), OSSL_PKEY_PARAM_PUB_KEY,

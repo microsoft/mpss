@@ -442,8 +442,8 @@ std::vector<unsigned char> SignDigest(OSSL_LIB_CTX *libctx, EVP_PKEY *key)
 void CountConsumedBytes(BIO *bio, std::size_t &consumed)
 {
     BIO_set_callback_arg(bio, reinterpret_cast<char *>(&consumed));
+    // NOLINTBEGIN(readability-non-const-parameter) - OpenSSL requires this callback signature.
     BIO_set_callback_ex(bio,
-                        // NOLINTNEXTLINE(readability-non-const-parameter) - OpenSSL requires this callback signature.
                         [](BIO *callback_bio, int operation, const char *, std::size_t, int, long, int result,
                            std::size_t *processed) -> long {
                             if ((BIO_CB_READ | BIO_CB_RETURN) == operation && 0 < result && nullptr != processed)
@@ -452,6 +452,7 @@ void CountConsumedBytes(BIO *bio, std::size_t &consumed)
                             }
                             return result;
                         });
+    // NOLINTEND(readability-non-const-parameter)
 }
 
 } // namespace
@@ -483,8 +484,8 @@ TEST(InteractionContextTest, CCallbacksReceiveTargetAndUserData)
     struct CallbackState
     {
         Observations *observed;
-        decltype(check_target) check;
-    } state{&observations, check_target};
+        void (*check)(const mpss_interaction_context_t *);
+    } state{.observed = &observations, .check = check_target};
 
     mpss_set_interaction_handler(
         [](const mpss_interaction_context_t *target, const char *operation, int status, int retries, char *pin,
@@ -521,12 +522,14 @@ TEST(InteractionContextTest, CCallbacksReceiveTargetAndUserData)
 
     // The adapter must copy the views into null-terminated C strings without exposing their suffixes.
     const auto handler = mpss::GetInteractionHandler();
-    const mpss::InteractionContext target{
-        std::string_view{"yubikey-tail"}.substr(0, 7), std::string_view{"35489220-tail"}.substr(0, 8),
-        std::string_view{"my-key-tail"}.substr(0, 6), std::string_view{"reader-tail"}.substr(0, 6)};
+    const mpss::InteractionContext target{.backend_name = std::string_view{"yubikey-tail"}.substr(0, 7),
+                                          .device_id = std::string_view{"35489220-tail"}.substr(0, 8),
+                                          .key_name = std::string_view{"my-key-tail"}.substr(0, 6),
+                                          .reader_name = std::string_view{"reader-tail"}.substr(0, 6)};
     const std::optional<mpss::SecureString> pin = handler->request_pin(
         {.operation = "sign", .last_status = mpss::PinStatus::first_attempt, .retries_remaining = 3, .target = target});
     ASSERT_TRUE(pin.has_value());
+    // NOLINTNEXTLINE(bugprone-unchecked-optional-access) - guarded by the assertion above.
     EXPECT_STREQ("unused-test-pin", pin->c_str());
 
     handler->notify_pin_result(target, mpss::PinResult::not_attempted, 3);
@@ -558,7 +561,7 @@ TEST(InteractionContextTest, CppNotificationsReceiveTarget)
     class TargetHandler : public mpss::InteractionHandler
     {
       public:
-        explicit TargetHandler(int &calls) : calls_{calls}
+        explicit TargetHandler(int &calls) : calls_{&calls}
         {
         }
 
@@ -570,28 +573,29 @@ TEST(InteractionContextTest, CppNotificationsReceiveTarget)
         void notify_pin_result(const mpss::InteractionContext &target, mpss::PinResult, int) override
         {
             EXPECT_EQ("35489220", target.device_id);
-            ++calls_;
+            ++*calls_;
         }
 
         void notify_touch_needed(const mpss::InteractionContext &target) override
         {
             EXPECT_EQ("reader", target.reader_name);
-            ++calls_;
+            ++*calls_;
         }
 
         void notify_touch_complete(const mpss::InteractionContext &target, bool) override
         {
             EXPECT_EQ("my-key", target.key_name);
-            ++calls_;
+            ++*calls_;
         }
 
       private:
-        int &calls_;
+        int *calls_;
     };
 
     mpss::GetOrSetInteractionHandler(std::make_shared<TargetHandler>(results));
     const auto handler = mpss::GetInteractionHandler();
-    const mpss::InteractionContext target{"yubikey", "35489220", "my-key", "reader"};
+    const mpss::InteractionContext target{
+        .backend_name = "yubikey", .device_id = "35489220", .key_name = "my-key", .reader_name = "reader"};
 
     handler->notify_pin_result(target, mpss::PinResult::not_attempted, -1);
     handler->notify_touch_needed(target);
@@ -2044,7 +2048,7 @@ TEST_F(MPSSStore, BoundReferenceRejectsMalformedDerBeforeOpening)
     // Exercise ASN.1 tag, field order, optional-field presence, and duplicate-field rules.
     const std::string device = der_value(0, der_value(V_ASN1_UTF8STRING, "123"), true, V_ASN1_CONTEXT_SPECIFIC);
     malformed.push_back(der_value(V_ASN1_SEQUENCE, prefix + device + device + spki, true));
-    malformed.push_back(der_value(V_ASN1_SEQUENCE, prefix + spki + der_value(V_ASN1_INTEGER, "\x2a"sv), true));
+    malformed.push_back(der_value(V_ASN1_SEQUENCE, prefix + spki + der_value(V_ASN1_INTEGER, "\x01"sv), true));
     malformed.push_back(der_value(V_ASN1_SEQUENCE, prefix + spki + device, true));
     malformed.push_back(der_value(V_ASN1_SEQUENCE, prefix + der_value(V_ASN1_OCTET_STRING, spki), true));
     malformed.push_back(
@@ -2171,7 +2175,7 @@ TEST_F(MPSSStore, DeviceParameterRejectsInvalidLocations)
 
     char embedded_nul[] = {'1', '\0', '2'};
     std::array<char, 257> oversized{};
-    std::fill(oversized.begin(), oversized.end(), '1');
+    oversized.fill('1');
     int wrong_type = 1;
 
     for (const auto param : {OSSL_PARAM_construct_utf8_string("mpss_device_id", nullptr, 0),
@@ -2237,7 +2241,8 @@ TEST_F(MPSSStore, BoundReferenceRejectsReplacementAndNeverCreates)
 
     // A missing key is not recreated by loading its reference.
     EXPECT_EQ(nullptr, DecodeReferencePem(libctx, pem).get());
-    EXPECT_EQ(nullptr, mpss::KeyPair::Open(mpss::KeyLocation{"os", name, std::nullopt}));
+    EXPECT_EQ(nullptr,
+              mpss::KeyPair::Open(mpss::KeyLocation{.backend_name = "os", .name = name, .device_id = std::nullopt}));
 
     // Reusing the name must not make the saved reference accept different key material.
     key = GenerateKey(libctx, name, "os", MPSS_KEY_POLICY_NONE, "");
@@ -2250,8 +2255,10 @@ TEST_F(MPSSStore, BoundReferenceRejectsReplacementAndNeverCreates)
 #ifdef MPSS_BACKEND_YUBIKEY
 TEST_F(MPSSStore, DeviceParameterReportsAndPersistsActualDevice)
 {
-    const auto devices = mpss::get_available_devices("yubikey");
-    ASSERT_TRUE(devices.has_value()) << mpss::get_error();
+    const auto available = mpss::get_available_devices("yubikey");
+    ASSERT_TRUE(available.has_value()) << mpss::get_error();
+    // NOLINTNEXTLINE(bugprone-unchecked-optional-access) - guarded by the assertion above.
+    const std::vector<std::string> &devices = *available;
     const std::optional<std::uint32_t> serial_number = mpss::tests::test_yubikey_serial();
     if (!serial_number)
     {
@@ -2291,7 +2298,7 @@ TEST_F(MPSSStore, DeviceParameterReportsAndPersistsActualDevice)
     // Point the environment elsewhere; explicit locations and persisted references must keep using this device.
     const mpss::tests::ScopedEnvironmentVariable serial{"MPSS_YUBIKEY_SERIAL"};
     std::uint32_t absent_serial = 1;
-    while (devices->end() != std::ranges::find(*devices, std::to_string(absent_serial)))
+    while (devices.end() != std::ranges::find(devices, std::to_string(absent_serial)))
     {
         ++absent_serial;
     }
@@ -2299,7 +2306,7 @@ TEST_F(MPSSStore, DeviceParameterReportsAndPersistsActualDevice)
 
     EXPECT_EQ(nullptr, store_open_key(name, "yubikey"));
     EXPECT_NE(nullptr, store_open_key(name, "yubikey", device_id.c_str()));
-    if (1 == devices->size())
+    if (1 == devices.size())
     {
         EXPECT_NE(nullptr, store_open_key(name, "yubikey", ""));
     }
@@ -2352,13 +2359,16 @@ TEST_P(MPSSStorePerAlgorithm, ReferencePemEncoderCarriesNameAndRoundTrips)
     // Cross the provider/C++ boundary in both directions without changing the serialized reference.
     const auto cpp_reference = mpss::decode_key_reference_pem(pem);
     ASSERT_TRUE(cpp_reference.has_value()) << mpss::get_error();
+    // NOLINTNEXTLINE(bugprone-unchecked-optional-access) - guarded by the assertion above.
     auto cpp_key = mpss::KeyPair::Open(*cpp_reference);
     ASSERT_NE(nullptr, cpp_key) << mpss::get_error();
     const auto captured = cpp_key->reference();
     ASSERT_TRUE(captured.has_value()) << mpss::get_error();
+    // NOLINTNEXTLINE(bugprone-unchecked-optional-access) - guarded by the assertion above.
     const auto cpp_pem = mpss::encode_key_reference_pem(*captured);
     ASSERT_TRUE(cpp_pem.has_value()) << mpss::get_error();
-    EXPECT_EQ(pem, *cpp_pem);
+    EXPECT_EQ(pem, cpp_pem);
+    // NOLINTNEXTLINE(bugprone-unchecked-optional-access) - guarded by the assertion above.
     EXPECT_NE(nullptr, DecodeReferencePem(libctx, *cpp_pem));
     cpp_key.reset();
 

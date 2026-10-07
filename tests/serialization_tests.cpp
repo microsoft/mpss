@@ -342,13 +342,21 @@ TEST_P(MPSSSerialization, AcceptsOnlyCanonicalPemText)
 
     // Base64 decoding stops at '-', treats control bytes as whitespace, and ignores unused trailing bits;
     // PEM reading accepts headers and stray line text. Only the canonical text is a key reference.
-    for (const auto &rejected :
-         {begin + body + "-AAAA\n" + end, begin + "\n" + body + end, begin + indented + end, begin + joined + end,
-          control, trailing_bits, pem.substr(0, pem.size() - 1) + "ignored\n", "\xEF\xBB\xBF" + pem, lowercase,
-          pem.substr(0, begin_end) + " " + pem.substr(begin_end), begin + "Proc-Type: 4,ENCRYPTED\n\n" + body + end,
-          std::string(8193 - pem.size(), ' ') + pem})
+    const std::vector rejected{begin + body + "-AAAA\n" + end,
+                               begin + "\n" + body + end,
+                               begin + indented + end,
+                               begin + joined + end,
+                               control,
+                               trailing_bits,
+                               pem.substr(0, pem.size() - 1) + "ignored\n",
+                               "\xEF\xBB\xBF" + pem,
+                               lowercase,
+                               pem.substr(0, begin_end) + " " + pem.substr(begin_end),
+                               begin + "Proc-Type: 4,ENCRYPTED\n\n" + body + end,
+                               std::string(8193 - pem.size(), ' ') + pem};
+    for (const auto &text : rejected)
     {
-        EXPECT_FALSE(decode_key_reference_pem(rejected));
+        EXPECT_FALSE(decode_key_reference_pem(text));
         EXPECT_TRUE(has_error());
     }
 
@@ -401,11 +409,12 @@ TEST_P(MPSSSerialization, RejectsNoncanonicalAndUnsupportedReferences)
     const std::string long_length{static_cast<char>(fields.size() >> 8U), static_cast<char>(fields.size() & 0xffU)};
 
     // OpenSSL decodes these BER forms, so only the re-encoding comparison rejects them.
-    for (const auto &noncanonical :
-         {std::string{"\x30\x80", 2} + fields + std::string(2, '\0'), std::string{"\x30\x82", 2} + long_length + fields,
-          std::string{"\x3f\x10", 2} + valid.substr(1)})
+    const std::vector noncanonical{std::string{"\x30\x80", 2} + fields + std::string(2, '\0'),
+                                   std::string{"\x30\x82", 2} + long_length + fields,
+                                   std::string{"\x3f\x10", 2} + valid.substr(1)};
+    for (const auto &bytes : noncanonical)
     {
-        EXPECT_EQ(ReferenceError::malformed, decode_error(noncanonical));
+        EXPECT_EQ(ReferenceError::malformed, decode_error(bytes));
         EXPECT_NE(std::string::npos, get_error().find("not canonical DER"));
     }
 
@@ -427,13 +436,14 @@ TEST_P(MPSSSerialization, RejectsNoncanonicalAndUnsupportedReferences)
     }
 
     // A negative version is malformed; other unknown versions, including one beyond 64 bits, are unsupported.
-    EXPECT_EQ(ReferenceError::malformed,
-              decode_error(der_value(V_ASN1_SEQUENCE, der_value(V_ASN1_INTEGER, "\xff"sv) + location + spki, true)));
+    const auto with_version = [&](std::string_view version) {
+        return der_value(V_ASN1_SEQUENCE, der_value(V_ASN1_INTEGER, version) + location + spki, true);
+    };
+    EXPECT_EQ(ReferenceError::malformed, decode_error(with_version("\xff"sv)));
     EXPECT_NE(std::string::npos, get_error().find("Invalid key-reference version"));
     for (const auto version : {"\0"sv, "\2"sv, "\1\0\0\0\0\0\0\0\0"sv})
     {
-        EXPECT_EQ(ReferenceError::unsupported,
-                  decode_error(der_value(V_ASN1_SEQUENCE, der_value(V_ASN1_INTEGER, version) + location + spki, true)));
+        EXPECT_EQ(ReferenceError::unsupported, decode_error(with_version(version)));
         EXPECT_NE(std::string::npos, get_error().find("Unsupported key-reference version"));
     }
 
