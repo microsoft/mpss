@@ -426,7 +426,6 @@
                 "CMAKE_BUILD_TYPE": "Debug",
                 "CMAKE_OSX_ARCHITECTURES": "arm64",
                 "CMAKE_OSX_DEPLOYMENT_TARGET": "13.3",
-                "CMAKE_Swift_COMPILER_TARGET": "arm64-apple-macosx13.3",
                 "VCPKG_TARGET_TRIPLET": "arm64-osx"
             },
             "condition": {
@@ -468,7 +467,6 @@
                 "CMAKE_BUILD_TYPE": "Debug",
                 "CMAKE_OSX_ARCHITECTURES": "x86_64",
                 "CMAKE_OSX_DEPLOYMENT_TARGET": "13.3",
-                "CMAKE_Swift_COMPILER_TARGET": "x86_64-apple-macosx13.3",
                 "VCPKG_TARGET_TRIPLET": "x64-osx"
             },
             "condition": {

@@ -567,7 +567,8 @@ Emulators exercise AndroidKeyStore and JNI integration; TEE and StrongBox requir
 
 After building and installing, you will find:
 - `lib/libmpss.so` — the native shared library.
-- `lib/mpss.jar` — the Java classes for the JNI bridge (`KeyManagement`, `Algorithm`, etc.).
+- `lib/mpss.jar` — the Java classes for the JNI bridge (`KeyManagement`, `Algorithm`, etc.). It
+  carries its own R8 keep rules, so applications that minify need none for MPSS.
 - `lib/libc++_shared.so` — the matching NDK C++ runtime.
 - When the OpenSSL provider is enabled, `lib/libmpss_openssl.so`.
 
