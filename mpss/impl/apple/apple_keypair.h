@@ -4,6 +4,7 @@
 #pragma once
 
 #include "mpss/mpss.h"
+#include <cstdint>
 
 namespace mpss::impl::os
 {
@@ -13,28 +14,15 @@ namespace mpss::impl::os
  *
  * This class provides common functionality for key pair implementations that use Apple APIs for storage and
  * operations. It implements the mpss::KeyPair interface and defines abstract methods for key deletion, signing,
- * verification, and public key extraction that must be implemented by derived classes.
+ * verification, and public-key extraction that must be implemented by derived classes.
  */
 class AppleKeyPairBase : public mpss::KeyPair
 {
   public:
     ~AppleKeyPairBase() override = default;
 
-    bool delete_key() override;
-
-    [[nodiscard]]
-    std::size_t sign_hash(std::span<const std::byte> hash, std::span<std::byte> sig) const override;
-
-    [[nodiscard]]
-    bool verify(std::span<const std::byte> hash, std::span<const std::byte> sig) const override;
-
-    [[nodiscard]]
-    std::size_t extract_key(std::span<std::byte> public_key) const override;
-
-    void release_key() override;
-
   protected:
-    AppleKeyPairBase(std::string_view name, Algorithm algorithm, bool hardware_backed, const char *storage_description);
+    AppleKeyPairBase(std::string_view name, Algorithm algorithm, StorageTier storage_tier, std::uint64_t generation);
 
     [[nodiscard]]
     std::string name() const
@@ -42,21 +30,19 @@ class AppleKeyPairBase : public mpss::KeyPair
         return name_;
     }
 
-    virtual bool do_delete_key() = 0;
-
+    // The cache entry this handle took its hold on. Handed back when releasing so that a name
+    // deleted and created again while this handle was alive cannot have this release charged
+    // against the key that now holds the name.
     [[nodiscard]]
-    virtual std::size_t do_sign_hash(std::span<const std::byte> hash, std::span<std::byte> sig) const = 0;
-
-    [[nodiscard]]
-    virtual bool do_verify(std::span<const std::byte> hash, std::span<const std::byte> sig) const = 0;
-
-    [[nodiscard]]
-    virtual std::size_t do_extract_key(std::span<std::byte> public_key) const = 0;
-
-    virtual void do_release_key() = 0;
+    std::uint64_t generation() const noexcept
+    {
+        return generation_;
+    }
 
   private:
     std::string name_;
+
+    std::uint64_t generation_;
 };
 
 } // namespace mpss::impl::os

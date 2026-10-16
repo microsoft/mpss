@@ -76,7 +76,7 @@ class MPSS_DECOR Logger
     {
         try
         {
-            std::scoped_lock lock{mtx_};
+            const std::scoped_lock lock{mtx_};
             close_internal();
         }
         catch (...) // NOLINT(bugprone-empty-catch)
@@ -89,7 +89,7 @@ class MPSS_DECOR Logger
      */
     void flush() const
     {
-        std::scoped_lock lock{mtx_};
+        const std::scoped_lock lock{mtx_};
         flush_internal();
     }
 
@@ -100,7 +100,7 @@ class MPSS_DECOR Logger
      */
     void close()
     {
-        std::scoped_lock lock{mtx_};
+        const std::scoped_lock lock{mtx_};
         close_internal();
     }
 
@@ -111,7 +111,7 @@ class MPSS_DECOR Logger
     [[nodiscard]]
     LogLevel get_level() const
     {
-        std::scoped_lock lock{mtx_};
+        const std::scoped_lock lock{mtx_};
         return log_level_;
     }
 
@@ -123,7 +123,7 @@ class MPSS_DECOR Logger
     void set_level(LogLevel level)
     {
         level = (std::min)(level, LogLevel::suppress);
-        std::scoped_lock lock{mtx_};
+        const std::scoped_lock lock{mtx_};
         log_level_ = level;
     }
 

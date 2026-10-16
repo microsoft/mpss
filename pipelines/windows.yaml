@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT license.
+
 parameters:
   configuration: 'Release'
   preset: 'win-vs2022-x64'
@@ -8,7 +11,6 @@ steps:
     displayName: 'Credential Scan'
 
   - task: CodeQL3000Init@0
-  - task: CodeQL3000Finalize@0
 
   - task: ComponentGovernanceComponentDetection@0
     inputs:
@@ -32,7 +34,7 @@ steps:
 - task: CMake@1
   displayName: 'Configure MPSS (${{ parameters.preset }})'
   inputs:
-    cmakeArgs: --preset ${{ parameters.preset }}
+    cmakeArgs: --preset ${{ parameters.preset }} -DMPSS_BUILD_WIN32_MOCK_TESTS=ON
     workingDirectory: '$(Build.SourcesDirectory)'
 
 - task: CMake@1
@@ -43,10 +45,20 @@ steps:
       --config ${{ parameters.configuration }}
     workingDirectory: '$(Build.SourcesDirectory)'
 
-# Unit tests will fail because TPM cannot be accessed in the Azure Pipelines hosted agents.
+- ${{ if eq(parameters.configuration, 'Release') }}:
+  - task: CodeQL3000Finalize@0
+
+# mpss_tests still cannot run here: it creates real keys, and the hosted agents have no TPM.
 # - script: '${{ parameters.configuration }}\mpss_tests.exe'
 #   workingDirectory: '$(Build.SourcesDirectory)\out\build\${{ parameters.preset }}\bin'
 #   displayName: 'Run unit tests'
+
+# The mock tests intercept NCrypt, so they need no TPM. Import-table patching cannot reach a shared
+# mpss.dll, so CMake builds them only for the static presets.
+- ${{ if not(contains(parameters.preset, 'shared')) }}:
+  - script: '${{ parameters.configuration }}\mpss_win32_mock_tests.exe'
+    workingDirectory: '$(Build.SourcesDirectory)\out\build\${{ parameters.preset }}\bin'
+    displayName: 'Run Win32 NCrypt mock tests'
 
 - task: PublishSecurityAnalysisLogs@3
   inputs:

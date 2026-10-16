@@ -3,9 +3,9 @@
 
 #pragma once
 
+#include "mpss/mpss.h"
 #include <array>
 #include <memory>
-#include <mpss/mpss.h>
 #include <openssl/core_names.h>
 #include <openssl/obj_mac.h>
 #include <openssl/types.h>
@@ -19,6 +19,11 @@ namespace mpss_openssl::utils
 inline constexpr const char *ec_encoder_names = "EC";
 
 inline constexpr const char *ec_key_names = "EC:id_ecPublicKey:1.2.840.10045.2.1";
+
+// Key type reported to OpenSSL for a stored key object (OSSL_STORE reference object) and used to
+// fetch the key management that materializes it. Must equal the first (primary) alias of
+// ec_key_names.
+inline constexpr const char *ec_data_type = "EC";
 
 inline constexpr std::array<const char *, 3> mpss_hash_names = {
     OSSL_DIGEST_NAME_SHA2_256 ":SHA256:SHA2-256:SHA-2-256:sha256:sha2-256:sha-2-256",

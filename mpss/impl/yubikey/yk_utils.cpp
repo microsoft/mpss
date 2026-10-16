@@ -5,9 +5,10 @@
 #include "mpss/utils/utilities.h"
 #include <algorithm>
 #include <cctype>
+#include <charconv>
 #include <cstdlib>
 #include <format>
-#include <limits>
+#include <openssl/obj_mac.h>
 #include <ykpiv/ykpiv.h>
 
 namespace
@@ -22,6 +23,20 @@ std::string to_lower(std::string_view str)
     std::string result{str};
     std::ranges::transform(result, result.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return result;
+}
+
+/**
+ * @brief Whether the environment may weaken a policy below the MPSS default.
+ *
+ * A 'never' policy is permanent and unrepairable once baked into a key at generation, so it is
+ * only honored from the environment when MPSS_YUBIKEY_ALLOW_POLICY_DOWNGRADE is set to an
+ * affirmative value (1, true, yes, on). The firmware default touch policy is 'never' as well, so
+ * the same applies to an environment 'default' for touch. It defaults to off.
+ */
+bool policy_downgrade_allowed()
+{
+    const char *env_ptr = std::getenv("MPSS_YUBIKEY_ALLOW_POLICY_DOWNGRADE");
+    return nullptr != env_ptr && mpss::impl::yubikey::utils::is_affirmative_environment_value(env_ptr);
 }
 
 /** @brief Read YubiKey PIN policy from the MPSS_YUBIKEY_PINPOLICY environment variable. */
@@ -41,6 +56,14 @@ std::uint8_t get_pin_policy_from_env()
     }
     if ("never" == value)
     {
+        if (!policy_downgrade_allowed())
+        {
+            mpss::utils::log_warning("MPSS_YUBIKEY_PINPOLICY=never ignored: set MPSS_YUBIKEY_ALLOW_POLICY_DOWNGRADE "
+                                     "to permanently disable PIN protection for newly created keys. Using 'once'.");
+            return default_pin_policy;
+        }
+        mpss::utils::log_warning("MPSS_YUBIKEY_PINPOLICY=never permanently disables PIN protection for keys "
+                                 "created now.");
         return YKPIV_PINPOLICY_NEVER;
     }
     if ("once" == value)
@@ -70,10 +93,28 @@ std::uint8_t get_touch_policy_from_env()
     const std::string value = to_lower(env_ptr);
     if ("default" == value)
     {
+        // The firmware default touch policy is 'never', so this is the same downgrade by another name.
+        if (!policy_downgrade_allowed())
+        {
+            mpss::utils::log_warning("MPSS_YUBIKEY_TOUCHPOLICY=default ignored: the firmware default is 'never'; set "
+                                     "MPSS_YUBIKEY_ALLOW_POLICY_DOWNGRADE to leave touch protection disabled for "
+                                     "newly created keys. Using 'cached'.");
+            return default_touch_policy;
+        }
+        mpss::utils::log_warning("MPSS_YUBIKEY_TOUCHPOLICY=default leaves touch protection at the firmware default, "
+                                 "'never', for keys created now.");
         return YKPIV_TOUCHPOLICY_DEFAULT;
     }
     if ("never" == value)
     {
+        if (!policy_downgrade_allowed())
+        {
+            mpss::utils::log_warning("MPSS_YUBIKEY_TOUCHPOLICY=never ignored: set MPSS_YUBIKEY_ALLOW_POLICY_DOWNGRADE "
+                                     "to permanently disable touch protection for newly created keys. Using 'cached'.");
+            return default_touch_policy;
+        }
+        mpss::utils::log_warning("MPSS_YUBIKEY_TOUCHPOLICY=never permanently disables touch protection for keys "
+                                 "created now.");
         return YKPIV_TOUCHPOLICY_NEVER;
     }
     if ("always" == value)
@@ -102,29 +143,50 @@ namespace mpss::impl::yubikey::utils
 
 using enum mpss::Algorithm;
 
-std::optional<std::uint32_t> get_serial_from_env()
+bool is_affirmative_environment_value(std::string_view value)
 {
-    const char *serial = std::getenv("MPSS_YUBIKEY_SERIAL");
-    if (nullptr == serial)
+    const std::string normalized = to_lower(value);
+    return "1" == normalized || "true" == normalized || "yes" == normalized || "on" == normalized;
+}
+
+std::optional<std::uint32_t> parse_serial(std::string_view serial)
+{
+    if (serial.empty() || max_serial_length < serial.size())
     {
         return std::nullopt;
     }
 
-    char *end = nullptr;
-    const unsigned long value = std::strtoul(serial, &end, 10);
-    if (end == serial || *end != '\0' || 0 == value)
+    // Parse decimal without locale or whitespace handling; reject overflow, partial consumption, and zero.
+    std::uint32_t value = 0;
+    const auto [end, error] = std::from_chars(serial.data(), serial.data() + serial.size(), value);
+    if (std::errc{} != error || end != serial.data() + serial.size() || 0 == value)
     {
-        mpss::utils::log_warning("MPSS_YUBIKEY_SERIAL value '{}' is not a valid serial number.", serial);
         return std::nullopt;
     }
 
-    if (value > std::numeric_limits<std::uint32_t>::max())
+    return value;
+}
+
+bool get_serial_from_env(std::optional<std::uint32_t> &serial)
+{
+    serial.reset();
+    const char *value = std::getenv("MPSS_YUBIKEY_SERIAL");
+    if (nullptr == value || '\0' == *value)
     {
-        mpss::utils::log_warning("MPSS_YUBIKEY_SERIAL value '{}' is out of range.", serial);
-        return std::nullopt;
+        return true;
     }
 
-    return static_cast<std::uint32_t>(value); // NOLINT(*-narrowing-conversions)
+    // A default that cannot name a device must not fall through to whichever device is reachable.
+    serial = parse_serial(value);
+    if (!serial)
+    {
+        mpss::utils::log_and_set_error(
+            "MPSS_YUBIKEY_SERIAL is not a valid decimal serial number from 1 to 4294967295 (at most {} characters).",
+            max_serial_length);
+        return false;
+    }
+
+    return true;
 }
 
 SecureByteVector get_mgm_key_from_env()
@@ -141,7 +203,7 @@ SecureByteVector get_mgm_key_from_env()
 
     // Validate length for AES-128 (32), AES-192/TDES (48), or AES-256 (64).
     const std::size_t len = hex_str.size();
-    if (len != 32 && len != 48 && len != 64)
+    if (32 != len && 48 != len && 64 != len)
     {
         mpss::utils::log_warning("MPSS_YUBIKEY_MGM_KEY has invalid length ({}). Expected 32, 48, or 64 hex characters.",
                                  len);
@@ -232,6 +294,32 @@ Algorithm yk_to_mpss_algorithm(std::uint8_t yk_algorithm)
         return ecdsa_secp384r1_sha384;
     default:
         return unsupported;
+    }
+}
+
+const char *get_group_name(Algorithm algorithm)
+{
+    switch (algorithm)
+    {
+    case ecdsa_secp256r1_sha256:
+        return "P-256";
+    case ecdsa_secp384r1_sha384:
+        return "P-384";
+    default:
+        return nullptr;
+    }
+}
+
+int get_group_nid(Algorithm algorithm)
+{
+    switch (algorithm)
+    {
+    case ecdsa_secp256r1_sha256:
+        return NID_X9_62_prime256v1;
+    case ecdsa_secp384r1_sha384:
+        return NID_secp384r1;
+    default:
+        return NID_undef;
     }
 }
 

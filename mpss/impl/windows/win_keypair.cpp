@@ -6,14 +6,44 @@
 #include "mpss/utils/utilities.h"
 #include <Windows.h>
 #include <algorithm>
+#include <cstdint>
 #include <memory>
+#include <mutex>
 #include <ncrypt.h>
+#include <string>
 
 namespace mpss::impl::os
 {
 
-bool WindowsKeyPair::delete_key()
+WindowsKeyPair::WindowsKeyPair(std::string_view name, mpss::Algorithm algorithm, NCRYPT_KEY_HANDLE handle,
+                               mpss::StorageTier storage_tier, std::uint64_t generation)
+    : mpss::KeyPair(algorithm, storage_tier), name_{name}, key_handle_{handle}, generation_{generation}
 {
+}
+
+bool WindowsKeyPair::still_holds_opened_key() const
+{
+    if (utils::current_key_generation(name_) != generation_)
+    {
+        mpss::utils::log_and_set_error("Key '{}' is no longer the key this handle opened.", name_);
+        return false;
+    }
+
+    return true;
+}
+
+bool WindowsKeyPair::do_delete_key()
+{
+    // Prevent another MPSS thread from replacing this key between the generation check
+    // and deletion. KeyPair::Create, Open and Delete use the same mutex for this name.
+    const std::scoped_lock lifecycle{mpss::utils::name_mutex(name_)};
+
+    // An old Windows handle can delete a replacement key with the same name.
+    if (!still_holds_opened_key())
+    {
+        return false;
+    }
+
     mpss::utils::log_trace("Deleting Windows key.");
     SECURITY_STATUS status = ::NCryptDeleteKey(key_handle_, /* dwFlags */ 0);
     if (ERROR_SUCCESS != status)
@@ -22,31 +52,24 @@ bool WindowsKeyPair::delete_key()
         return false;
     }
 
-    // Release the key handle.
-    win_release();
+    // The name is free again, so nothing that opened the key just removed still holds it.
+    utils::invalidate_key_generation(name_);
+
+    // NCryptDeleteKey frees the handle on success.
+    clear_handle();
 
     mpss::utils::log_trace("Windows key deleted successfully.");
     return true;
 }
 
-std::size_t WindowsKeyPair::sign_hash(std::span<const std::byte> hash, std::span<std::byte> sig) const
+std::size_t WindowsKeyPair::do_sign_hash(std::span<const std::byte> hash, std::span<std::byte> sig) const
 {
-    if (sig.empty())
+    if (!still_holds_opened_key())
     {
-        // If the signature buffer is empty, we want to return the size of the signature.
-        return mpss::utils::get_max_signature_size(algorithm());
+        return 0;
     }
 
     mpss::utils::log_trace("Signing hash with Windows key, hash size {}.", hash.size());
-
-    if (!mpss::utils::check_exact_hash_size(hash, algorithm()))
-    {
-        return 0;
-    }
-    if (!mpss::utils::check_sufficient_signature_buffer_size(sig, algorithm()))
-    {
-        return 0;
-    }
 
     const std::size_t hash_bytes = hash.size();
     const DWORD hash_bytes_dw = mpss::utils::narrow_or_error<DWORD>(hash_bytes);
@@ -62,7 +85,6 @@ std::size_t WindowsKeyPair::sign_hash(std::span<const std::byte> hash, std::span
         return 0;
     }
 
-    // Get the size of the raw signature.
     DWORD sig_size_dw = 0;
     SECURITY_STATUS status = ::NCryptSignHash(
         key_handle_,
@@ -77,7 +99,6 @@ std::size_t WindowsKeyPair::sign_hash(std::span<const std::byte> hash, std::span
         return 0;
     }
 
-    // Get the actual signature.
     std::unique_ptr<BYTE[]> signature_buffer = std::make_unique<BYTE[]>(sig_size_dw);
     status = ::NCryptSignHash(key_handle_,
                               /* pPaddingInfo */ nullptr, reinterpret_cast<PBYTE>(const_cast<std::byte *>(hash.data())),
@@ -89,7 +110,6 @@ std::size_t WindowsKeyPair::sign_hash(std::span<const std::byte> hash, std::span
         return 0;
     }
 
-    // We need to reverse the signature bytes.
     const DWORD key_bytes = sig_size_dw / 2;
     std::unique_ptr<BYTE[]> reversed_signature_buffer = std::make_unique<BYTE[]>(sig_size_dw);
     std::span<BYTE> reversed_signature_span(reversed_signature_buffer.get(), sig_size_dw);
@@ -105,7 +125,6 @@ std::size_t WindowsKeyPair::sign_hash(std::span<const std::byte> hash, std::span
 
     DWORD encoded_size = 0;
 
-    // Get the size of the encoding.
     if (!::CryptEncodeObjectEx(X509_ASN_ENCODING, X509_ECC_SIGNATURE, &eccSig, 0 /* dwFlags */,
                                /* PCRYPT_ENCODE_PARA */ nullptr,
                                /* pvEncoded */ nullptr, &encoded_size))
@@ -121,7 +140,6 @@ std::size_t WindowsKeyPair::sign_hash(std::span<const std::byte> hash, std::span
         return 0;
     }
 
-    // If the signature buffer is too small, return 0.
     if (sig.size() < encoded_size_sz)
     {
         mpss::utils::log_and_set_error("Signature buffer is too small. Expected {} bytes (got {} bytes).",
@@ -129,7 +147,6 @@ std::size_t WindowsKeyPair::sign_hash(std::span<const std::byte> hash, std::span
         return 0;
     }
 
-    // Encode the signature.
     if (!::CryptEncodeObjectEx(X509_ASN_ENCODING, X509_ECC_SIGNATURE, &eccSig, 0 /* dwFlags */,
                                /* PCRYPT_ENCODE_PARA */ nullptr, sig.data(), &encoded_size))
     {
@@ -138,21 +155,14 @@ std::size_t WindowsKeyPair::sign_hash(std::span<const std::byte> hash, std::span
         return 0;
     }
 
-    // Return the number of bytes written to the signature buffer.
     const std::size_t result = mpss::utils::narrow_or_error<std::size_t>(encoded_size);
     mpss::utils::log_trace("Windows sign produced {} byte signature.", result);
     return result;
 }
 
-bool WindowsKeyPair::verify(std::span<const std::byte> hash, std::span<const std::byte> sig) const
+bool WindowsKeyPair::do_verify(std::span<const std::byte> hash, std::span<const std::byte> sig) const
 {
-    if (hash.empty() || sig.empty())
-    {
-        mpss::utils::log_warning("Nothing to verify.");
-        return false;
-    }
-
-    if (!mpss::utils::check_exact_hash_size(hash, algorithm()))
+    if (!still_holds_opened_key())
     {
         return false;
     }
@@ -164,7 +174,6 @@ bool WindowsKeyPair::verify(std::span<const std::byte> hash, std::span<const std
         return false;
     }
 
-    // Decode the signature.
     std::size_t raw_sig_size = utils::decode_raw_signature(sig, algorithm_, {});
     if (0 == raw_sig_size)
     {
@@ -181,10 +190,16 @@ bool WindowsKeyPair::verify(std::span<const std::byte> hash, std::span<const std
         return false;
     }
 
+    const DWORD raw_sig_size_dw = mpss::utils::narrow_or_error<DWORD>(raw_sig_size);
+    if (0 == raw_sig_size_dw)
+    {
+        return false;
+    }
+
     SECURITY_STATUS status = ::NCryptVerifySignature(
         key_handle_,
         /* pPaddingInfo */ nullptr, reinterpret_cast<PBYTE>(const_cast<std::byte *>(hash.data())), hash_bytes_dw,
-        reinterpret_cast<PBYTE>(raw_sig_span.data()), raw_sig_size,
+        reinterpret_cast<PBYTE>(raw_sig_span.data()), raw_sig_size_dw,
         /* dwFlags */ 0);
     if (ERROR_SUCCESS != status)
     {
@@ -195,13 +210,9 @@ bool WindowsKeyPair::verify(std::span<const std::byte> hash, std::span<const std
     return true;
 }
 
-std::size_t WindowsKeyPair::extract_key(std::span<std::byte> public_key) const
+std::size_t WindowsKeyPair::do_extract_key(std::span<std::byte> public_key) const
 {
-    if (public_key.empty())
-    {
-        return mpss::utils::get_public_key_size(algorithm());
-    }
-    else if (!mpss::utils::check_sufficient_public_key_buffer_size(public_key, algorithm()))
+    if (!still_holds_opened_key())
     {
         return 0;
     }
@@ -209,8 +220,12 @@ std::size_t WindowsKeyPair::extract_key(std::span<std::byte> public_key) const
     mpss::utils::log_trace("Extracting public key from Windows key.");
 
     crypto_params const *const crypto = utils::get_crypto_params(algorithm_);
+    if (nullptr == crypto)
+    {
+        mpss::utils::log_and_set_error("Unsupported algorithm '{}'.", get_algorithm_info(algorithm()).type_str);
+        return 0;
+    }
 
-    // Get the public key size.
     DWORD pk_blob_size = 0;
     SECURITY_STATUS status = ::NCryptExportKey(key_handle_,
                                                /* hExportKey */ 0, crypto->public_key_blob_name(),
@@ -233,12 +248,6 @@ std::size_t WindowsKeyPair::extract_key(std::span<std::byte> public_key) const
         return 0;
     }
 
-    // We add 1 to this. The reason is that the Windows API returns just the X and Y
-    // coordinates of the point, whereas we prefer to return a standard format with
-    // the point compression indicator. All returned points are uncompressed (0x04).
-    std::size_t pk_size = pk_blob_size - sizeof(crypto_params::key_blob_t) + 1;
-
-    // Actually get the key.
     auto pk_blob = std::make_unique<BYTE[]>(pk_blob_size);
     status = ::NCryptExportKey(key_handle_,
                                /* hExportKey */ 0, crypto->public_key_blob_name(),
@@ -260,38 +269,46 @@ std::size_t WindowsKeyPair::extract_key(std::span<std::byte> public_key) const
     BYTE *pk_data_start = pk_blob.get() + sizeof(crypto_params::key_blob_t);
     BYTE *pk_data_end = pk_data_start + (pk_blob_size - sizeof(crypto_params::key_blob_t));
 
-    // Check the input buffer is big enough
+    // The Windows API returns only the X and Y coordinates; the extra byte is the point compression
+    // indicator. Taken from what the export wrote rather than from the size query that preceded it.
     const std::size_t pk_expected_size = pk_data_end - pk_data_start + 1;
     if (mpss::utils::get_public_key_size(algorithm()) != pk_expected_size)
     {
-        mpss::utils::log_and_set_error("Unexpected public key size. Expected {} bytes, got {} bytes.", pk_expected_size,
-                                       pk_expected_size);
+        mpss::utils::log_and_set_error("Unexpected public key size. Expected {} bytes, got {} bytes.",
+                                       mpss::utils::get_public_key_size(algorithm()), pk_expected_size);
         return 0;
     }
 
-    // Write the compression indicator to the output buffer.
     public_key[0] = std::byte{0x04}; // Uncompressed point indicator.
 
-    // Copy the public key data to the output buffer.
     std::transform(pk_data_start, pk_data_end, public_key.begin() + 1,
                    [](auto in) { return static_cast<std::byte>(in); });
 
-    return pk_size;
+    return pk_expected_size;
 }
 
-void WindowsKeyPair::release_key() noexcept
+bool WindowsKeyPair::do_release_key()
 {
-    win_release();
+    SECURITY_STATUS status = win_release();
+    if (ERROR_SUCCESS != status)
+    {
+        mpss::utils::log_and_set_error("NCryptFreeObject failed with error code {}.", mpss::utils::to_hex(status));
+        return false;
+    }
+
+    return true;
 }
 
-void WindowsKeyPair::win_release() noexcept
+SECURITY_STATUS WindowsKeyPair::win_release() noexcept
 {
+    SECURITY_STATUS status = ERROR_SUCCESS;
     if (0 != key_handle_)
     {
-        ::NCryptFreeObject(key_handle_);
+        status = ::NCryptFreeObject(key_handle_);
     }
 
     clear_handle();
+    return status;
 }
 
 void WindowsKeyPair::clear_handle() noexcept

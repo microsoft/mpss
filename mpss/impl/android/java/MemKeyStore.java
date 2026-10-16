@@ -1,27 +1,122 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-package com.microsoft.research.mpss;
+package com.microsoft.mpss;
 
 import java.security.KeyPair;
-import java.util.HashMap;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class MemKeyStore {
-    private static HashMap<String, KeyPair> KeyPairs = new HashMap<>();
+    // A generation identifies a cache entry, not the stored key itself. Handles save this
+    // number so an old handle cannot use a replacement entry or reduce its reference count.
+    // A new entry gets a new generation; additional opens reuse the existing generation.
+    //
+    // Deletion removes the entry even if handles remain open. Closing the last handle also
+    // removes the entry, but does not delete the stored key. Reopening then gets a new
+    // generation even though the stored key has not changed.
+    private static final class CacheEntry {
+        final KeyPair kp;
+        final long generation;
+        int holds;
 
+        CacheEntry(KeyPair kp, long generation) {
+            this.kp = kp;
+            this.generation = generation;
+        }
+    }
+
+    private static final ConcurrentMap<String, CacheEntry> Entries = new ConcurrentHashMap<>();
+
+    private static final AtomicLong NextGeneration = new AtomicLong();
+
+    /**
+     * Record a name's cached key on a generation of its own. An entry already under this name is
+     * superseded rather than amended: a generation names one key for the whole of its life, so a
+     * handle holding the superseded one is refused from then on and its release finds nothing to
+     * give back. Amending the entry would instead hand those handles a key they never opened.
+     * @param keyName Name of the key being cached.
+     * @param kp The key to cache under it.
+     */
     public static void AddKey(String keyName, KeyPair kp) {
-        KeyPairs.put(keyName, kp);
+        Entries.put(keyName, new CacheEntry(kp, NextGeneration.incrementAndGet()));
+    }
+
+    /**
+     * Record that one more handle depends on this name's cached key.
+     * @param keyName Name of the key being handed to a caller.
+     * @return The generation the hold was taken on. The handle keeps it and presents it with every
+     *         operation it makes, the release that gives the hold back included, so that a name
+     *         deleted and created again can be neither reached nor released through a handle opened
+     *         on the key that used to hold it.
+     */
+    public static long RetainKey(String keyName) {
+        final CacheEntry entry = Entries.get(keyName);
+        if (null == entry) {
+            return 0L;
+        }
+        entry.holds += 1;
+        return entry.generation;
     }
 
     public static KeyPair GetKey(String keyName) {
-        return KeyPairs.getOrDefault(keyName, null);
+        final CacheEntry entry = Entries.get(keyName);
+        return (null == entry) ? null : entry.kp;
     }
 
-    public static void RemoveKey(String keyName) {
-        KeyPairs.remove(keyName);
+    /**
+     * Fetch a cached key only while the caller's generation still names the entry. Handle
+     * operations use this so that a name deleted and created again cannot be reached through a
+     * handle opened on the key that used to hold it. There is deliberately no fall back to the key
+     * store: a handle whose entry is gone is finished, not a name to resolve again.
+     * @param keyName Name of the key to retrieve.
+     * @param generation The generation the handle recorded when it opened.
+     * @return The cached key if the generation still names the entry, null otherwise.
+     */
+    public static KeyPair GetKeyForGeneration(String keyName, long generation) {
+        final CacheEntry entry = Entries.get(keyName);
+        return (null != entry && entry.generation == generation) ? entry.kp : null;
+    }
+
+    /**
+     * Whether the generation a handle recorded still names what this name holds.
+     * @param keyName Name of the key.
+     * @param generation The generation the handle recorded when it opened.
+     * @return True if the generation is still current for this name.
+     */
+    public static boolean GenerationIsCurrent(String keyName, long generation) {
+        final CacheEntry entry = Entries.get(keyName);
+        return null != entry && entry.generation == generation;
+    }
+
+    /**
+     * Release one hold on a key, evicting it once none are left. A release for a generation this
+     * name has moved past does nothing: whatever holds the name now belongs to someone else.
+     * @param keyName Name of the key to release.
+     * @param generation The generation the hold was taken on.
+     */
+    public static void RemoveKey(String keyName, long generation) {
+        final CacheEntry entry = Entries.get(keyName);
+        if (null == entry || entry.generation != generation) {
+            return;
+        }
+        entry.holds -= 1;
+        if (entry.holds <= 0) {
+            Entries.remove(keyName);
+        }
+    }
+
+    /**
+     * Drop a key regardless of how many holds remain. Deleting a key invalidates every handle to
+     * it, so the entry must not survive on another handle's hold.
+     * @param keyName Name of the key to drop.
+     */
+    public static void PurgeKey(String keyName) {
+        Entries.remove(keyName);
     }
 
     public static void RemoveAllKeys() {
-        KeyPairs.clear();
+        Entries.clear();
     }
 }

@@ -3,11 +3,10 @@
 
 #include "mpss-openssl/utils/names.h"
 #include "mpss/algorithm.h"
+#include "mpss/mpss.h"
 #include <cstddef>
 #include <memory>
-#include <mpss/mpss.h>
 #include <optional>
-#include <regex>
 #include <string>
 #include <string_view>
 
@@ -16,7 +15,20 @@ namespace mpss_openssl::utils
 
 using namespace mpss;
 
-#define MPSS_NAME_CHARS R"(-_.0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ)"
+namespace
+{
+
+// Removes the first alias from a colon-separated list of aliases and returns it.
+[[nodiscard]]
+std::string_view pop_alias(std::string_view &aliases)
+{
+    const std::size_t separator = aliases.find(':');
+    const std::string_view alias = aliases.substr(0, separator);
+    aliases.remove_prefix(std::string_view::npos == separator ? aliases.size() : separator + 1);
+    return alias;
+}
+
+} // namespace
 
 namespace unsafe
 {
@@ -36,26 +48,18 @@ std::string_view get_canonical_name(std::string_view name, const std::array<cons
         return {};
     }
 
-    // Check that the name only contains valid characters. Notably,
-    // the colon is not included in this list since it separates the aliases.
-    if (std::string_view::npos != name.find_first_not_of(MPSS_NAME_CHARS))
-    {
-        return {};
-    }
-
-    // Create a regex that matches the name in an alias string.
-    const std::regex name_regex{R"((?:^|:))" + std::string{name} + R"((?:$|:))"};
-
     for (const auto &aliases : alias_arr)
     {
-        std::string_view alias_str{aliases};
+        const std::string_view alias_str{aliases};
 
-        // Now check if the hash name is a match in alias_str.
-        std::match_results<std::string_view::const_iterator> match;
-        if (std::regex_search(alias_str.begin(), alias_str.end(), match, name_regex))
+        // Now check if the name is one of the aliases in alias_str.
+        for (std::string_view remaining = alias_str; !remaining.empty();)
         {
-            // Return the first name from the list of aliases.
-            return alias_str.substr(0, alias_str.find(':'));
+            if (name == pop_alias(remaining))
+            {
+                // Return the first name from the list of aliases.
+                return alias_str.substr(0, alias_str.find(':'));
+            }
         }
     }
 
@@ -140,20 +144,12 @@ std::string_view try_extract_canonical_name(std::string_view str, const std::arr
     // (that are not aliases), we return {}.
     std::string found_name = {};
 
-    // Create a regex that matches all of the hash name aliases.
-    const std::regex name_regex{R"([)" MPSS_NAME_CHARS R"(]+)"};
-
     for (const auto &aliases : alias_arr)
     {
-        std::string_view alias_str{aliases};
-
         // Iterate over each alias.
-        auto it_begin = std::regex_iterator(alias_str.begin(), alias_str.end(), name_regex);
-        auto it_end = decltype(it_begin)();
-
-        for (auto it = it_begin; it != it_end; ++it)
+        for (std::string_view remaining{aliases}; !remaining.empty();)
         {
-            const std::string alias = it->str();
+            const std::string_view alias = pop_alias(remaining);
 
             // Next, we try to find alias in str. Moreover, check that we find
             // just one instance of it.
@@ -196,7 +192,6 @@ std::string_view try_extract_canonical_name(std::string_view str, const std::arr
 [[nodiscard]]
 std::optional<std::string> try_get_ec_group(std::string_view str)
 {
-    // We wrap the result in std::string. This is now guaranteed to be null-terminated.
     const std::string_view group_name = unsafe::try_extract_canonical_name(str, mpss_group_names);
     return group_name.empty() ? std::nullopt : std::make_optional(std::string{group_name});
 }
@@ -218,7 +213,6 @@ std::optional<std::string> try_get_ec_group(const std::unique_ptr<KeyPair> &key_
 [[nodiscard]]
 std::optional<std::string> try_get_hash_func(std::string_view str)
 {
-    // We wrap the result in std::string. This is now guaranteed to be null-terminated.
     const std::string_view hash_name = unsafe::try_extract_canonical_name(str, mpss_hash_names);
     return hash_name.empty() ? std::nullopt : std::make_optional(std::string{hash_name});
 }
@@ -240,7 +234,6 @@ std::optional<std::string> try_get_hash_func(const std::unique_ptr<KeyPair> &key
 [[nodiscard]]
 std::optional<std::string> try_get_signature_scheme(std::string_view str)
 {
-    // We wrap the result in std::string. This is now guaranteed to be null-terminated.
     const std::string_view sig_scheme = unsafe::try_extract_canonical_name(str, mpss_sig_names);
     return sig_scheme.empty() ? std::nullopt : std::make_optional(std::string{sig_scheme});
 }
@@ -262,7 +255,7 @@ std::optional<std::string> try_get_signature_scheme(const std::unique_ptr<KeyPai
 [[nodiscard]]
 std::optional<std::string> try_get_algorithm_name(std::string_view str)
 {
-    // Note: The output of this function does *not* indicate curve information!
+    // Note: The output of this function does *not* indicate group information!
 
     // First we'll try to extract the signature scheme and hash function.
     const std::optional<std::string> sig_scheme = try_get_signature_scheme(str);
@@ -299,7 +292,7 @@ std::optional<std::string> try_get_algorithm_name(std::string_view str)
 [[nodiscard]]
 std::optional<std::string> try_get_algorithm_name(const std::unique_ptr<KeyPair> &key_pair)
 {
-    // Note: The output of this function does *not* indicate curve information!
+    // Note: The output of this function does *not* indicate group information!
 
     // Fail if no key is present.
     if (nullptr == key_pair)
@@ -316,7 +309,7 @@ std::optional<std::string> try_get_algorithm_name(const std::unique_ptr<KeyPair>
 mpss::Algorithm try_get_mpss_algorithm(std::string_view str)
 {
     // This function tries to retrieve the complete mpss algorithm description,
-    // which includes the signature scheme descriptor, curve, and hash function.
+    // which includes the signature scheme descriptor, group, and hash function.
 
     if (str.empty())
     {
@@ -330,7 +323,7 @@ mpss::Algorithm try_get_mpss_algorithm(std::string_view str)
         return mpss::Algorithm::unsupported;
     }
 
-    // Next, try to get the curve name.
+    // Next, try to get the group name.
     const std::optional<std::string> ec_group_name = try_get_ec_group(str);
     if (!ec_group_name)
     {
@@ -355,7 +348,7 @@ mpss::Algorithm try_get_mpss_algorithm(std::string_view str)
 std::optional<std::string> try_get_mpss_algorithm_name(std::string_view str)
 {
     // This function tries to retrieve the complete mpss algorithm description,
-    // which includes the signature scheme descriptor, curve, and hash function.
+    // which includes the signature scheme descriptor, group, and hash function.
 
     const mpss::Algorithm algorithm = try_get_mpss_algorithm(str);
     if (mpss::Algorithm::unsupported != algorithm)

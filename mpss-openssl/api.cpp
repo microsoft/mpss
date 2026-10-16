@@ -2,121 +2,183 @@
 // Licensed under the MIT license.
 
 #include "mpss-openssl/api.h"
+#include "mpss-openssl/provider/error.h"
 #include "mpss-openssl/utils/names.h"
-#include <memory>
-#include <mpss/mpss.h>
+#include "mpss-openssl/utils/utils.h"
+#include "mpss/mpss.h"
+#include "mpss/utils/utilities.h"
 #include <mutex>
+#include <openssl/err.h>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
-bool mpss_delete_key(const char *key_name)
+namespace
 {
-    if (nullptr == key_name)
-    {
-        return false;
-    }
+// Forwards a null C string as empty rather than rejecting it here, so the library's own validation
+// reports it. Returning early would hand back false with no error set, which the caller cannot
+// distinguish from a conclusive negative answer.
+constexpr std::string_view as_view(const char *str) noexcept
+{
+    return nullptr == str ? std::string_view{} : std::string_view{str};
+}
 
-    // Try to open the key.
-    const std::unique_ptr<mpss::KeyPair> key_pair = mpss::KeyPair::Open(key_name);
-    if (nullptr == key_pair)
-    {
-        return false;
-    }
+// The name-list functions are documented to return a null-terminated array, so a failure still has
+// to hand back a valid, empty one.
+const char *empty_name_list[] = {nullptr};
 
-    // Delete the key.
-    if (!key_pair->delete_key())
-    {
-        return false;
-    }
+// Reported when the last-error buffer itself could not be updated.
+constexpr const char *internal_error_message = "Internal error.";
+} // namespace
 
-    return true;
+bool mpss_delete_key(const char *key_name)
+try
+{
+    return mpss_openssl::utils::delete_key(as_view(key_name));
+}
+catch (...)
+{
+    mpss::utils::set_internal_error();
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    return false;
 }
 
 bool mpss_delete_key_from_backend(const char *key_name, const char *backend_name)
+try
 {
-    if (nullptr == key_name || nullptr == backend_name)
+    return mpss_openssl::utils::delete_key(as_view(key_name), as_view(backend_name));
+}
+catch (...)
+{
+    mpss::utils::set_internal_error();
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    return false;
+}
+
+bool mpss_delete_key_at(const mpss_key_location_t *location)
+try
+{
+    if (nullptr == location)
     {
-        return false;
+        // Forward an invalid location so core validation refreshes the MPSS error as well as the OpenSSL queue.
+        MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_PASSED_NULL_PARAMETER);
+        return mpss::KeyPair::Delete(mpss::KeyLocation{});
     }
 
-    // Try to open the key from the specified backend.
-    const std::unique_ptr<mpss::KeyPair> key_pair = mpss::KeyPair::Open(key_name, backend_name);
-    if (nullptr == key_pair)
-    {
-        return false;
-    }
+    const mpss::KeyLocation value{
+        std::string{as_view(location->backend_name)}, std::string{as_view(location->key_name)},
+        nullptr == location->device_id ? std::nullopt : std::make_optional(std::string{location->device_id})};
 
-    // Delete the key.
-    return key_pair->delete_key();
+    return mpss::KeyPair::Delete(value);
+}
+catch (...)
+{
+    mpss::utils::set_internal_error();
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    return false;
 }
 
 bool mpss_is_algorithm_available(const char *algorithm_name)
+try
 {
-    if (nullptr == algorithm_name)
-    {
-        return false;
-    }
-    const mpss::Algorithm algorithm = mpss_openssl::utils::try_get_mpss_algorithm(algorithm_name);
-    if (mpss::Algorithm::unsupported == algorithm)
-    {
-        return false;
-    }
-    return mpss::is_algorithm_available(algorithm);
+    return mpss::is_algorithm_available(mpss_openssl::utils::try_get_mpss_algorithm(as_view(algorithm_name)));
+}
+catch (...)
+{
+    mpss::utils::set_internal_error();
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    return false;
 }
 
 bool mpss_is_algorithm_available_in_backend(const char *algorithm_name, const char *backend_name)
+try
 {
-    if (nullptr == algorithm_name || nullptr == backend_name)
-    {
-        return false;
-    }
-    const mpss::Algorithm algorithm = mpss_openssl::utils::try_get_mpss_algorithm(algorithm_name);
-    if (mpss::Algorithm::unsupported == algorithm)
-    {
-        return false;
-    }
-    return mpss::is_algorithm_available(algorithm, backend_name);
+    return mpss::is_algorithm_available(mpss_openssl::utils::try_get_mpss_algorithm(as_view(algorithm_name)),
+                                        as_view(backend_name));
+}
+catch (...)
+{
+    mpss::utils::set_internal_error();
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    return false;
 }
 
 const char **mpss_get_available_algorithms()
+try
 {
-    // Build a static null-terminated array of string pointers on first call.
-    // The algorithm name strings are compile-time constants, so no ownership issues.
-    static std::vector<const char *> cache;
-    static std::once_flag flag;
-    std::call_once(flag, []() {
-        for (const mpss::Algorithm &alg : mpss::get_available_algorithms())
-        {
-            cache.push_back(mpss::get_algorithm_info(alg).type_str);
-        }
-        cache.push_back(nullptr); // null-terminate
-    });
-    return cache.data();
+    // Rebuilt on every call. The underlying availability query caches positive results only, because a
+    // negative can be a transient probe failure; memoizing the list here would make such a failure a
+    // permanent, process-wide understatement of what the platform supports.
+    static thread_local std::vector<const char *> names;
+    names.clear();
+    for (const mpss::Algorithm &alg : mpss::get_available_algorithms())
+    {
+        names.push_back(mpss::get_algorithm_info(alg).type_str);
+    }
+    names.push_back(nullptr);
+    return names.data();
+}
+catch (...)
+{
+    mpss::utils::set_internal_error();
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    return empty_name_list;
 }
 
 const char *mpss_get_error()
+try
 {
-    // Use thread-local storage to hold a copy of the last std::string.
     static thread_local std::string last_error_str;
 
-    last_error_str = mpss::get_error(); // Update buffer
+    last_error_str = mpss::get_error();
     return last_error_str.c_str();
+}
+catch (...)
+{
+    // The buffer could not be updated, so the message is returned directly. This function is
+    // documented never to return nullptr.
+    return internal_error_message;
+}
+
+bool mpss_has_error()
+{
+    return mpss::has_error();
+}
+
+void mpss_clear_error()
+{
+    mpss::clear_error();
 }
 
 const char **mpss_get_available_backends()
+try
 {
     // Build a static null-terminated array of string pointers on first call.
     // Backend availability is determined at compile time, so it won't change.
     static std::vector<const char *> ptrs;
     static std::once_flag flag;
-    std::call_once(flag, []() {
+    std::call_once(flag, [] {
         ptrs = mpss::get_available_backends();
         ptrs.push_back(nullptr); // null-terminate
     });
     return ptrs.data();
 }
+catch (...)
+{
+    mpss::utils::set_internal_error();
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    return empty_name_list;
+}
 
 const char *mpss_get_default_backend_name()
+try
 {
     return mpss::get_default_backend_name();
+}
+catch (...)
+{
+    mpss::utils::set_internal_error();
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    return "";
 }

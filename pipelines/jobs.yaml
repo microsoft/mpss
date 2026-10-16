@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT license.
+
 # This file selects the correct job definition based on system and buildType.
 
 parameters:
@@ -75,10 +78,10 @@ jobs:
       parameters:
         yubikey: 'true'
         ${{ if eq(parameters.debug, 'true') }}:
-          preset: 'linux-with-yubikey-debug'
+          preset: 'linux-x64-with-yubikey-debug'
           configuration: 'Debug'
         ${{ if eq(parameters.debug, 'false') }}:
-          preset: 'linux-with-yubikey-release'
+          preset: 'linux-x64-with-yubikey-release'
           configuration: 'Release'
 
 - ${{ if eq(parameters.name, 'macOS') }}:
@@ -123,9 +126,11 @@ jobs:
     - template: android.yaml
       parameters:
         ${{ if eq(parameters.debug, 'true') }}:
-          configuration: 'Debug'
+          x64Preset: 'android-x64-debug'
+          arm64Preset: 'android-arm64-debug'
         ${{ if eq(parameters.debug, 'false') }}:
-          configuration: 'Release'
+          x64Preset: 'android-x64-release'
+          arm64Preset: 'android-arm64-release'
 
 - ${{ if eq(parameters.name, 'iOS') }}:
   - job: ${{ parameters.name }}

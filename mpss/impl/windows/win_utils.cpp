@@ -5,20 +5,68 @@
 #include "mpss/utils/utilities.h"
 #include <Windows.h>
 #include <algorithm>
+#include <map>
+#include <mutex>
 #include <ncrypt.h>
+#include <string>
 
 namespace
 {
 
-// Instantiating the crypto_params for each algorithm.
 constexpr mpss::impl::os::ECDSA_P256 ecdsa_p256;
 constexpr mpss::impl::os::ECDSA_P384 ecdsa_p384;
 constexpr mpss::impl::os::ECDSA_P521 ecdsa_p521;
+
+struct KeyGenerations
+{
+    std::mutex mtx;
+
+    // Generations are never reused, so one issued after a name was deleted can never equal one a
+    // handle recorded before. Counting globally rather than per name is what Apple and Android do.
+    std::uint64_t last_issued_generation = 0;
+
+    // Only names deleted in this process are recorded. A name absent from here has never been
+    // deleted here, which every handle reads as the same generation without needing an entry.
+    std::map<std::string, std::uint64_t, std::less<>> by_name;
+};
+
+[[nodiscard]]
+KeyGenerations &key_generations()
+{
+    // Immortal singleton, for the same reason as the global logger: a host static destroyed after
+    // this one would otherwise lock a destroyed mutex. The one-time allocation is reclaimed by the
+    // OS at process exit, and nothing secret is held.
+    static KeyGenerations &state = *new KeyGenerations{}; // NOLINT(cppcoreguidelines-owning-memory) - intentional
+                                                          // immortal singleton, never freed.
+    return state;
+}
 
 } // namespace
 
 namespace mpss::impl::os::utils
 {
+
+std::uint64_t current_key_generation(std::string_view name)
+{
+    KeyGenerations &state = key_generations();
+    const std::scoped_lock lock{state.mtx};
+
+    const auto entry = state.by_name.find(name);
+    if (state.by_name.end() == entry)
+    {
+        return never_deleted_generation;
+    }
+
+    return entry->second;
+}
+
+void invalidate_key_generation(std::string_view name)
+{
+    KeyGenerations &state = key_generations();
+    const std::scoped_lock lock{state.mtx};
+
+    state.by_name.insert_or_assign(std::string{name}, ++state.last_issued_generation);
+}
 
 using enum mpss::Algorithm;
 
@@ -37,10 +85,37 @@ crypto_params const *get_crypto_params(Algorithm algorithm) noexcept
     }
 }
 
+std::string wide_to_utf8(std::wstring_view value)
+{
+    if (value.empty())
+    {
+        return {};
+    }
+
+    const int value_size = mpss::utils::narrow_or_error<int>(value.size());
+    if (0 == value_size)
+    {
+        return {};
+    }
+
+    const int utf8_size = ::WideCharToMultiByte(CP_UTF8, 0, value.data(), value_size, nullptr, 0, nullptr, nullptr);
+    if (0 >= utf8_size)
+    {
+        return {};
+    }
+
+    std::string utf8(static_cast<std::size_t>(utf8_size), '\0');
+    if (0 >= ::WideCharToMultiByte(CP_UTF8, 0, value.data(), value_size, utf8.data(), utf8_size, nullptr, nullptr))
+    {
+        return {};
+    }
+
+    return utf8;
+}
+
 std::size_t decode_raw_signature(std::span<const std::byte> der_sig, Algorithm algorithm,
                                  std::span<std::byte> raw_sig) noexcept
 {
-    // Check for obvious problems.
     if (der_sig.empty())
     {
         mpss::utils::log_warning("Nothing to decode.");
@@ -64,14 +139,12 @@ std::size_t decode_raw_signature(std::span<const std::byte> der_sig, Algorithm a
         return 0;
     }
 
-    // Decode signature.
     const DWORD encoded_size = mpss::utils::narrow_or_error<DWORD>(der_sig.size());
     if (0 == encoded_size)
     {
         return 0;
     }
 
-    // Get required decoded size
     DWORD ecc_sig_buffer_size = 0;
     if (!::CryptDecodeObjectEx(X509_ASN_ENCODING, X509_ECC_SIGNATURE, reinterpret_cast<LPCBYTE>(der_sig.data()),
                                encoded_size, 0 /* dwFlags */,
@@ -83,7 +156,6 @@ std::size_t decode_raw_signature(std::span<const std::byte> der_sig, Algorithm a
         return 0;
     }
 
-    // Decode the signature.
     std::unique_ptr<BYTE[]> ecc_sig_buffer = std::make_unique<BYTE[]>(ecc_sig_buffer_size);
     if (!::CryptDecodeObjectEx(X509_ASN_ENCODING, X509_ECC_SIGNATURE, reinterpret_cast<LPCBYTE>(der_sig.data()),
                                encoded_size, 0 /* dwFlags */,
@@ -107,7 +179,6 @@ std::size_t decode_raw_signature(std::span<const std::byte> der_sig, Algorithm a
         return 0;
     }
 
-    // Set raw_sig to zeros.
     std::fill_n(raw_sig.begin(), raw_sig_size, std::byte{});
 
     // Copy the raw signature data to the output buffer. Reverse the byte order.

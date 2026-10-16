@@ -4,6 +4,7 @@
 #pragma once
 
 #include "mpss/impl/apple/apple_keypair.h"
+#include <cstdint>
 
 namespace mpss::impl::os
 {
@@ -12,12 +13,12 @@ namespace mpss::impl::os
  * @brief Key pair implementation that uses the Apple Secure Enclave for storage and operations.
  *
  * This class provides functionality to manage cryptographic key pairs stored in the Apple Secure Enclave.
- * It implements key deletion, signing, verification, and public key extraction using the Apple Secure Enclave APIs.
+ * It implements key deletion, signing, verification, and public-key extraction using the Apple Secure Enclave APIs.
  */
 class AppleSEKeyPair : public AppleKeyPairBase
 {
   public:
-    AppleSEKeyPair(std::string_view name, Algorithm algorithm);
+    AppleSEKeyPair(std::string_view name, Algorithm algorithm, std::uint64_t generation);
     ~AppleSEKeyPair() override;
 
   protected:
@@ -28,7 +29,7 @@ class AppleSEKeyPair : public AppleKeyPairBase
     bool do_verify(std::span<const std::byte> hash, std::span<const std::byte> sig) const override;
     [[nodiscard]]
     std::size_t do_extract_key(std::span<std::byte> public_key) const override;
-    void do_release_key() override;
+    bool do_release_key() override;
 };
 
 } // namespace mpss::impl::os

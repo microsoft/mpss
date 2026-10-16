@@ -2,23 +2,75 @@
 // Licensed under the MIT license.
 
 #include "mpss/utils/utilities.h"
+#include <array>
+#include <functional>
+#include <mutex>
+#include <new>
 
 namespace
 {
-thread_local std::string last_error;
+// Immortal per-thread error string: heap-allocated at most once per thread and never destroyed, so
+// it stays valid even when MPSS is called from a host's static/global destructor during process
+// exit. A plain thread_local std::string is destroyed strongly-before static-duration objects
+// ([basic.start.term]), so a host static destructor that reaches set_error() would write into a
+// freed string.
+//
+// The slot starts null and is filled only when there is an error to record, so reading the last
+// error never allocates. That keeps get_error() and has_error() usable on a thread that has never
+// touched MPSS, and lets has_error() promise not to allocate.
+std::string *&last_error_slot() noexcept
+{
+    thread_local std::string *error = nullptr;
+    return error;
 }
+} // namespace
 
 namespace mpss::utils
 {
 
 std::string get_error()
 {
-    return last_error;
+    const std::string *error = last_error_slot();
+    return (nullptr == error) ? std::string{} : *error;
+}
+
+bool has_error() noexcept
+{
+    const std::string *error = last_error_slot();
+    return (nullptr != error) && !error->empty();
 }
 
 void set_error(std::string error) noexcept
 {
-    last_error = std::move(error);
+    std::string *&slot = last_error_slot();
+    if (nullptr == slot)
+    {
+        if (error.empty())
+        {
+            // Clearing an error on a thread that has never reported one: nothing to store.
+            return;
+        }
+
+        // NOLINTNEXTLINE(cppcoreguidelines-owning-memory) - intentional immortal per-thread storage, never freed.
+        slot = new (std::nothrow) std::string();
+        if (nullptr == slot)
+        {
+            // Out of memory while reporting an error. Dropping the message is better than
+            // terminating, which is what throwing out of this noexcept function would do.
+            return;
+        }
+    }
+
+    *slot = std::move(error);
+}
+
+void set_internal_error() noexcept
+try
+{
+    set_error("Internal error.");
+}
+catch (...) // NOLINT(bugprone-empty-catch) - out of memory while reporting an error; dropped, as in set_error.
+{
 }
 
 std::size_t get_max_signature_size(Algorithm algorithm)
@@ -107,8 +159,8 @@ bool check_exact_hash_size(std::span<const std::byte> hash, Algorithm algorithm)
     const bool hash_size_ok = (hash.size() == expected_hash_size);
     if (!hash_size_ok)
     {
-        mpss::utils::log_warning("Invalid hash length {} bytes for algorithm {} (expected {} bytes).", hash.size(),
-                                 get_algorithm_info(algorithm).type_str, expected_hash_size);
+        mpss::utils::log_and_set_error("Invalid hash length {} bytes for algorithm {} (expected {} bytes).",
+                                       hash.size(), get_algorithm_info(algorithm).type_str, expected_hash_size);
     }
 
     return hash_size_ok;
@@ -120,8 +172,9 @@ bool check_sufficient_signature_buffer_size(std::span<const std::byte> sig, Algo
     const bool sig_size_ok = (sig.size() >= expected_sig_size);
     if (!sig_size_ok)
     {
-        mpss::utils::log_warning("Signature buffer too small: {} bytes for algorithm {} (expected at least {} bytes).",
-                                 sig.size(), get_algorithm_info(algorithm).type_str, expected_sig_size);
+        mpss::utils::log_and_set_error(
+            "Signature buffer too small: {} bytes for algorithm {} (expected at least {} bytes).", sig.size(),
+            get_algorithm_info(algorithm).type_str, expected_sig_size);
     }
 
     return sig_size_ok;
@@ -133,11 +186,49 @@ bool check_sufficient_public_key_buffer_size(std::span<const std::byte> public_k
     const bool pk_size_ok = (public_key.size() >= expected_pk_size);
     if (!pk_size_ok)
     {
-        mpss::utils::log_warning("Public key buffer too small: {} bytes for algorithm {} (expected at least {} bytes).",
-                                 public_key.size(), get_algorithm_info(algorithm).type_str, expected_pk_size);
+        mpss::utils::log_and_set_error(
+            "Public key buffer too small: {} bytes for algorithm {} (expected at least {} bytes).", public_key.size(),
+            get_algorithm_info(algorithm).type_str, expected_pk_size);
     }
 
     return pk_size_ok;
+}
+
+namespace
+{
+// Depth rather than a flag, so a handler reached from another handler still reads as inside one.
+thread_local int interaction_handler_depth = 0;
+} // namespace
+
+std::mutex &name_mutex(std::string_view name)
+{
+    constexpr std::size_t stripe_count = 64;
+    using Stripes = std::array<std::mutex, stripe_count>;
+
+    // Immortal singleton state, for the same reason as the backend registry: a lifecycle operation
+    // running after this one was destroyed would otherwise lock a destroyed mutex. The one-time
+    // allocation is reclaimed by the OS at process exit.
+    static Stripes &stripes = []() -> Stripes & {
+        auto *fresh = new Stripes{}; // NOLINT(cppcoreguidelines-owning-memory) - intentional immortal singleton.
+        return *fresh;
+    }();
+
+    return stripes.at(std::hash<std::string_view>{}(name) % stripe_count);
+}
+
+bool in_interaction_handler() noexcept
+{
+    return 0 != interaction_handler_depth;
+}
+
+InteractionHandlerScope::InteractionHandlerScope() noexcept
+{
+    ++interaction_handler_depth;
+}
+
+InteractionHandlerScope::~InteractionHandlerScope() noexcept
+{
+    --interaction_handler_depth;
 }
 
 } // namespace mpss::utils

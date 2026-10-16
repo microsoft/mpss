@@ -4,12 +4,14 @@
 #pragma once
 
 #include "mpss/algorithm.h"
+#include "mpss/defines.h"
 #include "mpss/log.h"
 #include <charconv>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <format>
+#include <mutex>
 #include <optional>
 #include <span>
 #include <string>
@@ -52,7 +54,11 @@ std::optional<ByteVectorType> hex_string_to_bytes(std::string_view hex_str)
     {
         std::uint8_t this_byte{};
         auto [ptr, ec] = std::from_chars(hex_str.data() + i, hex_str.data() + i + 2, this_byte, 16);
-        if (ec != std::errc{})
+        // Require both characters of the window to be consumed. std::from_chars reports success as soon as
+        // it parses at least one digit, so without the end-pointer check a window like "1g" would parse as
+        // 0x01 (stopping at 'g') and the invalid character would be silently dropped -- turning a typo'd
+        // hex string into a different, valid-looking byte sequence.
+        if (std::errc{} != ec || ptr != hex_str.data() + i + 2)
         {
             return std::nullopt;
         }
@@ -70,10 +76,33 @@ std::optional<ByteVectorType> hex_string_to_bytes(std::string_view hex_str)
 std::string get_error();
 
 /**
+ * @brief Determine whether an error is currently set for this thread.
+ * @return true if the last error string is non-empty, false otherwise.
+ */
+[[nodiscard]]
+bool has_error() noexcept;
+
+/**
  * @brief Set the last error string that occurred.
  * @param error The error string to set.
  */
 void set_error(std::string error) noexcept;
+
+/**
+ * @brief Set the last error to report an internal failure, such as an exception caught at an API boundary.
+ *
+ * Takes no message, so nothing at the call site can throw. Exported because the provider's C API, a
+ * separate binary, reports through it.
+ */
+MPSS_DECOR void set_internal_error() noexcept;
+
+/**
+ * @brief Clear the last error for this thread.
+ */
+inline void clear_error() noexcept
+{
+    set_error({});
+}
 
 /**
  * @brief Log an error message and set it as the last error.
@@ -96,6 +125,32 @@ inline void log_and_set_error(std::string msg)
 template <typename... Args> void log_and_set_error(std::format_string<Args...> fmt, Args &&...args)
 {
     log_and_set_error(std::format(fmt, std::forward<Args>(args)...));
+}
+
+/**
+ * @brief Log an error message without setting it as the last error.
+ *
+ * For failures that are not the caller's operation failing: the message belongs in the log at error
+ * severity, but the last error must be left for whichever operation the caller actually invoked.
+ *
+ * @param msg The error message to log.
+ */
+inline void log_error(std::string msg)
+{
+    if (auto logger = mpss::GetLogger())
+    {
+        logger->error("{}", msg);
+    }
+}
+
+/**
+ * @brief Log a formatted error message without setting it as the last error.
+ * @param fmt The format string for the error message.
+ * @param args The format arguments for the error message.
+ */
+template <typename... Args> void log_error(std::format_string<Args...> fmt, Args &&...args)
+{
+    log_error(std::format(fmt, std::forward<Args>(args)...));
 }
 
 /**
@@ -195,9 +250,9 @@ template <typename... Args> void log_trace(std::format_string<Args...> fmt, Args
 std::size_t get_max_signature_size(Algorithm algorithm);
 
 /**
- * @brief Get public key size for a given algorithm.
- * @param algorithm The algorithm to get the public key size for.
- * @return The public key size.
+ * @brief Get public-key size for a given algorithm.
+ * @param algorithm The algorithm to get the public-key size for.
+ * @return The public-key size.
  * @note We assume that the public key is ANSI X9.63 encoded.
  */
 std::size_t get_public_key_size(Algorithm algorithm);
@@ -222,7 +277,7 @@ template <std::integral Out, std::integral In> Out narrow_or_error(In in)
 /**
  * @brief Get the key size in bytes for a given algorithm.
  * @param algorithm The algorithm to get the key size for.
- * @return The key size in bytes (i.e., the byte length of one curve scalar).
+ * @return The key size in bytes.
  */
 std::size_t get_key_bytes(Algorithm algorithm) noexcept;
 
@@ -251,12 +306,51 @@ bool check_exact_hash_size(std::span<const std::byte> hash, Algorithm algorithm)
 bool check_sufficient_signature_buffer_size(std::span<const std::byte> sig, Algorithm algorithm);
 
 /**
- * @brief Check that the given public key buffer has at least the expected size for the given algorithm.
- * @param public_key The public key buffer to check.
- * @param algorithm The algorithm to check the public key buffer size for.
- * @return true if the public key buffer has at least the expected size for the given algorithm, false
+ * @brief Check that the given public-key buffer has at least the expected size for the given algorithm.
+ * @param public_key The public-key buffer to check.
+ * @param algorithm The algorithm to check the public-key buffer size for.
+ * @return true if the public-key buffer has at least the expected size for the given algorithm, false
  * otherwise.
  */
 bool check_sufficient_public_key_buffer_size(std::span<const std::byte> public_key, Algorithm algorithm);
+
+/**
+ * @brief The lock guarding lifecycle operations on one key name.
+ *
+ * Creating, opening and deleting a name each look before they act, and a name is the only identity
+ * the library has: two creates of one absent name can both find it absent, and a delete can land
+ * between a handle checking that its key is still its own and deleting it. Holding this across a
+ * lifecycle operation makes each of them one decision.
+ *
+ * Chosen from a fixed set by hashing the name, so what this costs is bounded. Two unrelated names
+ * can share one and serialize needlessly, which is cheaper than a lock per name ever used.
+ */
+[[nodiscard]]
+std::mutex &name_mutex(std::string_view name);
+
+/**
+ * @brief Whether this thread is currently inside an interaction handler.
+ *
+ * A handler is called from within the locks the operation that needs it already holds, a YubiKey
+ * session among them, so an MPSS call made from one would wait on locks held by its own caller.
+ * Entry points ask this and refuse rather than deadlock.
+ */
+[[nodiscard]]
+bool in_interaction_handler() noexcept;
+
+/**
+ * @brief Marks the calling thread as being inside an interaction handler for this scope.
+ */
+class InteractionHandlerScope
+{
+  public:
+    InteractionHandlerScope() noexcept;
+    ~InteractionHandlerScope() noexcept;
+
+    InteractionHandlerScope(const InteractionHandlerScope &) = delete;
+    InteractionHandlerScope &operator=(const InteractionHandlerScope &) = delete;
+    InteractionHandlerScope(InteractionHandlerScope &&) = delete;
+    InteractionHandlerScope &operator=(InteractionHandlerScope &&) = delete;
+};
 
 } // namespace mpss::utils

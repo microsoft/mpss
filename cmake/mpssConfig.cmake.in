@@ -12,6 +12,7 @@
 #   - MPSS_INCLUDES_DIR : Directory where the MPSS include files are.
 #   - MPSS_CONFIG_DIR : Directory where the MPSS config files are.
 #   - MPSS_BACKEND_YUBIKEY : YES if MPSS was built with the YubiKey PIV backend.
+#   - MPSS_WITH_SERIALIZATION : YES if key-reference serialization is available.
 #   - MPSS_AVAILABLE_TARGETS : Contains a list of available MPSS targets.
 #   - MPSS_VERSION : The full version number.
 #   - MPSS_VERSION_MAJOR : The major version number.
@@ -21,6 +22,15 @@
 @PACKAGE_INIT@
 
 include(CMakeFindDependencyMacro)
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Android")
+    if(NOT CMAKE_ANDROID_STL_TYPE STREQUAL "c++_shared"
+        OR (DEFINED ANDROID_STL AND NOT ANDROID_STL STREQUAL "c++_shared"))
+        message(FATAL_ERROR
+            "MPSS requires CMAKE_ANDROID_STL_TYPE=c++_shared on Android. "
+            "Select the shared C++ runtime before enabling C++.")
+    endif()
+endif()
 
 # Version variables, baked in at configure time.
 set(MPSS_VERSION @PROJECT_VERSION@)
@@ -64,11 +74,26 @@ if(MPSS_CORE_SHARED_FOUND OR MPSS_CORE_STATIC_FOUND)
 
     # Expose whether the YubiKey backend was enabled at build time.
     set(MPSS_BACKEND_YUBIKEY @MPSS_BACKEND_YUBIKEY@)
+    set(MPSS_WITH_SERIALIZATION @MPSS_WITH_SERIALIZATION@)
 
-    # When MPSS was built with the YubiKey backend, it has PUBLIC dependencies
-    # on OpenSSL and libykpiv that consumers must resolve.
+    if(MPSS_BACKEND_YUBIKEY OR MPSS_WITH_SERIALIZATION)
+        find_dependency(OpenSSL 3 REQUIRED COMPONENTS Crypto)
+
+        # MPSS is shared on Android, so the application must use the same shared OpenSSL.
+        if(CMAKE_SYSTEM_NAME STREQUAL "Android")
+            get_target_property(mpss_OPENSSL_CRYPTO_TYPE OpenSSL::Crypto TYPE)
+            get_target_property(mpss_OPENSSL_CRYPTO_LOCATION OpenSSL::Crypto IMPORTED_LOCATION)
+            if(mpss_OPENSSL_CRYPTO_TYPE STREQUAL "STATIC_LIBRARY"
+                OR mpss_OPENSSL_CRYPTO_LOCATION MATCHES "\\.a$")
+                message(FATAL_ERROR
+                    "MPSS requires a shared OpenSSL on Android. With vcpkg, build the openssl "
+                    "port with VCPKG_LIBRARY_LINKAGE set to dynamic.")
+            endif()
+            unset(mpss_OPENSSL_CRYPTO_TYPE)
+            unset(mpss_OPENSSL_CRYPTO_LOCATION)
+        endif()
+    endif()
     if(MPSS_BACKEND_YUBIKEY)
-        find_dependency(OpenSSL 3 REQUIRED)
         find_dependency(unofficial-libykpiv CONFIG REQUIRED)
     endif()
 endif()
@@ -85,7 +110,7 @@ endif()
 
 # Find dependencies.
 if(MPSS_OPENSSL_SHARED_FOUND OR MPSS_OPENSSL_STATIC_FOUND)
-    find_dependency(OpenSSL 3 REQUIRED)
+    find_dependency(OpenSSL 3.2 REQUIRED)
     set(MPSS_OPENSSL_FOUND YES)
 endif()
 

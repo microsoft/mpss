@@ -1,5 +1,9 @@
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT license.
+
 parameters:
-  configuration: 'Release'
+  x64Preset: 'android-x64-release'
+  arm64Preset: 'android-arm64-release'
 
 steps:
 - task: JavaToolInstaller@0
@@ -10,31 +14,11 @@ steps:
     jdkSourceOption: 'PreInstalled'
 
 - task: CmdLine@2
-  displayName: 'Get tool info'
-  name: GetToolInfo
+  displayName: 'Prepare Android SDK'
   inputs:
     script: |
-      # Find the highest supported Android API level from the NDK.
-      NDK_ROOT="${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT}}"
-      if [ -z "$NDK_ROOT" ]; then
-        SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME}}"
-        NDK_ROOT=$(ls -d "$SDK_ROOT/ndk/"* 2>/dev/null | sort -V | tail -1)
-      fi
-      if [ ! -d "$NDK_ROOT" ]; then
-        echo "##[error]Android NDK not found."
-        exit 1
-      fi
-
-      if [ -f "$NDK_ROOT/meta/platforms.json" ]; then
-        API_LEVEL=$(python3 -c "import json; print(json.load(open('$NDK_ROOT/meta/platforms.json'))['max'])")
-      else
-        API_LEVEL=$(ls -d "$NDK_ROOT/platforms/android-"* 2>/dev/null | grep -Eo '[0-9]+$' | sort -n | tail -1)
-      fi
-      echo "Highest API level: $API_LEVEL"
-      echo "##vso[task.setvariable variable=MPSSAndroidAPILevel;isOutput=true]$API_LEVEL"
-
-      echo "NDK: $NDK_ROOT"
-      echo "##vso[task.setvariable variable=AndroidNdkHome;isOutput=true]$NDK_ROOT"
+      yes | cmake -P scripts/bootstrap_android_sdk.cmake
+    workingDirectory: '$(Build.SourcesDirectory)'
 
 - task: CmdLine@2
   displayName: 'Bootstrap vcpkg'
@@ -46,65 +30,42 @@ steps:
       cd vcpkg
       git checkout $BASELINE
       ./bootstrap-vcpkg.sh -disableMetrics
+      echo "##vso[task.setvariable variable=VCPKG_ROOT]$(Build.SourcesDirectory)/vcpkg"
     workingDirectory: '$(Build.SourcesDirectory)'
     failOnStderr: false
 
 - task: CMake@1
-  displayName: 'Configure MPSS for x64'
+  displayName: 'Configure MPSS (${{ parameters.x64Preset }})'
   inputs:
-    cmakeArgs: >
-        -S .
-        -B build-x64
-        -GNinja
-        -DCMAKE_BUILD_TYPE=${{ parameters.configuration }}
-        -DMPSS_BUILD_MPSS_CORE_SHARED=ON
-        -DMPSS_BUILD_MPSS_OPENSSL_SHARED=ON
-        -DCMAKE_SYSTEM_NAME=Android
-        -DCMAKE_SYSTEM_VERSION=$(GetToolInfo.MPSSAndroidAPILevel)
-        -DCMAKE_ANDROID_ARCH_ABI=x86_64
-        -DCMAKE_ANDROID_NDK=$(GetToolInfo.AndroidNdkHome)
-        -DCMAKE_TOOLCHAIN_FILE=$(Build.SourcesDirectory)/vcpkg/scripts/buildsystems/vcpkg.cmake
-        -DVCPKG_TARGET_TRIPLET=x64-android
+    cmakeArgs: --preset ${{ parameters.x64Preset }}
     workingDirectory: '$(Build.SourcesDirectory)'
 
 - task: CMake@1
-  displayName: 'Configure MPSS for ARM64'
+  displayName: 'Configure MPSS (${{ parameters.arm64Preset }})'
   inputs:
-    cmakeArgs: >
-        -S .
-        -B build-arm64
-        -GNinja
-        -DCMAKE_BUILD_TYPE=${{ parameters.configuration }}
-        -DMPSS_BUILD_MPSS_CORE_SHARED=ON
-        -DMPSS_BUILD_MPSS_OPENSSL_SHARED=ON
-        -DCMAKE_SYSTEM_NAME=Android
-        -DCMAKE_SYSTEM_VERSION=$(GetToolInfo.MPSSAndroidAPILevel)
-        -DCMAKE_ANDROID_ARCH_ABI=arm64-v8a
-        -DCMAKE_ANDROID_NDK=$(GetToolInfo.AndroidNdkHome)
-        -DCMAKE_TOOLCHAIN_FILE=$(Build.SourcesDirectory)/vcpkg/scripts/buildsystems/vcpkg.cmake
-        -DVCPKG_TARGET_TRIPLET=arm64-android
+    cmakeArgs: --preset ${{ parameters.arm64Preset }}
     workingDirectory: '$(Build.SourcesDirectory)'
 
 - task: CMake@1
   displayName: 'Build MPSS for x64'
   inputs:
-    cmakeArgs: --build build-x64
+    cmakeArgs: --build --preset ${{ parameters.x64Preset }}
     workingDirectory: '$(Build.SourcesDirectory)'
 
 - task: CMake@1
   displayName: 'Build MPSS for Arm64'
   inputs:
-    cmakeArgs: --build build-arm64
+    cmakeArgs: --build --preset ${{ parameters.arm64Preset }}
     workingDirectory: '$(Build.SourcesDirectory)'
 
 - task: CMake@1
   displayName: 'Install MPSS for x64'
   inputs:
-    cmakeArgs: --install build-x64 --prefix install-x64
+    cmakeArgs: --install out/build/${{ parameters.x64Preset }} --prefix install-x64
     workingDirectory: '$(Build.SourcesDirectory)'
 
 - task: CMake@1
   displayName: 'Install MPSS for Arm64'
   inputs:
-    cmakeArgs: --install build-arm64 --prefix install-arm64
+    cmakeArgs: --install out/build/${{ parameters.arm64Preset }} --prefix install-arm64
     workingDirectory: '$(Build.SourcesDirectory)'

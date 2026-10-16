@@ -1,12 +1,18 @@
 {
   "name": "mpss",
-  "version": "1.2.3",
+  "version": "2.0.0",
   "description": "A multi-platform C++ library for hardware-backed digital signature key storage and signing.",
   "license": "MIT",
-  "dependencies": [],
+  "builtin-baseline": "b61d33065508ba0d5e393206abb3cb2366299699",
   "features": {
     "openssl": {
-      "description": "Build the OpenSSL provider.",
+      "description": "Build the OpenSSL provider, including key-reference serialization.",
+      "dependencies": [
+        "openssl"
+      ]
+    },
+    "serialization": {
+      "description": "Enable C++ key-reference DER and PEM serialization without requiring the provider.",
       "dependencies": [
         "openssl"
       ]
@@ -24,6 +30,5 @@
         "yubico-piv-tool"
       ]
     }
-  },
-  "builtin-baseline": "003cb58a3c2cd943c348901481fca78d665308e2"
+  }
 }

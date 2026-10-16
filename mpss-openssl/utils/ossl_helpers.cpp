@@ -3,11 +3,12 @@
 
 #include "mpss-openssl/utils/names.h"
 #include "mpss-openssl/utils/utils.h"
+#include "mpss/log.h"
+#include "mpss/mpss.h"
+#include "mpss/utils/ossl_ptr.h"
 #include <algorithm>
 #include <cstddef>
 #include <memory>
-#include <mpss/log.h>
-#include <mpss/mpss.h>
 #include <openssl/bn.h>
 #include <openssl/crypto.h>
 #include <openssl/ecdsa.h>
@@ -21,11 +22,13 @@ namespace mpss_openssl::utils
 {
 
 using namespace mpss;
+using mpss::utils::evp_pkey_ctx_ptr;
+using mpss::utils::evp_pkey_ptr;
+using mpss::utils::openssl_buf_ptr;
 
 std::size_t mpss_sign_as_der(const std::unique_ptr<KeyPair> &key_pair, std::span<const std::byte> hash_tbs,
                              std::span<std::byte> out)
 {
-    // Check for obvious problems.
     if (nullptr == key_pair || (mpss::Algorithm::unsupported == key_pair->algorithm()))
     {
         return 0;
@@ -40,14 +43,12 @@ std::size_t mpss_sign_as_der(const std::unique_ptr<KeyPair> &key_pair, std::span
         return signature_size;
     }
 
-    // Check that signature_size is not greater than the output buffer size.
-    if (signature_size > out.size())
+    if (out.size() < signature_size)
     {
         GetLogger()->error("DER signature size is larger than output buffer.");
         return 0;
     }
 
-    // Compute the signature. The returned signature is ASN.1 DER encoded.
     const std::size_t written = key_pair->sign_hash(hash_tbs, out);
 
     return written;
@@ -57,13 +58,11 @@ std::size_t mpss_sign_as_der(const std::unique_ptr<KeyPair> &key_pair, std::span
 bool verify_der(const std::unique_ptr<KeyPair> &key_pair, std::span<const std::byte> hash_tbs,
                 std::span<const std::byte> der_sig)
 {
-    // Check for obvious problems.
     if (nullptr == key_pair || hash_tbs.empty() || der_sig.empty())
     {
         return false;
     }
 
-    // Verify the signature using mpss.
     const bool res = key_pair->verify(hash_tbs, der_sig);
     if (!res)
     {
@@ -93,43 +92,35 @@ byte_vector mpss_vk_params_to_spki(OSSL_LIB_CTX *libctx, const OSSL_PARAM *param
     // to the EVP_PKEY_fromdata function.
     OSSL_PARAM params_clone[3]{*group, *pub, OSSL_PARAM_END};
 
-    // Create a new EVP_PKEY from the parameters.
-    EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_from_name(libctx, "EC", "provider=default");
+    evp_pkey_ctx_ptr ctx(EVP_PKEY_CTX_new_from_name(libctx, "EC", "provider=default"));
     if (nullptr == ctx)
     {
         return {};
     }
 
-    EVP_PKEY *pkey = nullptr;
-    unsigned char *der_buf = nullptr;
-    byte_vector der_data;
-
-    do
+    if (1 != EVP_PKEY_fromdata_init(ctx.get()))
     {
-        if (1 != EVP_PKEY_fromdata_init(ctx))
-        {
-            break;
-        }
-        if (1 != EVP_PKEY_fromdata(ctx, &pkey, EVP_PKEY_PUBLIC_KEY, params_clone))
-        {
-            break;
-        }
+        return {};
+    }
 
-        // Encode pkey to DER using i2d_PUBKEY.
-        int der_size = i2d_PUBKEY(pkey, &der_buf);
-        if (der_size <= 0)
-        {
-            break;
-        }
+    EVP_PKEY *pkey_raw = nullptr;
+    if (1 != EVP_PKEY_fromdata(ctx.get(), &pkey_raw, EVP_PKEY_PUBLIC_KEY, params_clone))
+    {
+        return {};
+    }
+    const evp_pkey_ptr pkey(pkey_raw);
 
-        der_data.resize(static_cast<std::size_t>(der_size));
-        std::transform(der_buf, der_buf + der_size, der_data.begin(),
-                       [](unsigned char c) { return static_cast<std::byte>(c); });
-    } while (false);
+    unsigned char *der_raw = nullptr;
+    const int der_size = i2d_PUBKEY(pkey.get(), &der_raw);
+    const openssl_buf_ptr<unsigned char> der_buf(der_raw);
+    if (0 >= der_size)
+    {
+        return {};
+    }
 
-    OPENSSL_free(der_buf);
-    EVP_PKEY_free(pkey);
-    EVP_PKEY_CTX_free(ctx);
+    byte_vector der_data(static_cast<std::size_t>(der_size));
+    std::transform(der_raw, der_raw + der_size, der_data.begin(),
+                   [](unsigned char c) { return static_cast<std::byte>(c); });
 
     return der_data;
 }

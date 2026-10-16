@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT license.
+
 # This defines a pipeline to build on Windows, macOS, Android, and iOS in Debug mode,
 # including YubiKey backend builds on Windows, macOS, and Linux.
 

@@ -1,4 +1,6 @@
-# Android only supports shared libraries.
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT license.
+
 if(VCPKG_TARGET_IS_ANDROID)
     vcpkg_check_linkage(ONLY_DYNAMIC_LIBRARY)
 endif()
@@ -22,6 +24,7 @@ endif()
 vcpkg_check_features(OUT_FEATURE_OPTIONS FEATURE_OPTIONS
     FEATURES
         openssl    MPSS_BUILD_MPSS_OPENSSL_${LIBRARY_LINKAGE}
+        serialization MPSS_WITH_SERIALIZATION
         yubikey    MPSS_BACKEND_YUBIKEY
 )
 

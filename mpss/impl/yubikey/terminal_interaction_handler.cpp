@@ -22,6 +22,30 @@ namespace
 {
 
 /**
+ * @brief Read a line from `is` into `out` without materializing the secret in any intermediate
+ *        non-cleansing buffer.
+ *
+ * Mirrors std::getline semantics for the '\n' delimiter: consumes up to and including the newline,
+ * discards the newline, and reports success if any characters were read before end-of-input. Cannot
+ * use std::getline directly because SecureString does not expose its basic_string base.
+ */
+bool getline_secure(std::istream &is, mpss::SecureString &out)
+{
+    char ch = '\0';
+    bool any = false;
+    while (is.get(ch))
+    {
+        if ('\n' == ch)
+        {
+            return true;
+        }
+        out.push_back(ch);
+        any = true;
+    }
+    return any;
+}
+
+/**
  * @brief Read a line from stdin with echo disabled, directly into a SecureString.
  * @return The line read, or std::nullopt if stdin is not a terminal or an error occurred.
  */
@@ -50,7 +74,7 @@ std::optional<mpss::SecureString> read_secure_line()
     }
 
     mpss::SecureString line;
-    if (!std::getline(std::cin, line))
+    if (!getline_secure(std::cin, line))
     {
         SetConsoleMode(h_stdin, saved_mode);
         return std::nullopt;
@@ -81,7 +105,7 @@ std::optional<mpss::SecureString> read_secure_line()
     }
 
     mpss::SecureString line;
-    if (!std::getline(std::cin, line))
+    if (!getline_secure(std::cin, line))
     {
         tcsetattr(STDIN_FILENO, TCSANOW, &old_attrs);
         return std::nullopt;
@@ -107,7 +131,7 @@ class TerminalInteractionHandler : public mpss::InteractionHandler
     std::optional<mpss::SecureString> request_pin(const mpss::PinRequestContext &context) override
     {
         // Check environment variable first.
-        const char *env_pin = std::getenv("MPSS_YUBIKEY_PIN"); // NOLINT(concurrency-mt-unsafe)
+        const char *env_pin = std::getenv("MPSS_YUBIKEY_PIN");
         if (nullptr != env_pin && '\0' != env_pin[0])
         {
             // If this is a retry, the env var PIN already failed. Don't retry with the same value.
@@ -121,7 +145,7 @@ class TerminalInteractionHandler : public mpss::InteractionHandler
         // Show retry information.
         if (mpss::PinStatus::wrong_pin == context.last_status)
         {
-            if (context.retries_remaining >= 0)
+            if (0 <= context.retries_remaining)
             {
                 std::cerr << "Wrong PIN (" << context.retries_remaining << " retries remaining). ";
             }
@@ -132,7 +156,8 @@ class TerminalInteractionHandler : public mpss::InteractionHandler
         }
 
         // Prompt on terminal.
-        std::cerr << "Enter YubiKey PIN (" << context.operation << "): " << std::flush;
+        std::cerr << "Enter PIN for YubiKey " << context.target.device_id << " (" << context.operation
+                  << "): " << std::flush;
         auto pin = read_secure_line();
 #ifndef _WIN32
         // On Unix, echo is disabled via termios and Enter does not produce visible output.
@@ -142,15 +167,15 @@ class TerminalInteractionHandler : public mpss::InteractionHandler
         return pin;
     }
 
-    void notify_touch_needed() override
+    void notify_touch_needed(const mpss::InteractionContext &target) override
     {
-        std::cerr << "Touch your YubiKey now ... " << std::flush;
+        std::cerr << "Touch YubiKey " << target.device_id << " now ... " << std::flush;
     }
 
-    void notify_touch_complete() override
+    void notify_touch_complete(const mpss::InteractionContext & /*target*/, bool success) override
     {
         // NOLINTNEXTLINE(performance-avoid-endl) - flush is intentional for interactive terminal output.
-        std::cerr << "done." << std::endl;
+        std::cerr << (success ? "done." : "not touched.") << std::endl;
     }
 };
 
@@ -166,16 +191,29 @@ std::shared_ptr<InteractionHandler> NewDefaultInteractionHandler()
 
 std::shared_ptr<InteractionHandler> GetOrSetInteractionHandler(std::shared_ptr<InteractionHandler> new_handler)
 {
-    static std::shared_mutex mtx;
-    static std::shared_ptr<InteractionHandler> handler = NewDefaultInteractionHandler();
+    struct State
+    {
+        std::shared_mutex mtx;
+        std::shared_ptr<InteractionHandler> handler;
+    };
+
+    // Immortal, like the logger and BackendRegistry: a host static destroyed after this one would
+    // otherwise lock a destroyed mutex. The single allocation is reclaimed by the OS at process exit.
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory) - intentional immortal singleton, never freed.
+    static State &state = *new State{.handler = NewDefaultInteractionHandler()};
+
+    // Replacing returns the handler that was installed rather than the one it displaced, so a caller
+    // that installs and then uses the result cannot act through a handler already on its way out.
     if (nullptr != new_handler)
     {
-        std::unique_lock lock{mtx};
-        handler = std::move(new_handler);
-        return handler;
+        const std::unique_lock lock{state.mtx};
+        state.handler = std::move(new_handler);
+        return state.handler;
     }
-    std::shared_lock lock{mtx};
-    return handler;
+
+    // A handler in use outlives a replacement, because the caller holds a share of it.
+    const std::shared_lock lock{state.mtx};
+    return state.handler;
 }
 
 } // namespace mpss

@@ -3,8 +3,8 @@
 
 #pragma once
 
+#include "mpss/mpss.h"
 #include <memory>
-#include <mpss/mpss.h>
 #include <openssl/core.h>
 #include <openssl/types.h>
 #include <optional>
@@ -26,7 +26,10 @@ struct mpss_key
     std::optional<std::string> alg_name = std::nullopt;
 
     mpss_key(std::string_view key_name, std::optional<std::string> &mpss_algorithm,
-             const std::optional<std::string> &mpss_backend, mpss::KeyPolicy policy = mpss::KeyPolicy::none);
+             const std::optional<std::string> &mpss_backend, mpss::KeyPolicy policy = mpss::KeyPolicy::none,
+             const std::optional<std::string> &device_id = std::nullopt);
+
+    explicit mpss_key(std::unique_ptr<mpss::KeyPair> opened_key);
 
     ~mpss_key() = default;
 

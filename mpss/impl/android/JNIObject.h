@@ -36,9 +36,14 @@ template <typename T> class JNIObj
 
   public:
     using type = T;
-    JNIObj(JNIEnv *env, T localRef) : env_{env}, ref_{localRef}
+    JNIObj(JNIEnv *env, T local_ref) : env_{env}, ref_{local_ref}
     {
     }
+
+    JNIObj(const JNIObj &) = delete;
+    JNIObj &operator=(const JNIObj &) = delete;
+    JNIObj(JNIObj &&) = delete;
+    JNIObj &operator=(JNIObj &&) = delete;
 
     ~JNIObj()
     {

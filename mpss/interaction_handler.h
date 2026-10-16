@@ -25,6 +25,14 @@ enum class PinResult
     wrong_pin, /**< PIN was incorrect (retries may remain). */
     locked,    /**< PIN is locked (too many wrong attempts). Use PUK to unlock. */
     error,     /**< Non-PIN error (e.g., device disconnected). */
+    /**
+     * @brief The PIN was never presented to the device, so no retry was spent.
+     *
+     * Reported when the handler cancels or throws, and when MPSS withholds a value the device has
+     * already refused. It closes the loop for a handler that opened UI in @ref
+     * InteractionHandler::request_pin: every PIN request is answered by exactly one result.
+     */
+    not_attempted,
 };
 
 /**
@@ -37,13 +45,27 @@ enum class PinStatus
 };
 
 /**
+ * @brief Identifies the target of an interaction, not proof of hardware identity.
+ *
+ * Views remain valid for the callback only; copy values needed by asynchronous UI.
+ */
+struct InteractionContext
+{
+    std::string_view backend_name; /**< Backend handling the operation. */
+    std::string_view device_id;    /**< Canonical decimal serial for YubiKey. */
+    std::string_view key_name;     /**< Requested key name, or empty for device-only operations. */
+    std::string_view reader_name;  /**< Reader used by this connection; informational, not a stable identifier. */
+};
+
+/**
  * @brief Context passed to @ref InteractionHandler::request_pin.
  */
 struct PinRequestContext
 {
-    std::string_view operation; /**< Human-readable reason (e.g., "sign with key 'my-key'"). */
-    PinStatus last_status;      /**< Status of the previous PIN attempt. */
-    int retries_remaining;      /**< PIN retries remaining on the device, or -1 if unknown. */
+    std::string_view operation;  /**< Human-readable reason (e.g., "sign with key 'my-key'"). */
+    PinStatus last_status;       /**< Status of the previous PIN attempt. */
+    int retries_remaining;       /**< PIN retries remaining on the device, or -1 if unknown. */
+    InteractionContext target{}; /**< Device, key, and reader for this request. */
 };
 
 /**
@@ -56,6 +78,8 @@ struct PinRequestContext
  * (cancel), or until the PIN is accepted or locked. Returning std::nullopt at any point stops the loop.
  *
  * @note Getting and setting the handler are both thread-safe.
+ * @note Requests from different devices may run concurrently. Use the target context to select
+ * credentials and associate notifications with the correct UI.
  */
 class InteractionHandler
 {
@@ -80,24 +104,33 @@ class InteractionHandler
     /**
      * @brief Called after each PIN authentication attempt with the result.
      *
-     * This is a notification callback - the return value is void. Implementations can use it to
+     * This is a notification callback; the return value is void. Implementations can use it to
      * update UI (e.g., dismiss a dialog on success, show a "PIN locked" warning). The default
      * implementation does nothing.
      *
+     * Exactly one result follows every @ref request_pin call, including @ref PinResult::not_attempted
+     * when the PIN never reaches the device, so UI opened while answering a request can always be
+     * taken down again. Exceptions thrown from here are swallowed on the paths that report
+     * not_attempted, since those are already reporting a failure.
+     *
+     * @param target Device, key, and reader associated with the request.
      * @param result The outcome of the PIN attempt.
      * @param retries_remaining PIN retries remaining on the device, or -1 if unknown.
      */
-    virtual void notify_pin_result(PinResult result, int retries_remaining)
+    virtual void notify_pin_result([[maybe_unused]] const InteractionContext &target, [[maybe_unused]] PinResult result,
+                                   [[maybe_unused]] int retries_remaining)
     {
-        (void)result;
-        (void)retries_remaining;
     }
 
     /** @brief Notify that a touch-requiring operation is starting. */
-    virtual void notify_touch_needed() = 0;
+    virtual void notify_touch_needed(const InteractionContext &target) = 0;
 
-    /** @brief Notify that the touch-requiring operation has completed. */
-    virtual void notify_touch_complete() = 0;
+    /**
+     * @brief Notify that the touch-requiring operation has finished.
+     * @param target Device, key, and reader associated with the operation.
+     * @param success True if the operation completed, false if it failed (for example, the touch timed out).
+     */
+    virtual void notify_touch_complete(const InteractionContext &target, bool success) = 0;
 };
 
 /**

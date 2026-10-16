@@ -8,6 +8,7 @@ endif()
 
 # Add the source files from this directory.
 list(APPEND mpss_openssl_SOURCE_FILES
+    "${CMAKE_CURRENT_LIST_DIR}/key_helpers.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/names.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/ossl_helpers.cpp"
 )

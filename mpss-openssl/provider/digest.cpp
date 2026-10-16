@@ -2,12 +2,15 @@
 // Licensed under the MIT license.
 
 #include "mpss-openssl/provider/digest.h"
+#include "mpss-openssl/provider/error.h"
 #include "mpss-openssl/provider/provider.h"
 #include "mpss-openssl/utils/names.h"
 #include "mpss-openssl/utils/utils.h"
+#include "mpss/utils/scope_guard.h"
 #include <algorithm>
 #include <cstddef>
 #include <openssl/core_names.h>
+#include <openssl/err.h>
 #include <string_view>
 #include <utility>
 
@@ -39,26 +42,31 @@ mpss_digest_ctx::~mpss_digest_ctx()
 }
 
 mpss_digest_ctx::mpss_digest_ctx(const mpss_digest_ctx &copy)
-    : libctx{copy.libctx}, md_name{copy.md_name}, state{copy.state}
+    : libctx{copy.libctx}, md_name{copy.md_name}, state{copy.state}, digest{copy.digest}
 {
     if (nullptr != copy.evp_dctx)
     {
         evp_dctx = EVP_MD_CTX_dup(copy.evp_dctx);
 
-        // NOTE: We make an owned copy of the evp_md pointer here.
-        // The mpss_digest_ctx destructor will then free it.
-        evp_md = EVP_MD_CTX_get1_md(evp_dctx);
+        // The destructor frees this owned reference.
+        evp_md = nullptr == evp_dctx ? nullptr : EVP_MD_CTX_get1_md(evp_dctx);
+        if (nullptr == evp_md)
+        {
+            state = error;
+        }
     }
 }
 } // namespace mpss_openssl::provider
 
 namespace
 {
-using namespace mpss_openssl::provider;
+
+using namespace ::mpss_openssl::provider;
 using enum digest_state;
 
 #define MPSS_MAKE_DIGEST_NEWCTX(digest)                                                                                \
     extern "C" void *mpss_digest_newctx_##digest(void *provctx)                                                        \
+    try                                                                                                                \
     {                                                                                                                  \
         mpss_provider_ctx *pctx = static_cast<mpss_provider_ctx *>(provctx);                                           \
         if (!pctx)                                                                                                     \
@@ -69,6 +77,11 @@ using enum digest_state;
         dctx->libctx = pctx->libctx;                                                                                   \
         dctx->md_name = #digest;                                                                                       \
         return dctx;                                                                                                   \
+    }                                                                                                                  \
+    catch (...)                                                                                                        \
+    {                                                                                                                  \
+        MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);                                                            \
+        return nullptr;                                                                                                \
     }
 
 MPSS_MAKE_DIGEST_NEWCTX(SHA256)
@@ -82,6 +95,7 @@ extern "C" void mpss_digest_freectx(void *ctx)
 }
 
 extern "C" void *mpss_digest_dupctx(void *ctx)
+try
 {
     mpss_digest_ctx *dctx = static_cast<mpss_digest_ctx *>(ctx);
     if (nullptr == dctx)
@@ -93,8 +107,14 @@ extern "C" void *mpss_digest_dupctx(void *ctx)
     mpss_digest_ctx *new_dctx = mpss_new<mpss_digest_ctx>(*dctx);
     return new_dctx;
 }
+catch (...)
+{
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    return nullptr;
+}
 
 extern "C" int mpss_digest_init(void *ctx, [[maybe_unused]] const OSSL_PARAM params[])
+try
 {
     mpss_digest_ctx *dctx = static_cast<mpss_digest_ctx *>(ctx);
     if (nullptr == dctx)
@@ -106,7 +126,7 @@ extern "C" int mpss_digest_init(void *ctx, [[maybe_unused]] const OSSL_PARAM par
     dctx->digest.clear();
 
     // If we are already initialized and not in an error state, clear the internal buffers.
-    if (dctx->state != uninitialized && dctx->state != error)
+    if (uninitialized != dctx->state && error != dctx->state)
     {
         dctx->state = uninitialized;
 
@@ -153,19 +173,24 @@ extern "C" int mpss_digest_init(void *ctx, [[maybe_unused]] const OSSL_PARAM par
         return 0;
     }
 
-    // In any case, now we are ready to digest.
     dctx->state = digesting;
 
     return 1;
 }
+catch (...)
+{
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    return 0;
+}
 
 extern "C" int mpss_digest_update(void *ctx, const unsigned char *in, ::size_t inl)
+try
 {
     mpss_digest_ctx *dctx = static_cast<mpss_digest_ctx *>(ctx);
 
     // Check that the digest context is available and in the right state.
     // This means that the EVP_MD_CTX and EVP_MD are already set up.
-    if (nullptr == dctx || (dctx->state != digesting))
+    if (nullptr == dctx || (digesting != dctx->state))
     {
         return 0;
     }
@@ -184,8 +209,14 @@ extern "C" int mpss_digest_update(void *ctx, const unsigned char *in, ::size_t i
 
     return 1;
 }
+catch (...)
+{
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    return 0;
+}
 
 extern "C" int mpss_digest_final(void *ctx, unsigned char *out, ::size_t *outl, ::size_t outsz)
+try
 {
     mpss_digest_ctx *dctx = static_cast<mpss_digest_ctx *>(ctx);
     if (nullptr == dctx)
@@ -196,16 +227,15 @@ extern "C" int mpss_digest_final(void *ctx, unsigned char *out, ::size_t *outl, 
     // Check that the digest context is available and in the right state.
     // This means that the EVP_MD_CTX and EVP_MD are already set up.
     const digest_state state = dctx->state;
-    if ((state != digesting) && (state != finalized))
+    if ((digesting != state) && (finalized != state))
     {
         return 0;
     }
 
-    if (state != finalized)
+    if (finalized != state)
     {
         byte_vector digest(EVP_MAX_MD_SIZE);
 
-        // First, we try to finalize the digest.
         unsigned int bytes_written = 0;
         unsigned char *digest_ptr = reinterpret_cast<unsigned char *>(digest.data());
         if (1 != EVP_DigestFinal_ex(dctx->evp_dctx, digest_ptr, &bytes_written))
@@ -213,30 +243,26 @@ extern "C" int mpss_digest_final(void *ctx, unsigned char *out, ::size_t *outl, 
             return 0;
         }
 
-        // Any errors after this are critical and should brick the context.
         dctx->state = finalized;
-
-        const std::size_t digest_bytes = static_cast<std::size_t>(bytes_written);
-
-        // Sanity check: we should not have exceeded outsz.
-        if (outsz < digest_bytes)
-        {
-            dctx->state = error;
-            return 0;
-        }
-
-        // Resize the vector to the correct size.
-        digest.resize(digest_bytes);
+        digest.resize(static_cast<std::size_t>(bytes_written));
         dctx->digest = std::move(digest);
     }
 
-    // We must be in finalized state now, because earlier if we ended up in
-    // error state we already returned 0.
+    // The digest stays available, so a caller may retry with a large enough buffer.
+    if (outsz < dctx->digest.size())
+    {
+        return 0;
+    }
 
     std::ranges::transform(dctx->digest, out, [](std::byte b) { return static_cast<unsigned char>(b); });
     *outl = dctx->digest.size();
 
     return 1;
+}
+catch (...)
+{
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    return 0;
 }
 
 int mpss_digest_digest_internal(void *ctx, const unsigned char *in, ::size_t inl, unsigned char *out, ::size_t *outl,
@@ -254,9 +280,19 @@ int mpss_digest_digest_internal(void *ctx, const unsigned char *in, ::size_t inl
 #define MPSS_MAKE_DIGEST_DIGEST(digest)                                                                                \
     extern "C" int mpss_digest_digest_##digest(void *provctx, const unsigned char *in, ::size_t inl,                   \
                                                unsigned char *out, ::size_t *outl, ::size_t outsz)                     \
+    try                                                                                                                \
     {                                                                                                                  \
         void *ctx = mpss_digest_newctx_##digest(provctx);                                                              \
+        /* The one-shot entry owns the context it just allocated -- the caller never sees the pointer, so it     */    \
+        /* must be freed on every exit path or each invocation leaks the struct plus the EVP_MD/EVP_MD_CTX owned */    \
+        /* by its destructor. mpss_digest_freectx tolerates a null ctx (null provctx path allocates nothing).    */    \
+        SCOPE_GUARD(mpss_digest_freectx(ctx));                                                                         \
         return mpss_digest_digest_internal(ctx, in, inl, out, outl, outsz);                                            \
+    }                                                                                                                  \
+    catch (...)                                                                                                        \
+    {                                                                                                                  \
+        MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);                                                            \
+        return 0;                                                                                                      \
     }
 
 MPSS_MAKE_DIGEST_DIGEST(SHA256)
@@ -264,15 +300,22 @@ MPSS_MAKE_DIGEST_DIGEST(SHA384)
 MPSS_MAKE_DIGEST_DIGEST(SHA512)
 
 extern "C" const OSSL_PARAM *mpss_digest_gettable_params([[maybe_unused]] void *ctx)
+try
 {
     static const OSSL_PARAM ret[] = {OSSL_PARAM_size_t(OSSL_DIGEST_PARAM_BLOCK_SIZE, nullptr),
                                      OSSL_PARAM_size_t(OSSL_DIGEST_PARAM_SIZE, nullptr), OSSL_PARAM_END};
 
     return ret;
 }
+catch (...)
+{
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    return nullptr;
+}
 
 #define MPSS_MAKE_DIGEST_GET_PARAMS(digest, digestsz, blocksz)                                                         \
     extern "C" int mpss_digest_get_params_##digest(OSSL_PARAM params[])                                                \
+    try                                                                                                                \
     {                                                                                                                  \
         OSSL_PARAM *p;                                                                                                 \
         if ((p = OSSL_PARAM_locate(params, OSSL_DIGEST_PARAM_BLOCK_SIZE)) && !OSSL_PARAM_set_size_t(p, blocksz / 8))   \
@@ -284,6 +327,11 @@ extern "C" const OSSL_PARAM *mpss_digest_gettable_params([[maybe_unused]] void *
             return 0;                                                                                                  \
         }                                                                                                              \
         return 1;                                                                                                      \
+    }                                                                                                                  \
+    catch (...)                                                                                                        \
+    {                                                                                                                  \
+        MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);                                                            \
+        return 0;                                                                                                      \
     }
 
 MPSS_MAKE_DIGEST_GET_PARAMS(SHA256, 256, 512)
@@ -326,15 +374,15 @@ void *mpss_digest_newctx(void *provctx, const char *mdname)
         return nullptr;
     }
 
-    if (std::string_view{mdname} == OSSL_DIGEST_NAME_SHA2_256)
+    if (OSSL_DIGEST_NAME_SHA2_256 == std::string_view{mdname})
     {
         return ::mpss_digest_newctx_SHA256(provctx);
     }
-    if (std::string_view{mdname} == OSSL_DIGEST_NAME_SHA2_384)
+    if (OSSL_DIGEST_NAME_SHA2_384 == std::string_view{mdname})
     {
         return ::mpss_digest_newctx_SHA384(provctx);
     }
-    if (std::string_view{mdname} == OSSL_DIGEST_NAME_SHA2_512)
+    if (OSSL_DIGEST_NAME_SHA2_512 == std::string_view{mdname})
     {
         return ::mpss_digest_newctx_SHA512(provctx);
     }

@@ -15,20 +15,41 @@ namespace mpss::impl::yubikey::utils
 {
 
 /**
- * @brief Get the target YubiKey serial number from the environment variable MPSS_YUBIKEY_SERIAL.
+ * @brief Whether an environment variable value explicitly enables an opt-in.
  *
- * When set, MPSS iterates through available smart card readers and connects to the
- * YubiKey whose serial number matches. Useful on machines with multiple YubiKeys.
- * @return The serial number, or std::nullopt if not set or invalid.
+ * Matching is case-insensitive.
+ * @param value The environment variable value.
+ * @return true for 1, true, yes, or on; false otherwise.
  */
-std::optional<std::uint32_t> get_serial_from_env();
+[[nodiscard]]
+bool is_affirmative_environment_value(std::string_view value);
+
+/**
+ * @brief Reads the default YubiKey serial number from the environment variable MPSS_YUBIKEY_SERIAL.
+ *
+ * Name-based calls connect to the YubiKey whose serial number matches this default. The variable
+ * counts as unset when it is absent or empty.
+ * @param[out] serial The serial number, or std::nullopt when the variable is unset.
+ * @return true if the variable is unset or holds a valid serial number, false, with the error
+ * set, if it holds anything else.
+ */
+[[nodiscard]]
+bool get_serial_from_env(std::optional<std::uint32_t> &serial);
+
+// Match the reference format's device-ID bound while retaining support for leading zeros.
+inline constexpr std::size_t max_serial_length = 256;
+
+/** @brief Parse 1-max_serial_length decimal characters as a nonzero uint32_t serial; leading zeros are accepted. */
+[[nodiscard]]
+std::optional<std::uint32_t> parse_serial(std::string_view serial);
 
 /**
  * @brief Get the YubiKey management key from the environment variable MPSS_YUBIKEY_MGM_KEY.
  *
  * Expected format: hex string (32, 48, or 64 characters).
- * @return The management key bytes, or std::nullopt if not set or invalid.
+ * @return The management key bytes, or an empty vector if not set or invalid.
  */
+[[nodiscard]]
 SecureByteVector get_mgm_key_from_env();
 
 /**
@@ -36,11 +57,15 @@ SecureByteVector get_mgm_key_from_env();
  *
  * If the YubiKey PIN policy field (bits 0-3) is non-zero, maps the value to the corresponding
  * ykpiv constant. Otherwise, falls back to the MPSS_YUBIKEY_PINPOLICY environment variable,
- * then to the hardcoded default (YKPIV_PINPOLICY_ONCE).
+ * then to the hardcoded default (YKPIV_PINPOLICY_ONCE). The weakest environment value, 'never',
+ * is honored only when MPSS_YUBIKEY_ALLOW_POLICY_DOWNGRADE is set; otherwise the default is used.
+ * The environment value 'default' delegates to the firmware default, which is 'once' and so
+ * needs no opt-in.
  *
  * @param policy The key policy bitmask.
  * @return The ykpiv PIN policy constant.
  */
+[[nodiscard]]
 std::uint8_t resolve_pin_policy(KeyPolicy policy);
 
 /**
@@ -48,11 +73,14 @@ std::uint8_t resolve_pin_policy(KeyPolicy policy);
  *
  * If the YubiKey touch policy field (bits 4-7) is non-zero, maps the value to the corresponding
  * ykpiv constant. Otherwise, falls back to the MPSS_YUBIKEY_TOUCHPOLICY environment variable,
- * then to the hardcoded default (YKPIV_TOUCHPOLICY_NEVER).
+ * then to the hardcoded default (YKPIV_TOUCHPOLICY_CACHED). The environment values 'never' and
+ * 'default' -- the firmware default touch policy is also 'never' -- are honored only when
+ * MPSS_YUBIKEY_ALLOW_POLICY_DOWNGRADE is set; otherwise the default is used.
  *
  * @param policy The key policy bitmask.
  * @return The ykpiv touch policy constant.
  */
+[[nodiscard]]
 std::uint8_t resolve_touch_policy(KeyPolicy policy);
 
 /**
@@ -60,6 +88,7 @@ std::uint8_t resolve_touch_policy(KeyPolicy policy);
  * @param algorithm The mpss::Algorithm.
  * @return The YubiKey PIV algorithm constant, or 0 if unsupported.
  */
+[[nodiscard]]
 std::uint8_t mpss_to_yk_algorithm(Algorithm algorithm);
 
 /**
@@ -67,13 +96,31 @@ std::uint8_t mpss_to_yk_algorithm(Algorithm algorithm);
  * @param yk_algorithm The YubiKey PIV algorithm constant.
  * @return The MPSS algorithm, or Algorithm::unsupported if unknown.
  */
+[[nodiscard]]
 Algorithm yk_to_mpss_algorithm(std::uint8_t yk_algorithm);
+
+/**
+ * @brief Get the OpenSSL group name for an algorithm.
+ * @param algorithm The MPSS algorithm.
+ * @return The group name, or nullptr if the algorithm has no YubiKey-supported group.
+ */
+[[nodiscard]]
+const char *get_group_name(Algorithm algorithm);
+
+/**
+ * @brief Get the OpenSSL NID of the group for an algorithm.
+ * @param algorithm The MPSS algorithm.
+ * @return The NID, or NID_undef if the algorithm has no YubiKey-supported group.
+ */
+[[nodiscard]]
+int get_group_nid(Algorithm algorithm);
 
 /**
  * @brief Get the PIV slot name (for logging/debugging).
  * @param slot The PIV slot number.
  * @return Human-readable slot name.
  */
+[[nodiscard]]
 std::string_view get_slot_name(std::uint8_t slot);
 
 } // namespace mpss::impl::yubikey::utils

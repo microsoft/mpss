@@ -3,8 +3,8 @@
 
 #pragma once
 
-#include "mpss/impl/android/JNIHelper.h"
 #include "mpss/mpss.h"
+#include <cstdint>
 
 namespace mpss::impl::os
 {
@@ -12,41 +12,40 @@ namespace mpss::impl::os
 class AndroidKeyPair : public mpss::KeyPair
 {
   public:
-    AndroidKeyPair(mpss::Algorithm algorithm, std::string_view name, bool hardware_backed,
-                   const char *storage_description)
-        : mpss::KeyPair{algorithm, hardware_backed, storage_description}, key_name_{name}
+    AndroidKeyPair(mpss::Algorithm algorithm, std::string_view name, mpss::StorageTier storage_tier,
+                   std::uint64_t generation)
+        : mpss::KeyPair{algorithm, storage_tier}, key_name_{name}, generation_{generation}
     {
     }
 
     ~AndroidKeyPair() override
     {
-        // Release on destruction.
-        close_key();
+        release_from_destructor();
     }
 
-    bool delete_key() override;
+  protected:
+    bool do_release_key() override;
+
+    bool do_delete_key() override;
 
     [[nodiscard]]
-    std::size_t sign_hash(std::span<const std::byte> hash, std::span<std::byte> sig) const override;
+    std::size_t do_sign_hash(std::span<const std::byte> hash, std::span<std::byte> sig) const override;
 
     [[nodiscard]]
-    bool verify(std::span<const std::byte> hash, std::span<const std::byte> sig) const override;
+    bool do_verify(std::span<const std::byte> hash, std::span<const std::byte> sig) const override;
 
     [[nodiscard]]
-    std::size_t extract_key(std::span<std::byte> public_key) const override;
-
-    void release_key() noexcept override;
+    std::size_t do_extract_key(std::span<std::byte> public_key) const override;
 
   private:
-    void close_key();
-    [[nodiscard]]
-    JNIEnv *env() const
-    {
-        return guard_.Env();
-    };
+    bool close_key();
 
     std::string key_name_;
-    JNIEnvGuard guard_;
+
+    // The cache entry this handle took its hold on, handed back when closing so that a name
+    // deleted and created again while this handle was alive cannot have this release charged
+    // against the key that now holds the name.
+    std::uint64_t generation_;
 };
 
 } // namespace mpss::impl::os

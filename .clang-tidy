@@ -6,7 +6,6 @@ Checks: >
   performance-*,
   readability-*,
   concurrency-*,
-  hicpp-*,
   misc-*,
   -bugprone-branch-clone,
   -bugprone-suspicious-stringview-data-usage,
@@ -16,11 +15,6 @@ Checks: >
   -cppcoreguidelines-avoid-non-const-global-variables,
   -cppcoreguidelines-macro-usage,
   -cppcoreguidelines-special-member-functions,
-  -hicpp-special-member-functions,
-  -hicpp-multiway-paths-covered,
-  -hicpp-named-parameter,
-  -hicpp-use-auto,
-  -hicpp-explicit-conversions,
   -cppcoreguidelines-missing-std-forward,
   -cppcoreguidelines-pro-bounds-avoid-unchecked-container-access,
   -cppcoreguidelines-pro-bounds-constant-array-index,
@@ -39,8 +33,12 @@ Checks: >
   -readability-identifier-length,
   -readability-implicit-bool-conversion,
   -readability-magic-numbers,
-  -readability-named-parameter
+  -readability-named-parameter,
+  -readability-trailing-comma
 
-WarningsAsErrors: '*,-cppcoreguidelines-init-variables,-cppcoreguidelines-pro-type-member-init,-hicpp-member-init,-readability-simplify-boolean-expr'
+CheckOptions:
+  bugprone-unused-return-value.AllowCastToVoid: true
+
+WarningsAsErrors: '*,-cppcoreguidelines-init-variables,-cppcoreguidelines-pro-type-member-init,-readability-simplify-boolean-expr'
 HeaderFilterRegex: '(mpss|mpss-openssl|tests)/'
 FormatStyle: microsoft

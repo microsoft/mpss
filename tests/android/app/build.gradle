@@ -1,0 +1,85 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
+
+plugins
+{
+    id("com.android.application")
+}
+
+def mpssBuildDirectoryProvider = providers.gradleProperty("mpssBuildDir")
+    .orElse(providers.environmentVariable("MPSS_ANDROID_BUILD_DIR"))
+def mpssBuildDirectory = mpssBuildDirectoryProvider.getOrElse("${rootDir}/missing-mpss-build")
+def mpssJar = file("${mpssBuildDirectory}/lib/mpss.jar")
+def defaultTestDirectory = file("${rootDir}/../../out/build/android-gradle")
+def mpssTestDirectory = providers.gradleProperty("mpssTestDir")
+    .map { file(it) }
+    .getOrElse(defaultTestDirectory)
+def mpssCompileApi = providers.gradleProperty("mpssCompileApi")
+    .map { it.toInteger() }
+    .getOrElse(36)
+def mpssBuildToolsVersion = providers.gradleProperty("mpssBuildToolsVersion")
+    .getOrElse("${mpssCompileApi}.0.0")
+def mpssMinApi = providers.gradleProperty("mpssMinApi")
+    .map { it.toInteger() }
+    .getOrElse(28)
+def mpssCoreLibraryName = providers.gradleProperty("mpssCoreLibraryName")
+    .getOrElse("mpss")
+def nativeLibraryDirectory = file("${mpssTestDirectory}/jniLibs")
+
+layout.buildDirectory.set(file("${mpssTestDirectory}/gradle-build"))
+
+android
+{
+    namespace = "com.microsoft.mpss.tests"
+    compileSdk = mpssCompileApi
+    buildToolsVersion = mpssBuildToolsVersion
+
+    defaultConfig
+    {
+        applicationId = "com.microsoft.mpss.tests"
+        minSdk = mpssMinApi
+        targetSdk = mpssCompileApi
+        versionCode = 1
+        versionName = "1.0"
+        buildConfigField("String", "MPSS_CORE_LIBRARY_NAME", "\"${mpssCoreLibraryName}\"")
+    }
+
+    buildFeatures
+    {
+        buildConfig = true
+    }
+
+    compileOptions
+    {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    sourceSets
+    {
+        main
+        {
+            jniLibs.srcDir(nativeLibraryDirectory)
+        }
+    }
+}
+
+dependencies
+{
+    implementation(files(mpssJar))
+}
+
+tasks.named("preBuild").configure
+{
+    doFirst
+    {
+        if (!mpssJar.isFile())
+        {
+            throw new GradleException("MPSS Java library not found: ${mpssJar}")
+        }
+        if (!nativeLibraryDirectory.isDirectory())
+        {
+            throw new GradleException("MPSS native libraries not found: ${nativeLibraryDirectory}")
+        }
+    }
+}

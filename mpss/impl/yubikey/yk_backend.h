@@ -24,10 +24,22 @@ class YubiKeyBackend : public Backend
     bool is_algorithm_available(Algorithm algorithm) const override;
 
     [[nodiscard]]
-    std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm, KeyPolicy policy) const override;
+    std::unique_ptr<KeyPair> create_key(const KeyLocation &location, Algorithm algorithm,
+                                        KeyPolicy policy) const override;
 
     [[nodiscard]]
-    std::unique_ptr<KeyPair> open_key(std::string_view name) const override;
+    std::unique_ptr<KeyPair> open_key(const KeyLocation &location,
+                                      std::span<const std::byte> expected_public_key = {}) const override;
+
+    [[nodiscard]]
+    bool delete_key(const KeyLocation &location) const override;
+
+    [[nodiscard]]
+    std::optional<std::vector<std::string>> available_devices() const override;
+
+    /** @brief Resolves MPSS_YUBIKEY_SERIAL; an unset or empty variable leaves the selection automatic. */
+    [[nodiscard]]
+    bool default_device_id(std::optional<std::string> &device_id) const override;
 
     [[nodiscard]]
     bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_key, Algorithm algorithm,

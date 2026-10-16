@@ -9,10 +9,9 @@
 namespace mpss::impl::os
 {
 
-// Abstract property class for crypto parameters.
-class crypto_params
+// Abstract property struct for crypto parameters.
+struct crypto_params
 {
-  public:
     // Signing key type identifier.
     [[nodiscard]]
     virtual LPCWSTR key_type_name() const = 0;
@@ -33,13 +32,12 @@ class crypto_params
     virtual DWORD public_key_magic() const = 0;
 };
 
-#define MPSS_IMPL_WINDOWS_CRYPTO_PARAMS(curve)                                                                         \
-    class ECDSA_##curve## : public crypto_params                                                                       \
+#define MPSS_IMPL_WINDOWS_CRYPTO_PARAMS(group)                                                                         \
+    struct ECDSA_##group : public crypto_params                                                                        \
     {                                                                                                                  \
-      public:                                                                                                          \
         LPCWSTR key_type_name() const override                                                                         \
         {                                                                                                              \
-            return NCRYPT_ECDSA_##curve##_ALGORITHM;                                                                   \
+            return NCRYPT_ECDSA_##group##_ALGORITHM;                                                                   \
         };                                                                                                             \
         LPCWSTR public_key_blob_name() const override                                                                  \
         {                                                                                                              \
@@ -51,7 +49,7 @@ class crypto_params
         }                                                                                                              \
         DWORD public_key_magic() const override                                                                        \
         {                                                                                                              \
-            return BCRYPT_ECDSA_PUBLIC_##curve##_MAGIC;                                                                \
+            return BCRYPT_ECDSA_PUBLIC_##group##_MAGIC;                                                                \
         }                                                                                                              \
     };
 

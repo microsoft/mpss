@@ -2,18 +2,22 @@
 // Licensed under the MIT license.
 
 #include "mpss-openssl/provider/provider.h"
+#include "mpss-openssl/provider/decoder.h"
 #include "mpss-openssl/provider/digest.h"
 #include "mpss-openssl/provider/encoder.h"
+#include "mpss-openssl/provider/error.h"
 #include "mpss-openssl/provider/keymgmt.h"
 #include "mpss-openssl/provider/signature.h"
+#include "mpss-openssl/provider/store.h"
 #include "mpss-openssl/utils/utils.h"
 #include <openssl/core_dispatch.h>
+#include <openssl/err.h>
 
 namespace
 {
 
-using namespace mpss_openssl::provider;
-using namespace mpss_openssl::utils;
+using namespace ::mpss_openssl::provider;
+using namespace ::mpss_openssl::utils;
 
 extern "C" void mpss_provider_teardown(void *provctx)
 {
@@ -24,6 +28,7 @@ extern "C" void mpss_provider_teardown(void *provctx)
 
 extern "C" const OSSL_ALGORITHM *mpss_provider_query_operation([[maybe_unused]] void *provctx, int operation_id,
                                                                int *no_store)
+try
 {
     // The function arrays can be stored by the core.
     if (nullptr == no_store)
@@ -38,13 +43,22 @@ extern "C" const OSSL_ALGORITHM *mpss_provider_query_operation([[maybe_unused]] 
         return mpss_keymgmt_algorithms;
     case OSSL_OP_ENCODER:
         return mpss_encoder_algorithms;
+    case OSSL_OP_DECODER:
+        return mpss_decoder_algorithms;
     case OSSL_OP_SIGNATURE:
         return mpss_signature_algorithms;
     case OSSL_OP_DIGEST:
         return mpss_digest_algorithms;
+    case OSSL_OP_STORE:
+        return mpss_store_algorithms;
     default:
         return nullptr;
     }
+}
+catch (...)
+{
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    return nullptr;
 }
 
 const OSSL_DISPATCH mpss_provider_functions[] = {
@@ -56,11 +70,17 @@ const OSSL_DISPATCH mpss_provider_functions[] = {
 
 extern "C" int OSSL_provider_init(const OSSL_CORE_HANDLE *handle, const OSSL_DISPATCH *in, const OSSL_DISPATCH **out,
                                   void **provctx)
+try
 {
-    using namespace mpss_openssl::provider;
-    using namespace mpss_openssl::utils;
+    using namespace ::mpss_openssl::provider;
+    using namespace ::mpss_openssl::utils;
 
-    mpss_provider_ctx *ctx = mpss_new<mpss_provider_ctx>();
+    if (!use_core_error_functions(in))
+    {
+        return 0;
+    }
+
+    mpss_ptr<mpss_provider_ctx> ctx{mpss_new<mpss_provider_ctx>()};
     ctx->handle = handle;
 
     // Create a new library context from the provider dispatch table.
@@ -71,8 +91,13 @@ extern "C" int OSSL_provider_init(const OSSL_CORE_HANDLE *handle, const OSSL_DIS
     }
     ctx->libctx = libctx;
 
-    *provctx = ctx;
+    *provctx = ctx.release();
     *out = mpss_provider_functions;
 
     return 1;
+}
+catch (...)
+{
+    MPSS_ERR_RAISE(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR);
+    return 0;
 }

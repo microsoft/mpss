@@ -3,37 +3,44 @@
 
 #include "mpss/impl/apple/apple_keychain_keypair.h"
 #include "mpss/impl/apple/apple_api_wrapper.h"
+#include "mpss/impl/apple/apple_utils.h"
 #include "mpss/utils/utilities.h"
-
-namespace
-{
-constexpr const char *storage_description = "Keychain";
-}
+#include <mutex>
 
 namespace mpss::impl::os
 {
 
-AppleKeychainKeyPair::AppleKeychainKeyPair(std::string_view name, Algorithm algorithm)
-    : AppleKeyPairBase{name, algorithm, /* hardware_backed */ false, storage_description}
+AppleKeychainKeyPair::AppleKeychainKeyPair(std::string_view name, Algorithm algorithm, std::uint64_t generation,
+                                           StorageTier storage_tier)
+    : AppleKeyPairBase{name, algorithm, storage_tier, generation}
 {
 }
 
 AppleKeychainKeyPair::~AppleKeychainKeyPair()
 {
-    release_key();
+    release_from_destructor();
 }
 
 bool AppleKeychainKeyPair::do_delete_key()
 {
-    mpss::utils::log_trace("Deleting Keychain key '{}'.", name());
-    const bool result = MPSS_DeleteKey(name().c_str());
-    if (!result)
+    // Held for the same reason the lifecycle entry points hold it: checking that the name still
+    // holds what this handle opened, and then deleting it, must be one decision.
+    const std::scoped_lock lifecycle{mpss::utils::name_mutex(name())};
+
+    mpss::utils::log_trace("Deleting key '{}' ({}).", name(), key_info().storage_description);
+
+    // Deleting reaches the name rather than the entry this handle opened, so refuse once the name
+    // has moved on. Otherwise a handle to a deleted key would delete the key that replaced it.
+    if (!MPSS_KeychainGenerationIsCurrent(name().c_str(), generation()))
     {
-        mpss::utils::log_and_set_error("Failed to delete key: {}", MPSS_GetLastError());
+        mpss::utils::log_and_set_error("Key '{}' is no longer the key this handle opened.", name());
+        return false;
     }
-    else
+
+    const bool result = utils::delete_key_from_all_tiers(name());
+    if (result)
     {
-        mpss::utils::log_trace("Keychain key '{}' deleted.", name());
+        mpss::utils::log_trace("Key '{}' deleted.", name());
     }
 
     return result;
@@ -41,15 +48,16 @@ bool AppleKeychainKeyPair::do_delete_key()
 
 std::size_t AppleKeychainKeyPair::do_sign_hash(std::span<const std::byte> hash, std::span<std::byte> sig) const
 {
-    mpss::utils::log_trace("Signing hash with Keychain key '{}', hash size {}.", name(), hash.size());
+    mpss::utils::log_trace("Signing hash with key '{}' ({}), hash size {}.", name(), key_info().storage_description,
+                           hash.size());
     std::size_t signature_size = sig.size();
 
-    if (!MPSS_SignHash(name().c_str(), static_cast<int>(algorithm()),
+    if (!MPSS_SignHash(name().c_str(), static_cast<int>(algorithm()), generation(),
                        reinterpret_cast<const std::uint8_t *>(hash.data()), hash.size(),
                        reinterpret_cast<std::uint8_t *>(sig.data()), &signature_size))
     {
         // This should not fail at this point. The caller already validated inputs.
-        mpss::utils::log_and_set_error("Failed to sign hash: {}", MPSS_GetLastError());
+        utils::report_keychain_error("sign hash");
         return 0;
     }
 
@@ -59,33 +67,34 @@ std::size_t AppleKeychainKeyPair::do_sign_hash(std::span<const std::byte> hash, 
 
 bool AppleKeychainKeyPair::do_verify(std::span<const std::byte> hash, std::span<const std::byte> sig) const
 {
-    const bool result = MPSS_VerifySignature(name().c_str(), static_cast<int>(algorithm()),
-                                             reinterpret_cast<const std::uint8_t *>(hash.data()), hash.size(),
-                                             reinterpret_cast<const std::uint8_t *>(sig.data()), sig.size());
-
-    // This should not fail at this point unless the signature is invalid. The caller already validated inputs.
-    return result;
+    const std::int32_t raw_result =
+        MPSS_VerifySignature(name().c_str(), static_cast<int>(algorithm()), generation(),
+                             reinterpret_cast<const std::uint8_t *>(hash.data()), hash.size(),
+                             reinterpret_cast<const std::uint8_t *>(sig.data()), sig.size());
+    return utils::handle_keychain_verification_result(raw_result, "verify signature");
 }
 
 std::size_t AppleKeychainKeyPair::do_extract_key(std::span<std::byte> public_key) const
 {
-    mpss::utils::log_trace("Extracting public key from Keychain key '{}'.", name());
+    mpss::utils::log_trace("Extracting public key from key '{}'.", name());
     std::size_t pk_size = public_key.size();
 
-    if (!MPSS_GetPublicKey(name().c_str(), reinterpret_cast<std::uint8_t *>(public_key.data()), &pk_size))
+    if (!MPSS_GetPublicKey(name().c_str(), generation(), reinterpret_cast<std::uint8_t *>(public_key.data()), &pk_size))
     {
         // This should not fail at this point. The caller already validated inputs.
-        mpss::utils::log_and_set_error("Failed to retrieve public key: {}", MPSS_GetLastError());
+        utils::report_keychain_error("retrieve public key");
         return 0;
     }
 
-    mpss::utils::log_trace("Extracted {} byte public key from Keychain key '{}'.", pk_size, name());
+    mpss::utils::log_trace("Extracted {} byte public key from key '{}'.", pk_size, name());
     return pk_size;
 }
 
-void AppleKeychainKeyPair::do_release_key()
+bool AppleKeychainKeyPair::do_release_key()
 {
-    MPSS_RemoveKey(name().c_str());
+    // Gives up a hold on an in-memory cache entry, which cannot fail.
+    MPSS_RemoveKey(name().c_str(), generation());
+    return true;
 }
 
 } // namespace mpss::impl::os

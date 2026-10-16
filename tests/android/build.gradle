@@ -1,0 +1,7 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
+
+plugins
+{
+    id("com.android.application") version "9.3.0" apply false
+}
