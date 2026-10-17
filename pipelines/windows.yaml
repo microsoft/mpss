@@ -31,6 +31,10 @@ steps:
       Write-Host "##vso[task.setvariable variable=VCPKG_ROOT]$(Build.SourcesDirectory)\vcpkg"
     workingDirectory: '$(Build.SourcesDirectory)'
 
+- template: vcpkg-cache.yaml
+  parameters:
+    key: '${{ parameters.preset }}'
+
 - task: CMake@1
   displayName: 'Configure MPSS (${{ parameters.preset }})'
   inputs:

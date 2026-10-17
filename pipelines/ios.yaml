@@ -18,6 +18,10 @@ steps:
     workingDirectory: '$(Build.SourcesDirectory)'
     failOnStderr: false
 
+- template: vcpkg-cache.yaml
+  parameters:
+    key: 'ios-${{ parameters.configuration }}'
+
 - task: CmdLine@2
   displayName: 'Build iOS XCFrameworks'
   inputs:
