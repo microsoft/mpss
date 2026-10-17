@@ -1,0 +1,30 @@
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT license.
+
+# Keeps vcpkg's built packages between runs, so dependencies are rebuilt only when they change.
+
+parameters:
+  key: ''
+
+steps:
+- task: PowerShell@2
+  displayName: 'Prepare vcpkg binary cache'
+  inputs:
+    targetType: 'inline'
+    pwsh: true
+    script: |
+      $cache = '$(Pipeline.Workspace)/vcpkg-binary-cache'
+      New-Item -ItemType Directory -Force -Path $cache | Out-Null
+      Write-Host "##vso[task.setvariable variable=VCPKG_BINARY_SOURCES]clear;files,$cache,readwrite"
+      Write-Host "##vso[task.setvariable variable=MPSS_IMAGE_VERSION]$env:ImageVersion"
+
+# A cache hit is never saved again, so the key must change whenever vcpkg would build different
+# packages. A new agent image can bring a new compiler, which does that; keying on the image version
+# starts a fresh cache instead of rebuilding the outdated packages on every run.
+- task: Cache@2
+  displayName: 'Cache vcpkg binaries'
+  inputs:
+    key: 'vcpkg | "$(Agent.OS)" | "${{ parameters.key }}" | "$(MPSS_IMAGE_VERSION)" | vcpkg.json | triplets/*.cmake'
+    restoreKeys: |
+      vcpkg | "$(Agent.OS)" | "${{ parameters.key }}" | "$(MPSS_IMAGE_VERSION)"
+    path: '$(Pipeline.Workspace)/vcpkg-binary-cache'
