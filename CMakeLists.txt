@@ -125,7 +125,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Android"
     endif()
 endif()
 
-project(mpss VERSION 2.0.0 LANGUAGES C CXX)
+project(mpss VERSION 2.0.1 LANGUAGES C CXX)
 
 if(MPSS_BACKEND_YUBIKEY)
     # The vcpkg port is named "yubico-piv-tool" but exports the CMake config
@@ -136,6 +136,43 @@ endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
     enable_language(OBJC)
     enable_language(OBJCXX)
+
+    # Outside Xcode, CMake gives swiftc no target, so it builds for the host. Use clang's target.
+    if(NOT CMAKE_GENERATOR STREQUAL "Xcode" AND NOT CMAKE_Swift_COMPILER_TARGET)
+        list(LENGTH CMAKE_OSX_ARCHITECTURES _mpss_arch_count)
+        if(_mpss_arch_count GREATER 1)
+            message(FATAL_ERROR
+                "Outside Xcode, MPSS builds for one architecture at a time. "
+                "Set CMAKE_OSX_ARCHITECTURES to one of ${CMAKE_OSX_ARCHITECTURES}, or use -G Xcode.")
+        endif()
+
+        separate_arguments(_mpss_clang_args NATIVE_COMMAND "${CMAKE_CXX_FLAGS}")
+        if(CMAKE_OSX_ARCHITECTURES)
+            list(APPEND _mpss_clang_args -arch "${CMAKE_OSX_ARCHITECTURES}")
+        elseif(NOT CMAKE_CROSSCOMPILING AND CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+            # CMake gives C++ the host processor when no architecture is set.
+            list(APPEND _mpss_clang_args -arch "${CMAKE_HOST_SYSTEM_PROCESSOR}")
+        endif()
+        if(CMAKE_OSX_SYSROOT)
+            list(APPEND _mpss_clang_args -isysroot "${CMAKE_OSX_SYSROOT}")
+        endif()
+        if(CMAKE_OSX_DEPLOYMENT_TARGET)
+            list(APPEND _mpss_clang_args
+                "${CMAKE_CXX_OSX_DEPLOYMENT_TARGET_FLAG}${CMAKE_OSX_DEPLOYMENT_TARGET}")
+        endif()
+
+        execute_process(
+            COMMAND "${CMAKE_CXX_COMPILER}" ${_mpss_clang_args} -c -x c++ /dev/null -o /dev/null "-###"
+            OUTPUT_QUIET
+            ERROR_VARIABLE _mpss_clang_output)
+        if(NOT _mpss_clang_output MATCHES "\"-triple\" \"([^\"]+)\"")
+            message(FATAL_ERROR
+                "Cannot determine the target of ${CMAKE_CXX_COMPILER}. Set CMAKE_Swift_COMPILER_TARGET.")
+        endif()
+        set(CMAKE_Swift_COMPILER_TARGET "${CMAKE_MATCH_1}")
+        message(STATUS "[mpss] Swift target: ${CMAKE_Swift_COMPILER_TARGET}")
+    endif()
+
     enable_language(Swift)
 
     # Objective-C sources use automatic reference counting. Without it, a class holding an object
@@ -429,6 +466,7 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Android")
     # Add Jar file with Java part of the code.
     add_jar(mpss_jar
         SOURCES ${mpss_JAR_SOURCE_FILES}
+        RESOURCES NAMESPACE "META-INF/proguard" "${CMAKE_CURRENT_SOURCE_DIR}/mpss/impl/android/java/mpss.pro"
         OUTPUT_NAME mpss
         OUTPUT_DIR ${CMAKE_BINARY_DIR}/lib)
 endif()

@@ -1,9 +1,9 @@
 {
   "name": "mpss",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "A multi-platform C++ library for hardware-backed digital signature key storage and signing.",
   "license": "MIT",
-  "builtin-baseline": "b61d33065508ba0d5e393206abb3cb2366299699",
+  "builtin-baseline": "a35a4bc4b5beb29c20cd8653f7d2248010de1223",
   "features": {
     "openssl": {
       "description": "Build the OpenSSL provider, including key-reference serialization.",

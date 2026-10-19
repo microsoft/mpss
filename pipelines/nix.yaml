@@ -33,6 +33,10 @@ steps:
     workingDirectory: '$(Build.SourcesDirectory)'
     failOnStderr: false
 
+- template: vcpkg-cache.yaml
+  parameters:
+    key: '${{ parameters.preset }}'
+
 - task: CMake@1
   displayName: 'Configure MPSS (${{ parameters.preset }})'
   inputs:
