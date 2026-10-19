@@ -3,6 +3,9 @@
 
 cmake_minimum_required(VERSION 3.25)
 
+# Where to look for additional modules we may have.
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
+
 # Setting up our options. The library types (static/shared) are mutually exclusive.
 option(MPSS_BUILD_MPSS_CORE_STATIC "Build the mpss core static library." NO)
 option(MPSS_BUILD_MPSS_CORE_SHARED "Build the mpss core shared library." NO)
@@ -46,7 +49,7 @@ if(BUILD_SHARED_LIBS)
     endif()
 endif()
 
-# Validate mutual exclusivity.
+# The core library is either static or shared, and static by default.
 if(MPSS_BUILD_MPSS_CORE_STATIC AND MPSS_BUILD_MPSS_CORE_SHARED)
     message(FATAL_ERROR
         "Cannot build both static and shared mpss core libraries.")
@@ -77,7 +80,8 @@ if(NOT MPSS_BUILD_MPSS_CORE_STATIC
     message(FATAL_ERROR "No library to build.")
 endif()
 
-
+# Request the vcpkg manifest features that the selected options need. The vcpkg toolchain installs
+# them when project() runs, so this must come before it.
 if(MPSS_BUILD_TESTS)
     list(APPEND VCPKG_MANIFEST_FEATURES "tests")
 endif()
@@ -95,23 +99,35 @@ if(MPSS_WITH_SERIALIZATION)
     list(APPEND VCPKG_MANIFEST_FEATURES "serialization")
 endif()
 
-# Where to look for additional modules we may have.
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
-
-# Enable yubikey feature in vcpkg if we are building with YubiKey backend.
 if(MPSS_BACKEND_YUBIKEY)
     list(APPEND VCPKG_MANIFEST_FEATURES "yubikey")
 endif()
 
 list(REMOVE_DUPLICATES VCPKG_MANIFEST_FEATURES)
 
+# Decide before project() whether the target is Android; the next block needs to know.
 get_filename_component(mpss_TOOLCHAIN_FILENAME "${CMAKE_TOOLCHAIN_FILE}" NAME)
 if(CMAKE_SYSTEM_NAME STREQUAL "Android"
-    OR ANDROID
+    # The NDK's toolchain file sets CMAKE_SYSTEM_NAME only during project(). Before then, a
+    # top-level configure that uses the NDK's toolchain file shows only these options.
     OR DEFINED ANDROID_ABI
     OR DEFINED CMAKE_ANDROID_ARCH_ABI
-    OR DEFINED CMAKE_ANDROID_NDK
     OR mpss_TOOLCHAIN_FILENAME STREQUAL "android.toolchain.cmake")
+    set(mpss_ANDROID ON)
+else()
+    set(mpss_ANDROID OFF)
+endif()
+
+# A shared MPSS library and the application must use the same C++ runtime and OpenSSL.
+if(MPSS_BUILD_MPSS_CORE_SHARED OR MPSS_BUILD_MPSS_OPENSSL_SHARED)
+    set(mpss_BUILDS_SHARED_LIBRARY ON)
+else()
+    set(mpss_BUILDS_SHARED_LIBRARY OFF)
+endif()
+
+# On Android, that means the shared C++ runtime, which must be selected before C++ is enabled. As
+# the top-level project, MPSS selects it; a parent project must have selected it already.
+if(mpss_ANDROID AND mpss_BUILDS_SHARED_LIBRARY)
     if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
         set(ANDROID_STL c++_shared CACHE STRING "Android C++ runtime." FORCE)
         set(CMAKE_ANDROID_STL_TYPE c++_shared CACHE STRING "Android C++ runtime." FORCE)
@@ -120,12 +136,12 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Android"
             AND NOT CMAKE_ANDROID_STL_TYPE STREQUAL "c++_shared")
         OR (NOT DEFINED ANDROID_STL AND NOT DEFINED CMAKE_ANDROID_STL_TYPE))
         message(FATAL_ERROR
-            "MPSS requires CMAKE_ANDROID_STL_TYPE=c++_shared on Android. "
+            "Shared MPSS libraries require CMAKE_ANDROID_STL_TYPE=c++_shared on Android. "
             "Select the shared C++ runtime before enabling C++.")
     endif()
 endif()
 
-project(mpss VERSION 2.0.1 LANGUAGES C CXX)
+project(mpss VERSION 2.1.0 LANGUAGES C CXX)
 
 if(MPSS_BACKEND_YUBIKEY)
     # The vcpkg port is named "yubico-piv-tool" but exports the CMake config
@@ -133,6 +149,7 @@ if(MPSS_BACKEND_YUBIKEY)
     find_package(unofficial-libykpiv CONFIG REQUIRED)
 endif()
 
+# The Apple backends are written partly in Objective-C and Swift.
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
     enable_language(OBJC)
     enable_language(OBJCXX)
@@ -182,26 +199,36 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
 endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Android")
+    # The Android backend has a Java part, built into mpss.jar.
     find_package(Java REQUIRED)
     include(UseJava)
-    if(DEFINED ANDROID_PLATFORM
-        AND EXISTS "${CMAKE_ANDROID_NDK}/build/cmake/adjust_api_level.cmake")
-        include("${CMAKE_ANDROID_NDK}/build/cmake/adjust_api_level.cmake")
-        adjust_api_level("${ANDROID_PLATFORM}" mpss_ANDROID_MIN_API)
-    elseif(DEFINED ANDROID_PLATFORM)
-        string(REGEX REPLACE "^android-" "" mpss_ANDROID_MIN_API "${ANDROID_PLATFORM}")
+
+    # The minimum API level for native code. The NDK's legacy toolchain file sets
+    # CMAKE_SYSTEM_VERSION to 1 and keeps the API level in ANDROID_PLATFORM_LEVEL instead.
+    if(CMAKE_SYSTEM_VERSION STREQUAL "1")
+        set(mpss_ANDROID_MIN_API "${ANDROID_PLATFORM_LEVEL}")
     else()
         set(mpss_ANDROID_MIN_API "${CMAKE_SYSTEM_VERSION}")
     endif()
+
     if(NOT mpss_ANDROID_MIN_API MATCHES "^[0-9]+$"
         OR mpss_ANDROID_MIN_API VERSION_LESS 28)
         message(FATAL_ERROR "MPSS requires Android API level 28 or later.")
     endif()
-    if(NOT CMAKE_ANDROID_STL_TYPE STREQUAL "c++_shared"
-        OR (DEFINED ANDROID_STL AND NOT ANDROID_STL STREQUAL "c++_shared"))
+
+    # Check the C++ runtime that the toolchain selected.
+    if(mpss_BUILDS_SHARED_LIBRARY
+        AND (NOT CMAKE_ANDROID_STL_TYPE STREQUAL "c++_shared"
+            OR (DEFINED ANDROID_STL AND NOT ANDROID_STL STREQUAL "c++_shared")))
         message(FATAL_ERROR
-            "MPSS requires CMAKE_ANDROID_STL_TYPE=c++_shared on Android.")
+            "Shared MPSS libraries require CMAKE_ANDROID_STL_TYPE=c++_shared on Android.")
     endif()
+
+    # A shared provider would contain its own copy of a static core, with separate initialization state.
+    if(MPSS_BUILD_MPSS_OPENSSL_SHARED AND NOT MPSS_BUILD_MPSS_CORE_SHARED)
+        message(FATAL_ERROR "A shared mpss-openssl library requires a shared mpss core library on Android.")
+    endif()
+
     set(MPSS_ANDROID_COMPILE_API "36" CACHE STRING
         "Android API level used to compile the MPSS Java sources.")
     if(NOT MPSS_ANDROID_COMPILE_API MATCHES "^[0-9]+$"
@@ -210,6 +237,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Android")
             "MPSS_ANDROID_COMPILE_API must be a numeric API level greater "
             "than or equal to the Android minimum API level.")
     endif()
+
     set(MPSS_ANDROID_BUILD_TOOLS_VERSION "${MPSS_ANDROID_COMPILE_API}.0.0"
         CACHE STRING "Android SDK Build Tools version used by the test host.")
     if(NOT MPSS_ANDROID_BUILD_TOOLS_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
@@ -354,22 +382,21 @@ set(mpss_INCLUDES_INSTALL_DIR "${CMAKE_INSTALL_INCLUDEDIR}")
 
 set(mpss_ARCHIVE_INSTALL_DIR "${CMAKE_INSTALL_LIBDIR}")
 
-# Clean config.h from the source dir when configuring.
+# Remove the config.h that a previous configure generated in the build directory.
 if(EXISTS "${mpss_CONFIG_H_FILENAME}")
     message(STATUS "Cleaning up ${mpss_CONFIG_H_FILENAME}")
     file(REMOVE "${mpss_CONFIG_H_FILENAME}")
 endif()
 
-# List of all source files.
+# The subdirectories add their source files to these lists.
 set(mpss_SOURCE_FILES "")
 set(mpss_SWIFT_SOURCE_FILES "")
 set(mpss_JAR_SOURCE_FILES "")
+set(mpss_openssl_SOURCE_FILES "")
 
 if(MPSS_BUILD_MPSS_CORE_STATIC OR MPSS_BUILD_MPSS_CORE_SHARED)
     add_subdirectory(mpss)
 endif()
-
-set(mpss_openssl_SOURCE_FILES "")
 
 if(MPSS_BUILD_MPSS_OPENSSL_STATIC OR MPSS_BUILD_MPSS_OPENSSL_SHARED)
     add_subdirectory(mpss-openssl)
@@ -389,6 +416,7 @@ endif()
 # Create config.h from config.h.in.
 configure_file("${mpss_CONFIG_H_IN_FILENAME}" "${mpss_CONFIG_H_FILENAME}")
 
+# Create the library targets.
 if(MPSS_BUILD_MPSS_CORE_SHARED)
     set(mpss_LIBRARY_TYPE SHARED)
 elseif(MPSS_BUILD_MPSS_CORE_STATIC)
@@ -408,7 +436,6 @@ if(MPSS_BUILD_MPSS_CORE_STATIC OR MPSS_BUILD_MPSS_CORE_SHARED)
         add_library(${mpss_TARGET} ${mpss_LIBRARY_TYPE} ${mpss_SOURCE_FILES})
     elseif(mpss_LIBRARY_TYPE STREQUAL "SHARED")
         message(STATUS "[mpss] Building shared library.")
-
         set(mpss_TARGET mpss)
         add_library(${mpss_TARGET} ${mpss_LIBRARY_TYPE} ${mpss_SOURCE_FILES})
     else()
@@ -428,7 +455,6 @@ if(MPSS_BUILD_MPSS_OPENSSL_STATIC OR MPSS_BUILD_MPSS_OPENSSL_SHARED)
         add_library(${mpss_openssl_TARGET} ${mpss_openssl_LIBRARY_TYPE} ${mpss_openssl_SOURCE_FILES})
     elseif(mpss_openssl_LIBRARY_TYPE STREQUAL "SHARED")
         message(STATUS "[mpss-openssl] Building shared library.")
-
         set(mpss_openssl_TARGET mpss_openssl)
         add_library(${mpss_openssl_TARGET} ${mpss_openssl_LIBRARY_TYPE} ${mpss_openssl_SOURCE_FILES})
     else()
@@ -436,13 +462,8 @@ if(MPSS_BUILD_MPSS_OPENSSL_STATIC OR MPSS_BUILD_MPSS_OPENSSL_SHARED)
     endif()
 endif()
 
-if (CMAKE_SYSTEM_NAME STREQUAL "Android")
-    if(MPSS_BUILD_MPSS_CORE_STATIC OR MPSS_BUILD_MPSS_OPENSSL_STATIC)
-        # The Android backend initializes in JNI_OnLoad, called when Java loads the core library.
-        message(FATAL_ERROR "MPSS supports only shared libraries on Android.")
-    endif()
-
-    # CMAKE_SYSTEM_VERSION contains the minimum Android API level for native code.
+if(CMAKE_SYSTEM_NAME STREQUAL "Android")
+    # Build mpss.jar from the Java sources, compiled against the Android SDK's android.jar.
     set(ANDROID_SDK $ENV{ANDROID_HOME})
     set(ANDROID_JAR "${ANDROID_SDK}/platforms/android-${MPSS_ANDROID_COMPILE_API}/android.jar")
     if(NOT EXISTS "${ANDROID_JAR}")
@@ -456,14 +477,8 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Android")
     # Emit bytecode compatible with the modern Android build-tool baseline.
     set(CMAKE_JAVA_COMPILE_FLAGS --release 17)
 
-    find_file(mpss_ANDROID_CXX_SHARED_LIBRARY
-        NAMES libc++_shared.so
-        PATHS ${CMAKE_CXX_IMPLICIT_LINK_DIRECTORIES}
-        NO_DEFAULT_PATH
-        REQUIRED
-    )
-
-    # Add Jar file with Java part of the code.
+    # mpss.pro stops an application's minifier (R8) from removing or renaming the Java classes that
+    # the native library finds by name.
     add_jar(mpss_jar
         SOURCES ${mpss_JAR_SOURCE_FILES}
         RESOURCES NAMESPACE "META-INF/proguard" "${CMAKE_CURRENT_SOURCE_DIR}/mpss/impl/android/java/mpss.pro"
@@ -484,7 +499,8 @@ if(TARGET ${mpss_TARGET})
 
     # Platform-specific dependencies.
     if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
-        # mpss on Windows requires ncrypt.lib, and tbs.lib to confirm that a machine has no TPM.
+        # ncrypt stores the keys, tbs confirms that a machine has no TPM, and crypt32 DER-encodes
+        # signatures.
         target_link_libraries(${mpss_TARGET} PRIVATE ncrypt)
         target_link_libraries(${mpss_TARGET} PRIVATE tbs)
         target_link_libraries(${mpss_TARGET} PRIVATE crypt32)
@@ -511,9 +527,8 @@ if(TARGET ${mpss_TARGET})
         find_package(OpenSSL 3 REQUIRED COMPONENTS Crypto)
         target_link_libraries(${mpss_TARGET} PRIVATE OpenSSL::Crypto)
 
-        # MPSS is always shared on Android, so a static OpenSSL would be copied into each MPSS
-        # library.
-        if(CMAKE_SYSTEM_NAME STREQUAL "Android")
+        # A static OpenSSL would be copied into each shared MPSS library.
+        if(CMAKE_SYSTEM_NAME STREQUAL "Android" AND mpss_BUILDS_SHARED_LIBRARY)
             get_target_property(mpss_OPENSSL_CRYPTO_TYPE OpenSSL::Crypto TYPE)
             get_target_property(mpss_OPENSSL_CRYPTO_LOCATION OpenSSL::Crypto IMPORTED_LOCATION)
             if(mpss_OPENSSL_CRYPTO_TYPE STREQUAL "STATIC_LIBRARY"
@@ -541,7 +556,7 @@ if(TARGET ${mpss_TARGET})
         $<INSTALL_INTERFACE:${mpss_INCLUDES_INSTALL_DIR}>
     )
 
-    # Add our targets to an export mpssTargets.
+    # Install the library and add it to the mpssTargets export set.
     if(MPSS_BUILD_MPSS_CORE_STATIC)
         install(TARGETS ${mpss_TARGET} EXPORT mpssTargets
             ARCHIVE DESTINATION "${mpss_ARCHIVE_INSTALL_DIR}"
@@ -557,7 +572,8 @@ if(TARGET ${mpss_TARGET})
             RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
         )
 
-        if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
+        # mpss/defines.h exports the API from the DLL when MPSS_EXPORTS is defined.
+        if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
             target_compile_definitions(${mpss_TARGET} PRIVATE
                 MPSS_EXPORTS
             )
@@ -570,6 +586,7 @@ if(TARGET ${mpss_openssl_TARGET})
     target_compile_features(${mpss_openssl_TARGET} PRIVATE cxx_std_20)
     target_compile_features(${mpss_openssl_TARGET} PRIVATE c_std_17)
 
+    # Mark debug builds for the mpss-openssl sources, as for the core library.
     target_compile_definitions(${mpss_openssl_TARGET} PRIVATE
         $<BUILD_INTERFACE:$<$<CONFIG:Debug>:MPSS_DEBUG_BUILD>>
     )
@@ -583,8 +600,10 @@ if(TARGET ${mpss_openssl_TARGET})
     # consumers of mpss-openssl also need to link against (and include) mpss.
     target_link_libraries(${mpss_openssl_TARGET} PUBLIC ${mpss_TARGET})
 
+    # For debug builds, append "_debug" to the library name.
     set_target_properties(${mpss_openssl_TARGET} PROPERTIES DEBUG_POSTFIX "_debug")
 
+    # Set the VERSION and SOVERSION properties for semantic versioning.
     set_target_properties(${mpss_openssl_TARGET} PROPERTIES
         VERSION ${mpss_VERSION}
         SOVERSION ${mpss_VERSION_MAJOR}
@@ -601,6 +620,7 @@ if(TARGET ${mpss_openssl_TARGET})
         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
     )
 
+    # Install the library and add it to the mpssTargets export set.
     if(MPSS_BUILD_MPSS_OPENSSL_STATIC)
         install(TARGETS ${mpss_openssl_TARGET} EXPORT mpssTargets
             ARCHIVE DESTINATION "${mpss_ARCHIVE_INSTALL_DIR}"
@@ -612,7 +632,8 @@ if(TARGET ${mpss_openssl_TARGET})
             RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
         )
 
-        if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
+        # mpss-openssl/defines.h exports the API from the DLL when MPSS_OPENSSL_EXPORTS is defined.
+        if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
             target_compile_definitions(${mpss_openssl_TARGET} PRIVATE
                 MPSS_OPENSSL_EXPORTS
             )
@@ -620,7 +641,7 @@ if(TARGET ${mpss_openssl_TARGET})
     endif()
 endif()
 
-# Create the CMake config file.
+# Create the CMake package config and version files.
 include(CMakePackageConfigHelpers)
 configure_package_config_file(
     "${mpss_CONFIG_IN_FILENAME}" "${mpss_CONFIG_FILENAME}"
@@ -628,21 +649,6 @@ configure_package_config_file(
     PATH_VARS mpss_INCLUDES_INSTALL_DIR
 )
 
-if(CMAKE_SYSTEM_NAME STREQUAL "Android")
-    install_jar(mpss_jar DESTINATION "lib")
-    install(
-        FILES "${mpss_ANDROID_CXX_SHARED_LIBRARY}"
-        DESTINATION "${CMAKE_INSTALL_LIBDIR}"
-    )
-endif()
-
-install(
-    EXPORT mpssTargets
-    NAMESPACE mpss::
-    DESTINATION "${mpss_CONFIG_INSTALL_DIR}"
-)
-
-# Create a version file.
 write_basic_package_version_file(
     "${mpss_CONFIG_VERSION_FILENAME}"
     VERSION ${mpss_VERSION}
@@ -655,7 +661,18 @@ install(
     DESTINATION "${mpss_INCLUDES_INSTALL_DIR}/mpss"
 )
 
-# Install the CMake config and helper modules.
+# Install mpss.jar, the Java part of the Android backend.
+if(CMAKE_SYSTEM_NAME STREQUAL "Android")
+    install_jar(mpss_jar DESTINATION "lib")
+endif()
+
+# Install the CMake package: the exported targets and the config and version files.
+install(
+    EXPORT mpssTargets
+    NAMESPACE mpss::
+    DESTINATION "${mpss_CONFIG_INSTALL_DIR}"
+)
+
 install(
     FILES "${mpss_CONFIG_FILENAME}" "${mpss_CONFIG_VERSION_FILENAME}"
     DESTINATION "${mpss_CONFIG_INSTALL_DIR}"

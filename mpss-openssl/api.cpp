@@ -32,6 +32,13 @@ const char *empty_name_list[] = {nullptr};
 constexpr const char *internal_error_message = "Internal error.";
 } // namespace
 
+#ifdef __ANDROID__
+bool mpss_initialize_android(JavaVM *vm)
+{
+    return mpss::initialize_android(vm);
+}
+#endif
+
 bool mpss_delete_key(const char *key_name)
 try
 {

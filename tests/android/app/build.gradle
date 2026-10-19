@@ -22,8 +22,6 @@ def mpssBuildToolsVersion = providers.gradleProperty("mpssBuildToolsVersion")
 def mpssMinApi = providers.gradleProperty("mpssMinApi")
     .map { it.toInteger() }
     .getOrElse(28)
-def mpssCoreLibraryName = providers.gradleProperty("mpssCoreLibraryName")
-    .getOrElse("mpss")
 def nativeLibraryDirectory = file("${mpssTestDirectory}/jniLibs")
 
 layout.buildDirectory.set(file("${mpssTestDirectory}/gradle-build"))
@@ -41,12 +39,6 @@ android
         targetSdk = mpssCompileApi
         versionCode = 1
         versionName = "1.0"
-        buildConfigField("String", "MPSS_CORE_LIBRARY_NAME", "\"${mpssCoreLibraryName}\"")
-    }
-
-    buildFeatures
-    {
-        buildConfig = true
     }
 
     compileOptions

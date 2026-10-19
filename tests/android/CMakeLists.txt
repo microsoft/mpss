@@ -11,6 +11,17 @@ if(NOT TARGET mpss_jar)
     message(FATAL_ERROR "The Android test host requires the MPSS Java library.")
 endif()
 
+# The APK carries only shared libraries; static ones are linked into mpss_tests.
+function(mpss_android_test_append_if_shared target)
+    get_target_property(type ${target} TYPE)
+    get_target_property(location ${target} IMPORTED_LOCATION)
+    if(type STREQUAL "SHARED_LIBRARY"
+        OR (type STREQUAL "UNKNOWN_LIBRARY" AND location AND NOT location MATCHES "\\.a$"))
+        list(APPEND mpss_ANDROID_TEST_NATIVE_FILES "$<TARGET_FILE:${target}>")
+        set(mpss_ANDROID_TEST_NATIVE_FILES ${mpss_ANDROID_TEST_NATIVE_FILES} PARENT_SCOPE)
+    endif()
+endfunction()
+
 add_library(mpss_tests SHARED
     ${mpss_TESTS_FILES}
     android_tests.cpp
@@ -32,13 +43,19 @@ set(mpss_ANDROID_TEST_JNI_DIRECTORY
     "${mpss_ANDROID_TEST_DIRECTORY}/jniLibs/${CMAKE_ANDROID_ARCH_ABI}")
 set(mpss_ANDROID_TEST_APK
     "${mpss_ANDROID_TEST_DIRECTORY}/mpss-tests.apk")
-set(mpss_ANDROID_TEST_NATIVE_FILES
-    "$<TARGET_FILE:mpss_tests>"
-    "$<TARGET_FILE:${mpss_TARGET}>"
-    "${mpss_ANDROID_CXX_SHARED_LIBRARY}"
-)
+set(mpss_ANDROID_TEST_NATIVE_FILES "$<TARGET_FILE:mpss_tests>")
+mpss_android_test_append_if_shared(${mpss_TARGET})
 if(TARGET OpenSSL::Crypto)
-    list(APPEND mpss_ANDROID_TEST_NATIVE_FILES "$<TARGET_FILE:OpenSSL::Crypto>")
+    mpss_android_test_append_if_shared(OpenSSL::Crypto)
+endif()
+if(CMAKE_ANDROID_STL_TYPE STREQUAL "c++_shared")
+    find_file(mpss_ANDROID_CXX_SHARED_LIBRARY
+        NAMES libc++_shared.so
+        PATHS ${CMAKE_CXX_IMPLICIT_LINK_DIRECTORIES}
+        NO_DEFAULT_PATH
+        REQUIRED
+    )
+    list(APPEND mpss_ANDROID_TEST_NATIVE_FILES "${mpss_ANDROID_CXX_SHARED_LIBRARY}")
 endif()
 set(mpss_ANDROID_TEST_TARGETS
     mpss_tests
@@ -65,9 +82,8 @@ set(mpss_ANDROID_TEST_GRADLE_FILES
 )
 
 if(TARGET ${mpss_openssl_TARGET})
-    list(APPEND mpss_ANDROID_TEST_NATIVE_FILES
-        "$<TARGET_FILE:${mpss_openssl_TARGET}>"
-        "$<TARGET_FILE:OpenSSL::SSL>")
+    mpss_android_test_append_if_shared(${mpss_openssl_TARGET})
+    mpss_android_test_append_if_shared(OpenSSL::SSL)
     list(APPEND mpss_ANDROID_TEST_TARGETS ${mpss_openssl_TARGET})
 endif()
 
@@ -89,7 +105,6 @@ add_custom_command(
         "-PmpssCompileApi=${MPSS_ANDROID_COMPILE_API}"
         "-PmpssBuildToolsVersion=${MPSS_ANDROID_BUILD_TOOLS_VERSION}"
         "-PmpssMinApi=${mpss_ANDROID_MIN_API}"
-        "-PmpssCoreLibraryName=$<TARGET_FILE_BASE_NAME:${mpss_TARGET}>"
         :app:assembleDebug
     COMMAND ${CMAKE_COMMAND} -E copy
         "${mpss_ANDROID_TEST_DIRECTORY}/gradle-build/outputs/apk/debug/app-debug.apk"

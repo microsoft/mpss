@@ -1007,6 +1007,27 @@ TEST(AndroidJNITest, JavaErrorIsContextualAndConsumed)
     EXPECT_EQ(std::string::npos, second_error.find(key_name));
 }
 
+TEST(AndroidJNITest, InitializeAndroidAcceptsOnlyTheInitializedVM)
+{
+    JavaVM *java_vm = nullptr;
+    {
+        mpss::impl::os::JNIEnvGuard guard;
+        ASSERT_TRUE(guard.valid());
+        ASSERT_EQ(JNI_OK, guard->GetJavaVM(&java_vm));
+    }
+
+    EXPECT_FALSE(mpss::initialize_android(nullptr));
+    EXPECT_FALSE(mpss::get_error().empty());
+
+    JavaVM other_vm{};
+    EXPECT_FALSE(mpss::initialize_android(&other_vm));
+    EXPECT_NE(std::string::npos, mpss::get_error().find("different Java VM"));
+    EXPECT_TRUE(mpss::impl::os::JNIHelper::initialized());
+
+    EXPECT_TRUE(mpss::initialize_android(java_vm));
+    EXPECT_TRUE(mpss::get_error().empty());
+}
+
 TEST(AndroidJNITest, BooleanUnboxingReusesCachedMetadata)
 {
     mpss::impl::os::JNIEnvGuard guard;

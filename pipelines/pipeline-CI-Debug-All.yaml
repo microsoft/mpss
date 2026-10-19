@@ -61,4 +61,9 @@ stages:
     - template: jobs.yaml
       parameters:
         debug: 'true'
+        name: Android
+        linkage: 'shared'
+    - template: jobs.yaml
+      parameters:
+        debug: 'true'
         name: iOS

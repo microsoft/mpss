@@ -18,6 +18,18 @@ using jni_bytearray = mpss::impl::os::utils::JNIObj<jbyteArray>;
 namespace
 {
 
+bool check_initialized()
+{
+    if (mpss::impl::os::JNIHelper::initialized())
+    {
+        return true;
+    }
+
+    mpss::utils::log_and_set_error("MPSS is not initialized. Call mpss::initialize_android or mpss_initialize_android "
+                                   "from JNI_OnLoad first.");
+    return false;
+}
+
 // Reports the tier the key store says the key this handle is holding is at. Asked of the held key
 // rather than of the name, so that a name rebound to another key since the handle was opened
 // reports nothing instead of reporting the replacement's tier. Returns false when the tier could
@@ -326,6 +338,11 @@ OpenKeyResult try_open_key(std::string_view name)
 
 std::unique_ptr<KeyPair> open_key(std::string_view name)
 {
+    if (!check_initialized())
+    {
+        return nullptr;
+    }
+
     if (name.empty())
     {
         mpss::utils::log_and_set_error("Key name cannot be empty.");
@@ -343,6 +360,11 @@ std::unique_ptr<KeyPair> open_key(std::string_view name)
 
 bool delete_key(std::string_view name)
 {
+    if (!check_initialized())
+    {
+        return false;
+    }
+
     if (name.empty())
     {
         mpss::utils::log_and_set_error("Key name cannot be empty.");
@@ -415,6 +437,11 @@ bool delete_key(std::string_view name)
 
 std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm, KeyPolicy policy)
 {
+    if (!check_initialized())
+    {
+        return nullptr;
+    }
+
     if (name.empty())
     {
         mpss::utils::log_and_set_error("Key name cannot be empty.");
@@ -587,6 +614,11 @@ std::unique_ptr<KeyPair> create_key(std::string_view name, Algorithm algorithm, 
 bool verify(std::span<const std::byte> hash, std::span<const std::byte> public_key, Algorithm algorithm,
             std::span<const std::byte> sig)
 {
+    if (!check_initialized())
+    {
+        return false;
+    }
+
     if (hash.empty() || public_key.empty() || sig.empty())
     {
         mpss::utils::log_and_set_error("Hash, public key, and signature cannot be empty.");

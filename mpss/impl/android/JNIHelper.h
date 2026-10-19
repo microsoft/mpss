@@ -4,8 +4,10 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <jni.h>
+#include <mutex>
 
 namespace mpss::impl::os
 {
@@ -18,8 +20,8 @@ class JNIHelper
     //
     // A descriptor is a string the runtime resolves, so one that has drifted from the Java it names
     // compiles cleanly and fails only on a device. Keeping them together makes them checkable
-    // against the built JAR in one place, and resolving them here means a mismatch refuses the
-    // backend at registration rather than surfacing when a caller signs something.
+    // against the built JAR in one place, and resolving them here means a mismatch fails
+    // initialization rather than surfacing when a caller signs something.
     //
     // Java names alone do not identify a method, since DeleteKey and VerifySignature each have two
     // overloads, so these are named for what they do.
@@ -43,8 +45,10 @@ class JNIHelper
         count
     };
 
+    // Safe to call from several threads. Once it has succeeded, it succeeds again for the same VM and
+    // nothing it cached changes for the rest of the process.
+    [[nodiscard]]
     static bool init(JavaVM *vm);
-    static void uninit(JavaVM *vm);
     [[nodiscard]]
     static bool initialized();
     static void detach();
@@ -58,6 +62,11 @@ class JNIHelper
     static jmethodID method(JavaMethod id);
 
   private:
+    static void reset(JNIEnv *env);
+
+    // Written only under init_mutex_ and before initialized_ is set, which publishes them.
+    static std::mutex init_mutex_;
+    static std::atomic<bool> initialized_;
     static JavaVM *java_vm_;
     static jclass key_management_class_;
     static jclass algorithm_class_;

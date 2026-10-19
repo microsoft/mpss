@@ -17,6 +17,10 @@
 #include <string_view>
 #include <vector>
 
+#ifdef __ANDROID__
+#include <jni.h>
+#endif
+
 namespace mpss
 {
 
@@ -25,6 +29,24 @@ namespace impl
 {
 class BackendNameSetter;
 } // namespace impl
+
+#ifdef __ANDROID__
+/**
+ * @brief Initializes MPSS for the application's Java VM.
+ *
+ * Call this before any other MPSS function, from the application's `JNI_OnLoad` or from a native
+ * method that Java calls. MPSS finds its Java classes in `mpss.jar` through the class loader of the
+ * calling Java code, which a thread started in native code does not have. Calling this again with
+ * the same VM succeeds without doing anything; a different VM is rejected. MPSS stays initialized for
+ * the life of the process.
+ *
+ * @param[in] vm The application's Java VM, as passed to `JNI_OnLoad`.
+ * @return true if MPSS is initialized, false otherwise, in which case @ref get_error describes the
+ * failure.
+ */
+[[nodiscard]]
+MPSS_DECOR bool initialize_android(JavaVM *vm) noexcept;
+#endif
 
 /**
  * @brief Retrieves the last error recorded on this thread.

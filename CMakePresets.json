@@ -354,13 +354,8 @@
                 "CMAKE_SYSTEM_NAME": "Android",
                 "CMAKE_SYSTEM_VERSION": "28",
                 "CMAKE_ANDROID_NDK": "$env{ANDROID_NDK_HOME}",
-                "CMAKE_ANDROID_STL_TYPE": "c++_shared",
                 "MPSS_ANDROID_COMPILE_API": "$env{MPSS_ANDROID_COMPILE_API}",
-                "MPSS_ANDROID_BUILD_TOOLS_VERSION": "$env{MPSS_ANDROID_BUILD_TOOLS_VERSION}",
-                "MPSS_BUILD_MPSS_CORE_STATIC": "NO",
-                "MPSS_BUILD_MPSS_CORE_SHARED": "YES",
-                "MPSS_BUILD_MPSS_OPENSSL_STATIC": "NO",
-                "MPSS_BUILD_MPSS_OPENSSL_SHARED": "YES"
+                "MPSS_ANDROID_BUILD_TOOLS_VERSION": "$env{MPSS_ANDROID_BUILD_TOOLS_VERSION}"
             }
         },
         {
@@ -370,7 +365,7 @@
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug",
                 "CMAKE_ANDROID_ARCH_ABI": "arm64-v8a",
-                "VCPKG_TARGET_TRIPLET": "arm64-android-dynamic"
+                "VCPKG_TARGET_TRIPLET": "arm64-android"
             }
         },
         {
@@ -388,7 +383,7 @@
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug",
                 "CMAKE_ANDROID_ARCH_ABI": "x86_64",
-                "VCPKG_TARGET_TRIPLET": "x64-android-dynamic"
+                "VCPKG_TARGET_TRIPLET": "x64-android"
             }
         },
         {
@@ -397,6 +392,58 @@
             "inherits": "android-x64-debug",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "android-arm64-shared-debug",
+            "displayName": "Android Debug (arm64, Ninja) [Shared]",
+            "inherits": "android-arm64-debug",
+            "cacheVariables": {
+                "CMAKE_ANDROID_STL_TYPE": "c++_shared",
+                "VCPKG_TARGET_TRIPLET": "arm64-android-dynamic",
+                "MPSS_BUILD_MPSS_CORE_STATIC": "NO",
+                "MPSS_BUILD_MPSS_CORE_SHARED": "YES",
+                "MPSS_BUILD_MPSS_OPENSSL_STATIC": "NO",
+                "MPSS_BUILD_MPSS_OPENSSL_SHARED": "YES"
+            }
+        },
+        {
+            "name": "android-arm64-shared-release",
+            "displayName": "Android Release (arm64, Ninja) [Shared]",
+            "inherits": "android-arm64-release",
+            "cacheVariables": {
+                "CMAKE_ANDROID_STL_TYPE": "c++_shared",
+                "VCPKG_TARGET_TRIPLET": "arm64-android-dynamic",
+                "MPSS_BUILD_MPSS_CORE_STATIC": "NO",
+                "MPSS_BUILD_MPSS_CORE_SHARED": "YES",
+                "MPSS_BUILD_MPSS_OPENSSL_STATIC": "NO",
+                "MPSS_BUILD_MPSS_OPENSSL_SHARED": "YES"
+            }
+        },
+        {
+            "name": "android-x64-shared-debug",
+            "displayName": "Android Debug (x64, Ninja) [Shared]",
+            "inherits": "android-x64-debug",
+            "cacheVariables": {
+                "CMAKE_ANDROID_STL_TYPE": "c++_shared",
+                "VCPKG_TARGET_TRIPLET": "x64-android-dynamic",
+                "MPSS_BUILD_MPSS_CORE_STATIC": "NO",
+                "MPSS_BUILD_MPSS_CORE_SHARED": "YES",
+                "MPSS_BUILD_MPSS_OPENSSL_STATIC": "NO",
+                "MPSS_BUILD_MPSS_OPENSSL_SHARED": "YES"
+            }
+        },
+        {
+            "name": "android-x64-shared-release",
+            "displayName": "Android Release (x64, Ninja) [Shared]",
+            "inherits": "android-x64-release",
+            "cacheVariables": {
+                "CMAKE_ANDROID_STL_TYPE": "c++_shared",
+                "VCPKG_TARGET_TRIPLET": "x64-android-dynamic",
+                "MPSS_BUILD_MPSS_CORE_STATIC": "NO",
+                "MPSS_BUILD_MPSS_CORE_SHARED": "YES",
+                "MPSS_BUILD_MPSS_OPENSSL_STATIC": "NO",
+                "MPSS_BUILD_MPSS_OPENSSL_SHARED": "YES"
             }
         },
         {
@@ -1147,6 +1194,30 @@
             "name": "android-x64-release",
             "displayName": "Android Release (x64, Ninja)",
             "configurePreset": "android-x64-release",
+            "jobs": 0
+        },
+        {
+            "name": "android-arm64-shared-debug",
+            "displayName": "Android Debug (arm64, Ninja) [Shared]",
+            "configurePreset": "android-arm64-shared-debug",
+            "jobs": 0
+        },
+        {
+            "name": "android-arm64-shared-release",
+            "displayName": "Android Release (arm64, Ninja) [Shared]",
+            "configurePreset": "android-arm64-shared-release",
+            "jobs": 0
+        },
+        {
+            "name": "android-x64-shared-debug",
+            "displayName": "Android Debug (x64, Ninja) [Shared]",
+            "configurePreset": "android-x64-shared-debug",
+            "jobs": 0
+        },
+        {
+            "name": "android-x64-shared-release",
+            "displayName": "Android Release (x64, Ninja) [Shared]",
+            "configurePreset": "android-x64-shared-release",
             "jobs": 0
         },
         {

@@ -12,6 +12,10 @@
 
 #include <stddef.h>
 
+#ifdef __ANDROID__
+#include <jni.h>
+#endif
+
 /**
  * @brief Key policy constants for use with the "mpss_key_policy" provider parameter.
  *
@@ -76,6 +80,23 @@ extern "C"
         const char *key_name;
         const char *device_id;
     } mpss_key_location_t;
+
+#ifdef __ANDROID__
+    /**
+     * @brief Initializes MPSS for the application's Java VM.
+     *
+     * Call this before any other MPSS function, from the application's `JNI_OnLoad` or from a
+     * native method that Java calls. MPSS finds its Java classes in `mpss.jar` through the class
+     * loader of the calling Java code, which a thread started in native code does not have. Calling
+     * this again with the same VM succeeds without doing anything; a different VM is rejected. MPSS
+     * stays initialized for the life of the process.
+     *
+     * @param[in] vm The application's Java VM, as passed to `JNI_OnLoad`.
+     * @return true if MPSS is initialized, false otherwise, in which case @ref mpss_get_error
+     * describes the failure.
+     */
+    MPSS_OPENSSL_DECOR bool mpss_initialize_android(JavaVM *vm);
+#endif
 
     /**
      * @brief Deletes every key at a location without consulting environment selection defaults.
