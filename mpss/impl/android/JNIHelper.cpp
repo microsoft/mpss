@@ -3,32 +3,20 @@
 
 #include "mpss/impl/android/JNIHelper.h"
 #include "mpss/impl/android/android_utils.h"
+#include "mpss/mpss.h"
+#include "mpss/utils/scope_guard.h"
 #include "mpss/utils/utilities.h"
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cstddef>
+#include <format>
+#include <mutex>
 #include <ranges>
+#include <string>
 
-extern "C" JNIEXPORT jint JNI_OnLoad(JavaVM *vm, void * /*reserved*/)
-try
-{
-    return mpss::impl::os::JNIHelper::init(vm) ? JNI_VERSION_1_6 : JNI_ERR;
-}
-catch (...)
-{
-    // An exception must not reach the JVM. Reporting failure here fails the library load.
-    return JNI_ERR;
-}
-
-extern "C" JNIEXPORT void JNI_OnUnload(JavaVM *vm, void * /*reserved*/)
-try
-{
-    mpss::impl::os::JNIHelper::uninit(vm);
-}
-catch (...) // NOLINT(bugprone-empty-catch) - the JVM is unloading; there is nothing to report to.
-{
-}
-
+std::mutex mpss::impl::os::JNIHelper::init_mutex_;
+std::atomic<bool> mpss::impl::os::JNIHelper::initialized_{false};
 JavaVM *mpss::impl::os::JNIHelper::java_vm_ = nullptr;
 jclass mpss::impl::os::JNIHelper::key_management_class_ = nullptr;
 jclass mpss::impl::os::JNIHelper::algorithm_class_ = nullptr;
@@ -146,39 +134,67 @@ bool JNIHelper::init(JavaVM *vm)
 {
     if (nullptr == vm)
     {
+        mpss::utils::log_and_set_error("The Java VM cannot be null.");
         return false;
     }
-    if (nullptr != java_vm_)
+
+    const std::scoped_lock lock(init_mutex_);
+    if (initialized_.load(std::memory_order_acquire))
     {
-        return vm == java_vm_ && initialized();
+        if (vm != java_vm_)
+        {
+            mpss::utils::log_and_set_error("MPSS is already initialized for a different Java VM.");
+            return false;
+        }
+        return true;
     }
 
     JNIEnv *env = nullptr;
     if (JNI_OK != vm->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_6) || nullptr == env)
     {
+        mpss::utils::log_and_set_error("The calling thread is not attached to the Java VM.");
         return false;
     }
 
-    java_vm_ = vm;
+    bool succeeded = false;
+    SCOPE_GUARD({
+        if (!succeeded)
+        {
+            reset(env);
+        }
+    });
 
     const auto cache_class = [env](const char *name, jclass &destination) {
         jclass local_class = env->FindClass(name);
-        if (utils::check_and_clear_exception(env, name) || nullptr == local_class)
+        if (utils::check_and_clear_exception(env, std::format("finding Java class '{}'", name)))
         {
+            return false;
+        }
+        if (nullptr == local_class)
+        {
+            mpss::utils::log_and_set_error("Could not find Java class '{}'.", name);
             return false;
         }
 
         destination = reinterpret_cast<jclass>(env->NewGlobalRef(local_class));
-        const bool failed = utils::check_and_clear_exception(env, name) || nullptr == destination;
+        const bool threw = utils::check_and_clear_exception(env, std::format("referencing Java class '{}'", name));
         env->DeleteLocalRef(local_class);
-        return !failed;
+        if (threw)
+        {
+            return false;
+        }
+        if (nullptr == destination)
+        {
+            mpss::utils::log_and_set_error("Could not reference Java class '{}'.", name);
+            return false;
+        }
+        return true;
     };
 
     if (!cache_class("com/microsoft/mpss/KeyManagement", key_management_class_) ||
         !cache_class("com/microsoft/mpss/Algorithm", algorithm_class_) ||
         !cache_class("java/lang/Boolean", boolean_class_) || !cache_class("java/lang/Long", long_class_))
     {
-        uninit(vm);
         return false;
     }
 
@@ -206,7 +222,12 @@ bool JNIHelper::init(JavaVM *vm)
 
         jmethodID resolved = spec.is_static ? env->GetStaticMethodID(owner, spec.name, spec.descriptor)
                                             : env->GetMethodID(owner, spec.name, spec.descriptor);
-        if (utils::check_and_clear_exception(env, spec.name) || nullptr == resolved)
+        if (utils::check_and_clear_exception(env,
+                                             std::format("resolving Java method '{}{}'", spec.name, spec.descriptor)))
+        {
+            return false;
+        }
+        if (nullptr == resolved)
         {
             mpss::utils::log_and_set_error("Could not resolve Java method '{}{}'.", spec.name, spec.descriptor);
             return false;
@@ -218,63 +239,36 @@ bool JNIHelper::init(JavaVM *vm)
 
     if (!std::ranges::all_of(method_table, cache_method))
     {
-        uninit(vm);
         return false;
     }
 
+    java_vm_ = vm;
+    succeeded = true;
+    initialized_.store(true, std::memory_order_release);
     return true;
 }
 
-void JNIHelper::uninit(JavaVM *vm)
+void JNIHelper::reset(JNIEnv *env)
 {
-    if (nullptr == vm || vm != java_vm_)
+    for (jclass *cached : {&key_management_class_, &algorithm_class_, &boolean_class_, &long_class_})
     {
-        return;
-    }
-
-    JNIEnv *env = nullptr;
-    if (JNI_OK == vm->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_6) && nullptr != env)
-    {
-        if (nullptr != boolean_class_)
+        if (nullptr != *cached)
         {
-            env->DeleteGlobalRef(boolean_class_);
-        }
-        if (nullptr != long_class_)
-        {
-            env->DeleteGlobalRef(long_class_);
-        }
-        if (nullptr != algorithm_class_)
-        {
-            env->DeleteGlobalRef(algorithm_class_);
-        }
-        if (nullptr != key_management_class_)
-        {
-            env->DeleteGlobalRef(key_management_class_);
+            env->DeleteGlobalRef(*cached);
+            *cached = nullptr;
         }
     }
-
     methods_.fill(nullptr);
-    boolean_class_ = nullptr;
-    long_class_ = nullptr;
-    algorithm_class_ = nullptr;
-    key_management_class_ = nullptr;
-    java_vm_ = nullptr;
 }
 
 bool JNIHelper::initialized()
 {
-    if (nullptr == java_vm_ || nullptr == key_management_class_ || nullptr == algorithm_class_ ||
-        nullptr == boolean_class_ || nullptr == long_class_)
-    {
-        return false;
-    }
-
-    return std::ranges::none_of(methods_, [](jmethodID resolved) { return nullptr == resolved; });
+    return initialized_.load(std::memory_order_acquire);
 }
 
 void JNIHelper::detach()
 {
-    if (nullptr != java_vm_)
+    if (initialized())
     {
         java_vm_->DetachCurrentThread();
     }
@@ -287,12 +281,12 @@ JNIEnv *JNIHelper::get_env(bool *did_attach)
         *did_attach = false;
     }
 
-    JNIEnv *env = nullptr;
-    if (nullptr == java_vm_)
+    if (!initialized())
     {
         return nullptr;
     }
 
+    JNIEnv *env = nullptr;
     const jint result = java_vm_->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_6);
     if (JNI_OK == result)
     {
@@ -315,27 +309,27 @@ JNIEnv *JNIHelper::get_env(bool *did_attach)
 
 jclass JNIHelper::key_management_class()
 {
-    return key_management_class_;
+    return initialized() ? key_management_class_ : nullptr;
 }
 
 jclass JNIHelper::algorithm_class()
 {
-    return algorithm_class_;
+    return initialized() ? algorithm_class_ : nullptr;
 }
 
 jclass JNIHelper::boolean_class()
 {
-    return boolean_class_;
+    return initialized() ? boolean_class_ : nullptr;
 }
 
 jclass JNIHelper::long_class()
 {
-    return long_class_;
+    return initialized() ? long_class_ : nullptr;
 }
 
 jmethodID JNIHelper::method(JavaMethod id)
 {
-    return methods_.at(static_cast<std::size_t>(id));
+    return initialized() ? methods_.at(static_cast<std::size_t>(id)) : nullptr;
 }
 
 // RAII Wrapper.
@@ -371,3 +365,20 @@ JNIEnvGuard::~JNIEnvGuard()
 }
 
 } // namespace mpss::impl::os
+
+namespace mpss
+{
+
+bool initialize_android(JavaVM *vm) noexcept
+try
+{
+    clear_error();
+    return impl::os::JNIHelper::init(vm);
+}
+catch (...)
+{
+    utils::set_internal_error();
+    return false;
+}
+
+} // namespace mpss

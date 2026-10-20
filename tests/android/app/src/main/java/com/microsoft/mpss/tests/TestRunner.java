@@ -13,7 +13,6 @@ public final class TestRunner extends Instrumentation
 {
     static
     {
-        System.loadLibrary(BuildConfig.MPSS_CORE_LIBRARY_NAME);
         System.loadLibrary("mpss_tests");
     }
 

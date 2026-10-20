@@ -23,15 +23,6 @@
 
 include(CMakeFindDependencyMacro)
 
-if(CMAKE_SYSTEM_NAME STREQUAL "Android")
-    if(NOT CMAKE_ANDROID_STL_TYPE STREQUAL "c++_shared"
-        OR (DEFINED ANDROID_STL AND NOT ANDROID_STL STREQUAL "c++_shared"))
-        message(FATAL_ERROR
-            "MPSS requires CMAKE_ANDROID_STL_TYPE=c++_shared on Android. "
-            "Select the shared C++ runtime before enabling C++.")
-    endif()
-endif()
-
 # Version variables, baked in at configure time.
 set(MPSS_VERSION @PROJECT_VERSION@)
 set(MPSS_VERSION_MAJOR @PROJECT_VERSION_MAJOR@)
@@ -58,6 +49,18 @@ set(MPSS_AVAILABLE_TARGETS "")
 # Create the targets.
 include(${CMAKE_CURRENT_LIST_DIR}/mpssTargets.cmake)
 
+# A shared MPSS library and the application must use the same C++ runtime and OpenSSL.
+set(mpss_ANDROID_SHARED NO)
+if(CMAKE_SYSTEM_NAME STREQUAL "Android" AND (TARGET mpss::mpss OR TARGET mpss::mpss_openssl))
+    set(mpss_ANDROID_SHARED YES)
+    if(NOT CMAKE_ANDROID_STL_TYPE STREQUAL "c++_shared"
+        OR (DEFINED ANDROID_STL AND NOT ANDROID_STL STREQUAL "c++_shared"))
+        message(FATAL_ERROR
+            "Shared MPSS libraries require CMAKE_ANDROID_STL_TYPE=c++_shared on Android. "
+            "Select the shared C++ runtime before enabling C++.")
+    endif()
+endif()
+
 # Check which targets were created.
 if(TARGET mpss::mpss_static)
     set(MPSS_CORE_STATIC_FOUND YES)
@@ -79,8 +82,7 @@ if(MPSS_CORE_SHARED_FOUND OR MPSS_CORE_STATIC_FOUND)
     if(MPSS_BACKEND_YUBIKEY OR MPSS_WITH_SERIALIZATION)
         find_dependency(OpenSSL 3 REQUIRED COMPONENTS Crypto)
 
-        # MPSS is shared on Android, so the application must use the same shared OpenSSL.
-        if(CMAKE_SYSTEM_NAME STREQUAL "Android")
+        if(mpss_ANDROID_SHARED)
             get_target_property(mpss_OPENSSL_CRYPTO_TYPE OpenSSL::Crypto TYPE)
             get_target_property(mpss_OPENSSL_CRYPTO_LOCATION OpenSSL::Crypto IMPORTED_LOCATION)
             if(mpss_OPENSSL_CRYPTO_TYPE STREQUAL "STATIC_LIBRARY"
@@ -113,6 +115,8 @@ if(MPSS_OPENSSL_SHARED_FOUND OR MPSS_OPENSSL_STATIC_FOUND)
     find_dependency(OpenSSL 3.2 REQUIRED)
     set(MPSS_OPENSSL_FOUND YES)
 endif()
+
+unset(mpss_ANDROID_SHARED)
 
 # Print information about available targets and directories.
 if(MPSS_CORE_FOUND OR MPSS_OPENSSL_FOUND)

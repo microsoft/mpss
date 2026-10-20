@@ -637,6 +637,12 @@ TEST(CApiErrorContract, AvailabilityQueriesHonorTheContract)
     EXPECT_FALSE(mpss_delete_key_from_backend(test_key_name("no_such_key").c_str(), nullptr));
     EXPECT_TRUE(mpss_has_error());
 
+#ifdef __ANDROID__
+    mpss_clear_error();
+    EXPECT_FALSE(mpss_initialize_android(nullptr));
+    EXPECT_TRUE(mpss_has_error());
+#endif
+
     // Answering the question is the success, whichever way the answer goes, so a stale error does
     // not survive an availability query.
     if (nullptr != available[0])

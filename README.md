@@ -24,6 +24,64 @@ back, because a TPM may already hold the name. There is no minimum-storage-tier 
 isolation rests on the hypervisor and its protection at rest on conditions MPSS cannot check, so it
 reports false; read the tier rather than the flag to tell VBS from software storage.
 
+## Contents
+
+- [Threat Model](#threat-model)
+  - [Apple: which store answers](#apple-which-store-answers)
+  - [What protection covers](#what-protection-covers)
+- [Compiling for different platforms](#compiling-for-different-platforms)
+  - [Using CMake Presets](#using-cmake-presets)
+  - [Configuring Without Presets](#configuring-without-presets)
+  - [iOS](#ios)
+    - [Running the iOS simulator suite](#running-the-ios-simulator-suite)
+    - [Running on a physical iOS device](#running-on-a-physical-ios-device)
+  - [Android](#android)
+    - [Initializing MPSS on Android](#initializing-mpss-on-android)
+    - [Linking MPSS into an application](#linking-mpss-into-an-application)
+    - [Using vcpkg with Gradle](#using-vcpkg-with-gradle)
+    - [Running the Android tests](#running-the-android-tests)
+  - [YubiKey Backend](#yubikey-backend)
+    - [Prerequisites](#prerequisites)
+    - [Build Configuration](#build-configuration)
+  - [Common Build Options](#common-build-options)
+    - [Selecting features through vcpkg](#selecting-features-through-vcpkg)
+- [Using the MPSS Core Library](#using-the-mpss-core-library)
+  - [Basic Usage](#basic-usage)
+  - [Key Management](#key-management)
+  - [Handle Lifetime](#handle-lifetime)
+  - [Serializing Key References](#serializing-key-references)
+  - [Key Policies](#key-policies)
+  - [Supported Algorithms](#supported-algorithms)
+  - [Standalone Verification](#standalone-verification)
+  - [Error Handling](#error-handling)
+    - [Last-error contract](#last-error-contract)
+  - [Thread Safety](#thread-safety)
+  - [Logging](#logging)
+- [Using MPSS with YubiKey PIV](#using-mpss-with-yubikey-piv)
+  - [Setting Up YubiKey PIV](#setting-up-yubikey-piv)
+  - [FIPS Device Readiness](#fips-device-readiness)
+  - [Runtime Configuration](#runtime-configuration)
+  - [Key Policy Configuration](#key-policy-configuration)
+  - [Custom Interaction Handlers](#custom-interaction-handlers)
+  - [Device Selection](#device-selection)
+  - [Summary of Runtime Environment Variables](#summary-of-runtime-environment-variables)
+  - [YubiKey Backend Limitations and Considerations](#yubikey-backend-limitations-and-considerations)
+  - [Running Tests with a YubiKey](#running-tests-with-a-yubikey)
+- [OpenSSL Provider (mpss-openssl)](#openssl-provider-mpss-openssl)
+  - [Provider Components](#provider-components)
+  - [Using the OpenSSL Provider](#using-the-openssl-provider)
+    - [Basic Key Generation and Signing](#basic-key-generation-and-signing)
+    - [Opening Existing Keys and Public Key Extraction](#opening-existing-keys-and-public-key-extraction)
+    - [Self-Signed Certificate Creation](#self-signed-certificate-creation)
+    - [Provider-Specific Parameters](#provider-specific-parameters)
+    - [Certificate Authority and Certificate Chain Creation](#certificate-authority-and-certificate-chain-creation)
+    - [Secure Key Cleanup](#secure-key-cleanup)
+    - [Loading a Key from a Key Reference PEM](#loading-a-key-from-a-key-reference-pem)
+  - [Errors and the OpenSSL Error Queue](#errors-and-the-openssl-error-queue)
+  - [Building mpss-openssl](#building-mpss-openssl)
+  - [Examples and Testing](#examples-and-testing)
+- [Contributing to MPSS](#contributing-to-mpss)
+
 ## Threat Model
 
 MPSS exposes no way to retrieve private key material: `extract_key()` returns the public key, and
@@ -208,8 +266,8 @@ The OS-native core uses system APIs. Additional dependencies are supplied by vcp
 OpenSSL 3.0 or later for optional C++ key-reference serialization,
 and [OpenSSL](https://github.com/openssl/openssl) 3.2 or later for the provider (which includes serialization).
 
-The [vcpkg port](ports/mpss/) targets desktop platforms. Build iOS and Android directly from
-source as described below; those builds also use vcpkg for dependencies.
+The vcpkg port targets desktop platforms and Android. Build iOS directly from source
+as described below; that build also uses vcpkg for dependencies.
 
 ### Using CMake Presets
 
@@ -222,12 +280,13 @@ cmake --build --preset <build-preset-name>
 cmake --install out/build/<configure-preset-name> --prefix <destination> # optional
 ```
 
-Run `cmake --list-presets=all` to list presets. Desktop names containing `-with-yubikey` enable
-YubiKey support; `-shared` selects shared libraries, otherwise static. Desktop `-shared` presets
-also link OpenSSL and the other vcpkg dependencies as shared libraries. Android uses shared
-libraries and the iOS Simulator preset uses static libraries. Linux offers only `-with-yubikey`
-presets, because it has no OS-native backend and MPSS requires at least one backend. Windows names
-containing `-mock` also build the NCrypt failure-injection tests (`MPSS_BUILD_WIN32_MOCK_TESTS=ON`).
+Run `cmake --list-presets=all` to list presets. Names containing `-shared` select shared
+libraries, otherwise static, and desktop names containing `-with-yubikey` enable YubiKey support.
+Desktop `-shared` presets also link OpenSSL and the other vcpkg dependencies as shared libraries;
+Android `-shared` presets link only OpenSSL that way. The iOS Simulator preset uses static
+libraries. Linux offers only `-with-yubikey` presets, because it has no OS-native backend and MPSS
+requires at least one backend. Windows names containing `-mock` also build the NCrypt
+failure-injection tests (`MPSS_BUILD_WIN32_MOCK_TESTS=ON`).
 
 Each configure preset has a separate `out/build/<name>` directory and vcpkg installation.
 With Visual Studio or Xcode, add `--config Debug` or `--config Release` when installing.
@@ -423,8 +482,8 @@ application identifier.
 ### Android
 
 The `android-base` preset selects the compile API, Build Tools, and NDK versions. Android
-requires API 28 or later and JDK 21; builds use Java 17 bytecode and shared native libraries.
-Set `ANDROID_HOME`, `JAVA_HOME`, and `VCPKG_ROOT`, then build for arm64:
+requires API 28 or later and JDK 21; builds use Java 17 bytecode. Set `ANDROID_HOME`, `JAVA_HOME`,
+and `VCPKG_ROOT`, then build for arm64:
 
 ```bash
 cmake --preset android-arm64-release
@@ -434,7 +493,8 @@ cmake --install out/build/android-arm64-release --prefix out/install/android-arm
 ```
 
 Use `android-x64-release` for x86_64. Debug variants are `android-x64-debug` and
-`android-arm64-debug`.
+`android-arm64-debug`. These build static libraries; for shared libraries, use the `-shared`
+variants, such as `android-arm64-shared-release`.
 
 The presets require the following environment variables:
 
@@ -468,13 +528,91 @@ key. Such a key can still be deleted, since deletion addresses the alias without
 
 Use devices receiving current security updates; API compatibility alone does not establish security.
 
-The Android presets enable the shared OpenSSL provider and the test suite. Pass
-`-DMPSS_BUILD_MPSS_OPENSSL_SHARED=OFF` or `-DMPSS_BUILD_TESTS=OFF` after the preset name for a
-smaller library-only build.
+The Android presets enable the OpenSSL provider and the test suite. For a smaller build, pass
+`-DMPSS_BUILD_TESTS=OFF` or `-DMPSS_BUILD_MPSS_OPENSSL_STATIC=OFF` (`-DMPSS_BUILD_MPSS_OPENSSL_SHARED=OFF`
+with a `-shared` preset) after the preset name.
 
-MPSS and its consumers must use the same NDK and `libc++_shared.so`. Top-level MPSS builds
-select and install that runtime automatically. Consumers using `add_subdirectory()` or
-`find_package()` must select it before CMake enables C++; MPSS fails configuration rather than
+#### Initializing MPSS on Android
+
+MPSS reaches the Android key store through its Java classes in `mpss.jar`, which it must find
+through the application's class loader. Call `mpss::initialize_android` from the application's
+`JNI_OnLoad`, before any other MPSS function:
+
+```cpp
+#include <mpss/mpss.h>
+#include <android/log.h>
+
+extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void * /*reserved*/)
+{
+    if (!mpss::initialize_android(vm))
+    {
+        __android_log_write(ANDROID_LOG_ERROR, "app", mpss::get_error().c_str());
+        return JNI_ERR;
+    }
+    return JNI_VERSION_1_6;
+}
+```
+
+When `JNI_OnLoad` fails, `System.loadLibrary` throws `UnsatisfiedLinkError`, so log the error
+first. C code uses `mpss_initialize_android` and `mpss_get_error` from `<mpss-openssl/api.h>`,
+which come with the OpenSSL provider (`mpss[openssl]` in vcpkg):
+
+```c
+#include <mpss-openssl/api.h>
+#include <android/log.h>
+
+JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved)
+{
+    (void)reserved;
+    if (!mpss_initialize_android(vm))
+    {
+        __android_log_write(ANDROID_LOG_ERROR, "app", mpss_get_error());
+        return JNI_ERR;
+    }
+    return JNI_VERSION_1_6;
+}
+```
+
+A native method that Java calls may also initialize MPSS, but a thread started in native code may
+not: its class loader cannot see the application's classes. Calling it again with the same Java VM
+succeeds without doing anything; a different Java VM is rejected, and MPSS stays initialized for
+the life of the process. Until initialization succeeds, every key operation on the `os` backend
+fails and sets the error, and availability queries report no algorithms.
+
+#### Linking MPSS into an application
+
+The native target links to the exported MPSS target normally:
+
+```cmake
+find_package(mpss CONFIG REQUIRED)
+
+add_library(app_native SHARED app_native.cpp)
+target_link_libraries(app_native PRIVATE
+    $<IF:$<TARGET_EXISTS:mpss::mpss>,mpss::mpss,mpss::mpss_static>
+    log)
+```
+
+To use the C API or the OpenSSL provider, link
+`$<IF:$<TARGET_EXISTS:mpss::mpss_openssl>,mpss::mpss_openssl,mpss::mpss_openssl_static>` instead;
+it brings in the core. Static MPSS libraries need the C++ linker, so a project written in C still
+enables C++, as in `project(app_native LANGUAGES C CXX)`.
+
+Add `mpss.jar` to the application's Java dependencies, and load only the application's library
+from Java:
+
+```java
+static
+{
+    System.loadLibrary("app_native");
+}
+```
+
+Static MPSS libraries are linked into the application's library, so the application chooses its
+own C++ runtime and links OpenSSL as it sees fit. Build MPSS with the same NDK as the application.
+
+Shared MPSS libraries and the application must use the same NDK, `libc++_shared.so`, and OpenSSL.
+Top-level MPSS builds select `libc++_shared.so` automatically. Consumers using `add_subdirectory()`
+or `find_package()` must select it before CMake enables C++; MPSS fails configuration rather than
 allowing a mixed-runtime process. With Gradle's `externalNativeBuild`:
 
 ```groovy
@@ -489,39 +627,67 @@ android {
 }
 ```
 
-For CMake's native Android toolchain, use `-DCMAKE_ANDROID_STL_TYPE=c++_shared` instead.
+For CMake's native Android toolchain, use `-DCMAKE_ANDROID_STL_TYPE=c++_shared` instead. Package one
+`libc++_shared.so` per ABI. Gradle supplies it for `externalNativeBuild`; do not also copy it into
+`jniLibs`.
 
-The native target can then link to the exported MPSS target normally:
+Shared MPSS libraries link OpenSSL as a shared library, so that MPSS and the application share one
+OpenSSL; the `-shared` presets build it with the `arm64-android-dynamic` and `x64-android-dynamic`
+vcpkg triplets in [triplets](triplets/). Package that `libcrypto.so` with the application, and link
+the application's own OpenSSL use to it rather than to a static copy. Android's system
+`libcrypto.so` is BoringSSL and is not available to applications.
 
-```cmake
-find_package(mpss CONFIG REQUIRED)
+When `externalNativeBuild` links shared MPSS libraries, Gradle packages them, the `libcrypto.so`
+they use, and `libc++_shared.so`.
 
-add_library(app_native SHARED app_native.cpp)
-target_link_libraries(app_native PRIVATE mpss::mpss)
-```
+#### Using vcpkg with Gradle
 
-Package one `libc++_shared.so` per ABI. Gradle supplies it for `externalNativeBuild`; do not also
-copy it into `jniLibs`. Include `mpss.jar` as a Java dependency.
+Gradle runs CMake for each ABI, and vcpkg takes the target architecture from its triplet, such as
+`arm64-android` for `arm64-v8a` or `x64-android` for `x86_64`. These triplets build static
+libraries, so the application links MPSS and OpenSSL statically. Gradle needs `mpss.jar` before it
+compiles Java, and its CMake step itself waits for the Java dependencies, so a vcpkg install run by
+CMake comes too late. Run `vcpkg install` as a separate Gradle task instead. For an application
+whose `vcpkg.json` is next to its `CMakeLists.txt` in `src/main/cpp`, and that builds `arm64-v8a`:
 
-MPSS links OpenSSL as a shared library on Android, so that MPSS and the application share one
-OpenSSL; the presets build it with the `arm64-android-dynamic` and `x64-android-dynamic` vcpkg
-triplets in [triplets](triplets/). Package that `libcrypto.so` with the application, and link the
-application's own OpenSSL use to it rather than to a static copy. Android's system `libcrypto.so`
-is BoringSSL and is not available to applications.
+```groovy
+def vcpkgRoot = System.getenv("VCPKG_ROOT")
+def vcpkgInstalled = file("${projectDir}/build/vcpkg_installed")
+def mpssJar = file("${vcpkgInstalled}/arm64-android/lib/mpss.jar")
 
-Initialize MPSS's Java bridge before calling native code:
+def vcpkgInstall = tasks.register("vcpkgInstall", Exec) {
+    commandLine "${vcpkgRoot}/vcpkg", "install", "--triplet=arm64-android",
+                "--x-manifest-root=${projectDir}/src/main/cpp", "--x-install-root=${vcpkgInstalled}"
+}
 
-```java
-static
-{
-    System.loadLibrary("mpss");
-    System.loadLibrary("app_native");
+android {
+    defaultConfig {
+        ndk {
+            abiFilters "arm64-v8a"
+        }
+        externalNativeBuild {
+            cmake {
+                arguments "-DCMAKE_TOOLCHAIN_FILE=${vcpkgRoot}/scripts/buildsystems/vcpkg.cmake",
+                          "-DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=${System.getenv("ANDROID_NDK_HOME")}/build/cmake/android.toolchain.cmake",
+                          "-DVCPKG_TARGET_TRIPLET=arm64-android",
+                          "-DVCPKG_INSTALLED_DIR=${vcpkgInstalled}",
+                          "-DVCPKG_MANIFEST_INSTALL=OFF"
+            }
+        }
+    }
+}
+
+dependencies {
+    implementation(files(mpssJar).builtBy(vcpkgInstall))
+}
+
+tasks.matching { it.name.startsWith("configureCMake") }.configureEach {
+    dependsOn(vcpkgInstall)
 }
 ```
 
-Load `mpss` before the application library so `JNI_OnLoad` runs with the application's class
-loader. Native `dlopen` or loading MPSS only as a dependency is not sufficient. Use `mpss_debug`
-instead when packaging the default Debug library.
+The task declares no outputs, so Gradle runs it on every build and vcpkg decides what to install.
+vcpkg builds Android dependencies with the NDK in `ANDROID_NDK_HOME`; set `ndkVersion` so that
+Gradle uses the same NDK.
 
 #### Running the Android tests
 
@@ -535,8 +701,8 @@ cmake --build --preset android-arm64-debug
 This creates `out/build/android-arm64-debug/android-tests/mpss-tests.apk`. Use the
 `android-x64-debug` preset and matching build directory for an x86_64 emulator.
 
-The build packages the Java classes, native libraries, OpenSSL, and shared C++ runtime using the
-checked-in Gradle wrapper.
+The build packages the Java classes and native libraries using the checked-in Gradle wrapper. With
+a `-shared` preset, the native libraries include MPSS, OpenSSL, and the shared C++ runtime.
 
 For a physical device, enable Developer options and USB debugging, connect the device, and accept
 the computer authorization prompt on the device. Confirm that Android Debug Bridge lists it with
@@ -565,23 +731,19 @@ different signing key is already installed, remove it first with
 
 Emulators exercise AndroidKeyStore and JNI integration; TEE and StrongBox require physical-device testing.
 
-After building and installing, you will find:
-- `lib/libmpss.so` — the native shared library.
+After building and installing, you will find (Debug builds add `_debug` to the library names):
+- `lib/libmpss_static.a`, or `lib/libmpss.so` from a `-shared` preset — the native library.
 - `lib/mpss.jar` — the Java classes for the JNI bridge (`KeyManagement`, `Algorithm`, etc.). It
   carries its own R8 keep rules, so applications that minify need none for MPSS.
-- `lib/libc++_shared.so` — the matching NDK C++ runtime.
-- When the OpenSSL provider is enabled, `lib/libmpss_openssl.so`.
+- When the OpenSSL provider is enabled, `lib/libmpss_openssl_static.a` or `lib/libmpss_openssl.so`.
 
-To use prebuilt MPSS binaries through an Android Studio project's `jniLibs`:
-1. Copy `libmpss.so` to `app/src/main/jniLibs/<abi>/` (e.g., `arm64-v8a/` or `x86_64/`).
-2. Copy `mpss.jar` to `app/libs/`.
-3. Add the JAR as a file dependency in your module's `build.gradle`.
-4. If using the OpenSSL provider, copy `libmpss_openssl.so` beside `libmpss.so`.
-
-Without `externalNativeBuild`, also copy `libc++_shared.so` from the same installation into
-`jniLibs/<abi>/`. Otherwise, let Gradle package it.
-
-**Note**: MPSS supports only shared libraries on Android. Static builds will produce a configuration error.
+To use prebuilt MPSS binaries in an Android Studio project, copy `mpss.jar` to `app/libs/` and add
+it as a file dependency in the module's `build.gradle`. Link the MPSS libraries into the
+application's native library. Gradle's `externalNativeBuild` packages the shared libraries it
+links. Otherwise, copy them to `app/src/main/jniLibs/<abi>/` (e.g., `arm64-v8a/` or `x86_64/`):
+`libmpss.so`, `libmpss_openssl.so` when using the OpenSSL provider, the `libcrypto.so` that MPSS
+was built with, and `libc++_shared.so` for the ABI from the NDK that built MPSS, under
+`toolchains/llvm/prebuilt/<host>/sysroot/usr/lib/<triple>/`.
 
 ### YubiKey Backend
 
@@ -654,8 +816,8 @@ For device setup and backend selection, see [Using MPSS with YubiKey PIV](#using
 | `BUILD_SHARED_LIBS=ON` | Select shared core and provider libraries when no explicit MPSS library-type option is enabled. Explicit options take precedence. |
 
 Build shared MPSS libraries against a shared OpenSSL, so that a process has one copy of it. With
-vcpkg on macOS or Linux, this means a `-dynamic` triplet such as `x64-linux-dynamic`, as the
-`-shared` presets use.
+vcpkg on macOS, Linux, or Android, this means a `-dynamic` triplet such as `x64-linux-dynamic`, as
+the `-shared` presets use.
 
 Static targets are named `mpss::mpss_static` and `mpss::mpss_openssl_static`, whereas shared targets are `mpss::mpss` and `mpss::mpss_openssl`.
 Single-configuration generators use `CMAKE_BUILD_TYPE` to select `Debug` or `Release`.
@@ -1021,6 +1183,9 @@ MPSS logs to `std::cout` and `std::cerr` at `mpss::LogLevel::info` by default.
 Use [mpss/log.h](mpss/log.h) to set the minimum level or install a custom logger.
 `Logger::Create` accepts arrays of per-level log, flush, and close callbacks; empty callbacks
 are ignored. See [stdout_log.cpp](mpss/stdout_log.cpp) for an example.
+Android discards an application's standard output and standard error, so on Android install a
+logger that writes to logcat with `__android_log_write`, as the tests do in
+[test_entry.cpp](tests/test_entry.cpp).
 
 [mpss/log_c.h](mpss/log_c.h) exposes the same global logger through the `mpss_log_*` C API.
 [mpss-openssl/log.h](mpss-openssl/log.h) forwards to it; both APIs share

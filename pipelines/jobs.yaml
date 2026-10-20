@@ -117,20 +117,36 @@ jobs:
             configuration: 'Release'
 
 - ${{ if eq(parameters.name, 'Android') }}:
-  - job: ${{ parameters.name }}
-    displayName: ${{ parameters.name }}
-    timeoutInMinutes: 180
-    pool:
-      vmImage: 'ubuntu-latest'
-    steps:
-    - template: android.yaml
-      parameters:
-        ${{ if eq(parameters.debug, 'true') }}:
-          x64Preset: 'android-x64-debug'
-          arm64Preset: 'android-arm64-debug'
-        ${{ if eq(parameters.debug, 'false') }}:
-          x64Preset: 'android-x64-release'
-          arm64Preset: 'android-arm64-release'
+  - ${{ if eq(parameters.linkage, 'shared') }}:
+    - job: ${{ parameters.name }}_Shared
+      displayName: "${{ parameters.name }} (Shared)"
+      timeoutInMinutes: 180
+      pool:
+        vmImage: 'ubuntu-latest'
+      steps:
+      - template: android.yaml
+        parameters:
+          ${{ if eq(parameters.debug, 'true') }}:
+            x64Preset: 'android-x64-shared-debug'
+            arm64Preset: 'android-arm64-shared-debug'
+          ${{ if eq(parameters.debug, 'false') }}:
+            x64Preset: 'android-x64-shared-release'
+            arm64Preset: 'android-arm64-shared-release'
+  - ${{ if ne(parameters.linkage, 'shared') }}:
+    - job: ${{ parameters.name }}
+      displayName: ${{ parameters.name }}
+      timeoutInMinutes: 180
+      pool:
+        vmImage: 'ubuntu-latest'
+      steps:
+      - template: android.yaml
+        parameters:
+          ${{ if eq(parameters.debug, 'true') }}:
+            x64Preset: 'android-x64-debug'
+            arm64Preset: 'android-arm64-debug'
+          ${{ if eq(parameters.debug, 'false') }}:
+            x64Preset: 'android-x64-release'
+            arm64Preset: 'android-arm64-release'
 
 - ${{ if eq(parameters.name, 'iOS') }}:
   - job: ${{ parameters.name }}
