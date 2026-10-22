@@ -2,6 +2,7 @@
 
 MPSS provides a C++20 API for creating, storing, and using signing keys without exporting their
 private material. An OpenSSL provider exposes the same keys to OpenSSL 3.2 and later.
+[CHANGES.md](CHANGES.md) lists the changes in each release, starting with 2.1.1.
 
 | Platform | API |
 |----------|-----|
@@ -286,7 +287,8 @@ Desktop `-shared` presets also link OpenSSL and the other vcpkg dependencies as 
 Android `-shared` presets link only OpenSSL that way. The iOS Simulator preset uses static
 libraries. Linux offers only `-with-yubikey` presets, because it has no OS-native backend and MPSS
 requires at least one backend. Windows names containing `-mock` also build the NCrypt
-failure-injection tests (`MPSS_BUILD_WIN32_MOCK_TESTS=ON`).
+failure-injection tests (`MPSS_BUILD_WIN32_MOCK_TESTS=ON`). The `win-ninja-x64-shared` preset
+builds with Ninja, as vcpkg does; run it from an x64 Visual Studio developer command prompt.
 
 Each configure preset has a separate `out/build/<name>` directory and vcpkg installation.
 With Visual Studio or Xcode, add `--config Debug` or `--config Release` when installing.
@@ -1538,7 +1540,12 @@ OpenSSL. Key protection is determined by the selected backend.
 
 These usage fragments omit some error handling; check OpenSSL return values and release
 resources on all paths. Register a statically linked provider with `OSSL_PROVIDER_add_builtin`.
-For dynamic loading, make its shared library available on OpenSSL's provider search path.
+Load a shared provider with `OSSL_PROVIDER_load`, by the library's full path or by the name
+`mpss_openssl` on Windows or `libmpss_openssl` on Linux and macOS (`mpss_openssl_debug` or
+`libmpss_openssl_debug` for Debug builds) with its directory on OpenSSL's provider search path
+(`OPENSSL_MODULES` or `OSSL_PROVIDER_set_default_search_path`). OpenSSL adds only the file extension
+to the name, so on Windows `mpss` would name the core library, `mpss.dll`. Either way, the
+provider's algorithms have the `provider=mpss` property.
 
 #### Basic Key Generation and Signing
 

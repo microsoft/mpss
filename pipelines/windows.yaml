@@ -4,6 +4,7 @@
 parameters:
   configuration: 'Release'
   preset: 'win-vs2022-x64'
+  ninja: 'false'
 
 steps:
 - ${{ if eq(parameters.configuration, 'Release') }}:
@@ -35,18 +36,43 @@ steps:
   parameters:
     key: '${{ parameters.preset }}'
 
-- task: CMake@1
-  displayName: 'Configure MPSS (${{ parameters.preset }})'
-  inputs:
-    cmakeArgs: --preset ${{ parameters.preset }} -DMPSS_BUILD_WIN32_MOCK_TESTS=ON
-    workingDirectory: '$(Build.SourcesDirectory)'
+- ${{ if ne(parameters.ninja, 'true') }}:
+  - task: CMake@1
+    displayName: 'Configure MPSS (${{ parameters.preset }})'
+    inputs:
+      cmakeArgs: --preset ${{ parameters.preset }} -DMPSS_BUILD_WIN32_MOCK_TESTS=ON
+      workingDirectory: '$(Build.SourcesDirectory)'
 
-- task: CMake@1
-  displayName: 'Build MPSS'
-  inputs:
-    cmakeArgs: >
-      --build out/build/${{ parameters.preset }}
-      --config ${{ parameters.configuration }}
+  - task: CMake@1
+    displayName: 'Build MPSS'
+    inputs:
+      cmakeArgs: >
+        --build out/build/${{ parameters.preset }}
+        --config ${{ parameters.configuration }}
+      workingDirectory: '$(Build.SourcesDirectory)'
+
+# Unlike the Visual Studio generators, Ninja needs the MSVC environment set up first. The provider
+# loading test needs no TPM, so it runs here for both configurations.
+- ${{ if eq(parameters.ninja, 'true') }}:
+  - script: |
+      for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VS_PATH=%%i"
+      set "VSCMD_START_DIR=%CD%"
+      call "%VS_PATH%\VC\Auxiliary\Build\vcvars64.bat"
+      cmake --preset ${{ parameters.preset }} || exit /b 1
+      call :build_and_load Debug || exit /b 1
+      call :build_and_load Release || exit /b 1
+      exit /b 0
+
+      :build_and_load
+      cmake --build out/build/${{ parameters.preset }} --config %1 || exit /b 1
+      set "LOG=out\build\${{ parameters.preset }}\load-%1.log"
+      out\build\${{ parameters.preset }}\bin\%1\mpss_tests.exe --gtest_filter=MPSS_OpenSSL.ProviderLoadsFromModuleFile > "%LOG%" 2>&1
+      set "RESULT=%ERRORLEVEL%"
+      type "%LOG%"
+      if not "%RESULT%"=="0" exit /b 1
+      findstr /L /C:"[  PASSED  ] 1 test." "%LOG%" > nul || exit /b 1
+      exit /b 0
+    displayName: 'Build MPSS and load the provider (${{ parameters.preset }})'
     workingDirectory: '$(Build.SourcesDirectory)'
 
 - ${{ if eq(parameters.configuration, 'Release') }}:

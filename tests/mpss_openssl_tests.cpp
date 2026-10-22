@@ -885,6 +885,22 @@ TEST(MPSS_OpenSSL, ProviderInitRefusesADifferentCore)
     ASSERT_NE(0, OSSL_PROVIDER_unload(mpss_prov.release()));
 }
 
+#ifdef MPSS_TEST_PROVIDER_MODULE
+// Scenario: an application loads the provider from its module file instead of registering it.
+// Expected behavior: OpenSSL finds the entry point, and the provider's algorithms can be fetched.
+TEST(MPSS_OpenSSL, ProviderLoadsFromModuleFile)
+{
+    const ossl_lib_ctx_ptr libctx(OSSL_LIB_CTX_new());
+    ASSERT_NE(nullptr, libctx);
+    ossl_provider_ptr mpss_prov(OSSL_PROVIDER_load(libctx.get(), MPSS_TEST_PROVIDER_MODULE));
+    ASSERT_NE(nullptr, mpss_prov);
+
+    EXPECT_NE(nullptr, evp_md_ptr(EVP_MD_fetch(libctx.get(), "SHA256", "provider=mpss")));
+
+    ASSERT_NE(0, OSSL_PROVIDER_unload(mpss_prov.release()));
+}
+#endif
+
 TEST(MPSS_OpenSSL, GenerateRequiresAlgorithm)
 {
     if (!mpss_is_algorithm_available("ecdsa_secp256r1_sha256"))

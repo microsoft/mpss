@@ -226,6 +226,30 @@
             }
         },
         {
+            "name": "win-ninja-x64-shared",
+            "displayName": "Windows Ninja (x64) [Shared]",
+            "inherits": "base",
+            "generator": "Ninja Multi-Config",
+            "architecture": {
+                "value": "x64",
+                "strategy": "external"
+            },
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "cl.exe",
+                "CMAKE_CXX_COMPILER": "cl.exe",
+                "VCPKG_TARGET_TRIPLET": "x64-windows",
+                "MPSS_BUILD_MPSS_CORE_STATIC": "NO",
+                "MPSS_BUILD_MPSS_CORE_SHARED": "YES",
+                "MPSS_BUILD_MPSS_OPENSSL_STATIC": "NO",
+                "MPSS_BUILD_MPSS_OPENSSL_SHARED": "YES"
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            }
+        },
+        {
             "name": "linux-debug",
             "displayName": "Linux Debug (Ninja)",
             "inherits": "base",
@@ -1077,6 +1101,28 @@
             "name": "win-vs2026-arm64-mock-release",
             "displayName": "Windows VS 2026 (arm64) [Release, NCrypt mock tests]",
             "configurePreset": "win-vs2026-arm64-mock",
+            "configuration": "Release",
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            }
+        },
+        {
+            "name": "win-ninja-x64-shared-debug",
+            "displayName": "Windows Ninja (x64) [Debug, Shared]",
+            "configurePreset": "win-ninja-x64-shared",
+            "configuration": "Debug",
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            }
+        },
+        {
+            "name": "win-ninja-x64-shared-release",
+            "displayName": "Windows Ninja (x64) [Release, Shared]",
+            "configurePreset": "win-ninja-x64-shared",
             "configuration": "Release",
             "condition": {
                 "type": "equals",
