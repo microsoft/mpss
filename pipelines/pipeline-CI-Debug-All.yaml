@@ -43,6 +43,11 @@ stages:
     - template: jobs.yaml
       parameters:
         debug: 'true'
+        name: Windows
+        ninja: 'true'
+    - template: jobs.yaml
+      parameters:
+        debug: 'true'
         name: macOS
     - template: jobs.yaml
       parameters:

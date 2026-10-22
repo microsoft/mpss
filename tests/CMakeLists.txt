@@ -43,6 +43,12 @@ if(NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
         )
         target_link_libraries(mpss_tests PRIVATE ${mpss_TESTS_LINK_LIBRARIES})
 
+        if(TARGET mpss_openssl)
+            target_compile_definitions(mpss_tests PRIVATE
+                MPSS_TEST_PROVIDER_MODULE="$<TARGET_FILE:mpss_openssl>"
+            )
+        endif()
+
         # gmock-win32 patches the running executable's import table, so the mock tests need the
         # static backend and their own executable: the patching is process-global and clashes with
         # the OpenSSL provider's algorithm probing.
@@ -139,6 +145,9 @@ endif()
 if(MPSS_OPENSSL_FOUND)
     if(TARGET mpss::mpss_openssl)
         target_link_libraries(mpss_tests PRIVATE mpss::mpss_openssl)
+        target_compile_definitions(mpss_tests PRIVATE
+            MPSS_TEST_PROVIDER_MODULE="$<TARGET_FILE:mpss::mpss_openssl>"
+        )
     else()
         target_link_libraries(mpss_tests PRIVATE mpss::mpss_openssl_static)
     endif()

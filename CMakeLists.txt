@@ -141,7 +141,7 @@ if(mpss_ANDROID AND mpss_BUILDS_SHARED_LIBRARY)
     endif()
 endif()
 
-project(mpss VERSION 2.1.0 LANGUAGES C CXX)
+project(mpss VERSION 2.1.1 LANGUAGES C CXX)
 
 if(MPSS_BACKEND_YUBIKEY)
     # The vcpkg port is named "yubico-piv-tool" but exports the CMake config
@@ -637,6 +637,14 @@ if(TARGET ${mpss_openssl_TARGET})
             target_compile_definitions(${mpss_openssl_TARGET} PRIVATE
                 MPSS_OPENSSL_EXPORTS
             )
+        endif()
+
+        # When OpenSSL loads the provider DLL, it looks up the exported function OSSL_provider_init.
+        # <openssl/core.h> exports it only when _WINDLL is defined. MSBuild defines _WINDLL when it
+        # builds a DLL. Ninja, which vcpkg uses, does not. MinGW needs no such option, because its
+        # linker exports every function by default.
+        if(MSVC)
+            target_link_options(${mpss_openssl_TARGET} PRIVATE /EXPORT:OSSL_provider_init)
         endif()
     endif()
 endif()

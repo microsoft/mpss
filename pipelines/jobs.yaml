@@ -7,10 +7,28 @@ parameters:
   debug: 'false'
   yubikey: 'false'
   linkage: 'static'
+  ninja: 'false'
 
 jobs:
 
-- ${{ if eq(parameters.name, 'Windows') }}:
+# vcpkg builds with Ninja. Check that the provider DLL built that way loads, in Debug and Release.
+- ${{ if and(eq(parameters.name, 'Windows'), eq(parameters.ninja, 'true')) }}:
+  - job: ${{ parameters.name }}_Ninja_Shared
+    displayName: "${{ parameters.name }} (Ninja, Shared)"
+    timeoutInMinutes: 180
+    pool:
+      vmImage: 'windows-latest'
+    steps:
+    - template: windows.yaml
+      parameters:
+        preset: 'win-ninja-x64-shared'
+        ninja: 'true'
+        ${{ if eq(parameters.debug, 'true') }}:
+          configuration: 'Debug'
+        ${{ if eq(parameters.debug, 'false') }}:
+          configuration: 'Release'
+
+- ${{ if and(eq(parameters.name, 'Windows'), ne(parameters.ninja, 'true')) }}:
   - ${{ if and(eq(parameters.yubikey, 'true'), eq(parameters.linkage, 'shared')) }}:
     - job: ${{ parameters.name }}_YubiKey_Shared
       displayName: "${{ parameters.name }} (YubiKey, Shared)"
